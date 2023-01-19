@@ -8,6 +8,8 @@ packages = [{include = "option_bot"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"
+requests = "^2.28.2"
+pyrh = "^2.0.1"
 
 
 [build-system]
