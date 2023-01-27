@@ -1,0 +1,4 @@
+*.pyc
+.mypy_cache/*
+/bin/notes.txt
+.python-version
