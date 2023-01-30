@@ -8,3 +8,4 @@ QR = os.getenv("RH_QR")
 
 
 rh = Robinhood(username=USERNAME, password=PASSWORD, mfa=QR)
+rh.login()
