@@ -18,10 +18,6 @@ class UTCNow(expression.FunctionElement):  # type: ignore[name-defined]
     type = DateTime()
 
 
-def timestamp_to_datetime(timestamp: int) -> datetime:
-    return datetime.fromtimestamp(timestamp / 1000)
-
-
 class StockTickers(Base):
     __tablename__ = "stock_tickers"
     id = Column(Integer, primary_key=True, unique=True, autoincrement=True)
@@ -54,7 +50,7 @@ class OptionsPricesRaw(Base):
     volumn = Column(Integer, nullable=False)
     number_of_trades = Column(Integer, nullable=False)
     created_at = Column(DateTime, server_default=UTCNow())
-    updated_at = Column(DateTime, server_default=UTCNow(), onupdate=datetime.datetime.utcnow)
+    updated_at = Column(DateTime, server_default=UTCNow(), onupdate=datetime.utcnow)
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
