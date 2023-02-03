@@ -1,11 +1,18 @@
 import argparse
 from datetime import datetime, timedelta
 
-from polygon import HistoricalOptionsPrices, OptionsContracts
+from orchestrator import add_ticker_to_universe
 
 DEFAULT_DAYS = 120
 DEFAULT_MONTHS = 24
 
+def add_ticker(args):
+    
+    return
+
+def remove_ticker(args):
+    #remove from tickers table, allow cascading to remove everything else
+    return
 
 def main():
     """primary CLI for adding underlying stocks to our data universe, and specifying how far back to pull data"""
@@ -51,5 +58,8 @@ def main():
 
     args = parser.parse_args()
 
-    if args.tickers is not None:
-        
+    if args.remove is None:
+
+
+    else:
+        remove_ticker(args)
