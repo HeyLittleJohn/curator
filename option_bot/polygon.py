@@ -5,7 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import requests
-from utils import first_weekday_of_month, timestamp_to_datetime
+from utils import timestamp_to_datetime  # ,first_weekday_of_month
 
 api_key = os.getenv("POLYGON_API_KEY")
 
