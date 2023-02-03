@@ -46,19 +46,43 @@ class PolygonPaginator(object):
                 self.query_all(next_url)
 
 
+class HistoricalStockPrices(PolygonPaginator):
+    """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
+
+    pass
+
+
+class OptionsContracts(PolygonPaginator):
+    """Object to query options contract tickers for a given underlying ticker based on given dates.
+
+    Attributes:
+        ticker: str
+            the underlying stock ticker
+        base_date: [datetime]
+            the date that is the basis for current observations. \
+            In other words: the date at which you are looking at the chain of options data
+    """
+
+    def __init__(self, ticker: str, base_date: datetime):
+        self.ticker = ticker
+        self.base_date = base_date
+        self.strike_range = self._determine_strike_range()
+
+    def _determine_strike_range():
+        pass
+
+
 class HistoricalOptionsPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker
 
     Attributes:
-        ticker: str
+        options_ticker: str
             the underlying stock ticker
         current_price: decimal
             The current price of the underlying ticker
         exp_date: [datetime, datetime]
             the range of option expiration dates to be queried
-        base_date: [datetime]
-            the date that is the basis for current observations. \
-            In other words: the date at which you are looking at the chain of options data
+
         strike_price: decimal
             the strike price range want to include in our queries
 
@@ -71,14 +95,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
         ticker: str,
         exp_date: tuple[datetime, datetime],
         base_date: datetime,
-        strike_price: tuple[int, int],
+        strike_range: tuple[int, int],
         current_price: Decimal,
     ):
         self.underlying_ticker = ticker
         self.current_price = current_price
         self.exp_date = exp_date
         self.base_date = base_date  # as_of date
-        self.strike_price = strike_price
         self.ticker_list = self._options_tickers_constructor()
 
     def _options_tickers_constructor(self) -> list[str]:
