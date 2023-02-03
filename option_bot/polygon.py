@@ -9,7 +9,10 @@ from utils import timestamp_to_datetime  # ,first_weekday_of_month
 
 api_key = os.getenv("POLYGON_API_KEY")
 
-# NOTE: perhaps rather than inherit, make these subclasses with the overall paginator keeping track of all your queries/logs so that it sleeps appropriately
+# NOTE: perhaps rather than inherit, make these subclasses with the overall paginator \
+# keeping track of all your queries/logs so that it sleeps appropriately
+
+
 class PolygonPaginator(object):
     """API paginator interface for calls to the Polygon API. \
         It tracks queries made to the polygon API and calcs potential need for sleep"""
