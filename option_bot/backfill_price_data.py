@@ -52,3 +52,4 @@ def main():
     args = parser.parse_args()
 
     if args.tickers is not None:
+        

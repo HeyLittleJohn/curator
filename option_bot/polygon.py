@@ -9,7 +9,7 @@ from utils import timestamp_to_datetime  # ,first_weekday_of_month
 
 api_key = os.getenv("POLYGON_API_KEY")
 
-
+# NOTE: perhaps rather than inherit, make these subclasses with the overall paginator keeping track of all your queries/logs so that it sleeps appropriately
 class PolygonPaginator(object):
     """API paginator interface for calls to the Polygon API. \
         It tracks queries made to the polygon API and calcs potential need for sleep"""
@@ -61,25 +61,33 @@ class OptionsContracts(PolygonPaginator):
         base_date: [datetime]
             the date that is the basis for current observations. \
             In other words: the date at which you are looking at the chain of options data
+        current_price: decimal
+            The current price of the underlying ticker
     """
 
-    def __init__(self, ticker: str, base_date: datetime):
+    def __init__(self, ticker: str, base_date: datetime, current_price: Decimal, exp_date: tuple[datetime, datetime]):
         self.ticker = ticker
         self.base_date = base_date
+        self.current_price = current_price
         self.strike_range = self._determine_strike_range()
 
-    def _determine_strike_range():
-        pass
+    def _determine_strike_range(self) -> tuple[int, int]:
+        """function to determine strike range based on stock snapshot
+
+        Returns:
+            strike_range: tuple of ints with the max and min strike prices of interest
+        """
+        strike_range = ()
+        return strike_range
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker
 
     Attributes:
-        options_ticker: str
-            the underlying stock ticker
-        current_price: decimal
-            The current price of the underlying ticker
+        options_tickers: List[str]
+            the options contract tickers
+
         exp_date: [datetime, datetime]
             the range of option expiration dates to be queried
 
@@ -92,23 +100,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        ticker: str,
-        exp_date: tuple[datetime, datetime],
+        tickers: list[str],
         base_date: datetime,
-        strike_range: tuple[int, int],
-        current_price: Decimal,
     ):
-        self.underlying_ticker = ticker
-        self.current_price = current_price
-        self.exp_date = exp_date
+        self.o_tickers = tickers
         self.base_date = base_date  # as_of date
         self.ticker_list = self._options_tickers_constructor()
-
-    def _options_tickers_constructor(self) -> list[str]:
-        """Function to return the master list of options contract tickers for the historical \
-             query based on class attributes"""
-        # NOTE: should check that strike prices are whole numbers or maybe 0.5 and nothing else.
-        return ["test_ticker"]
 
     def _window_of_focus_dates(self):
         """"""
