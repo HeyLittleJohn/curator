@@ -144,3 +144,9 @@ class HistoricalOptionsPrices(PolygonPaginator):
             self.query_all(url)
             ticker_results = self._clean_api_results(ticker)
             self.hist_prices.append(ticker_results)
+
+
+# TODO: figure out how you are going to handle data refreshing. Simply update the whole history?
+# Or append and find a way to adjust for splits?
+
+# TODO: Make all functions with these classes async ready, and make the classes ready to manage multiple workers
