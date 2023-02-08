@@ -6,13 +6,16 @@ from orchestrator import add_ticker_to_universe
 DEFAULT_DAYS = 120
 DEFAULT_MONTHS = 24
 
+
 def add_ticker(args):
-    
+
     return
 
+
 def remove_ticker(args):
-    #remove from tickers table, allow cascading to remove everything else
+    # remove from tickers table, allow cascading to remove everything else
     return
+
 
 def main():
     """primary CLI for adding underlying stocks to our data universe, and specifying how far back to pull data"""
@@ -55,11 +58,10 @@ def main():
         help="Removes the specified underlying ticker(s) from our options data pull universe",
     )
 
-
     args = parser.parse_args()
 
     if args.remove is None:
-
+        pass
 
     else:
         remove_ticker(args)
