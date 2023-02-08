@@ -1,3 +1,4 @@
+import asyncio
 import math
 import os
 import time
@@ -6,6 +7,7 @@ from decimal import Decimal
 
 import requests
 from utils import timestamp_to_datetime  # ,first_weekday_of_month
+
 
 api_key = os.getenv("POLYGON_API_KEY")
 
@@ -33,10 +35,10 @@ class PolygonPaginator(object):
             sleep_time = math.ceil((b - a).total_seconds())
         return sleep_time
 
-    def query_all(self, url: str, payload: dict = {}):
+    async def query_all(self, url: str, payload: dict = {}):
         payload["apiKey"] = api_key
         if self.query_count >= self.MAX_QUERY_PER_MINUTE:
-            time.sleep(self.api_sleep_time())
+            await asyncio.sleep(self.api_sleep_time())
             self.query_count = 0
         response = requests.get(url, params=payload)
         self.query_time_log.append({"request_id": response.get("request_id"), "query_timestamp": time.time()})
