@@ -1,7 +1,6 @@
-import asyncio
 from multiprocessing import Lock, Pool
 
-from polygon import HistoricalOptionsPrices, OptionsContracts
+from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts
 
 
 def add_tickers_to_universe(kwargs_list):
