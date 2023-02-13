@@ -1,6 +1,9 @@
-from multiprocessing import Lock, Pool
+from multiprocessing import cpu_count, Lock, Pool
 
-from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts
+from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts262749
+
+
+CPUS = cpu_count()
 
 
 def add_tickers_to_universe(kwargs_list):
