@@ -17,7 +17,7 @@ sqlalchemy = "^2.0.0"
 psycopg2-binary = "^2.9.5"
 alembic = "^1.9.2"
 torch = "^1.13.1"
-pyrh = {path = "/home/jhirschi/pyrh"}
+#pyrh = {path = "/home/jhirschi/pyrh"}
 asyncpg = "^0.27.0"
 
 [tool.poetry.group.dev.dependencies]
