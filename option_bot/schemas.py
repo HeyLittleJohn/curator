@@ -1,10 +1,21 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DECIMAL, BigInteger, Boolean, Column, Enum, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    DECIMAL,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import declarative_base
-from sqlalchemy.sql import expression
+from sqlalchemy.sql import expression, func
 from sqlalchemy.types import Date, DateTime
+
 
 Base = declarative_base()
 
@@ -37,9 +48,9 @@ class OptionsTickers(Base):
 
 class OptionsPricesRaw(Base):
     __tablename__ = "option_prices"
-    __table_args__ = UniqueConstraint("options_ticker_id", "price_date", "as_of_date", name="uq_current_price")
+    __table_args__ = (UniqueConstraint("options_ticker_id", "price_date", "as_of_date", name="uq_current_price"),)
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
-    options_ticker_id = Column(Integer, ForeignKey("options_tickers.id", ondelete=True), nullable=False)
+    options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
     price_date = Column(Date, nullable=False)
     as_of_date = Column(DateTime, nullable=False)
     close_price = Column(DECIMAL(19, 4), nullable=False)
@@ -49,8 +60,8 @@ class OptionsPricesRaw(Base):
     volume_weight_price = Column(DECIMAL(19, 4), nullable=False)
     volumn = Column(Integer, nullable=False)
     number_of_trades = Column(Integer, nullable=False)
-    created_at = Column(DateTime, server_default=UTCNow())
-    updated_at = Column(DateTime, server_default=UTCNow(), onupdate=datetime.utcnow)
+    created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
