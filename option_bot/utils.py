@@ -1,7 +1,14 @@
+import functools
+import inspect
 from datetime import datetime
 
 import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from option_bot.proj_constants import async_session_maker, log
+
+
+_async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
 
 
 def timestamp_to_datetime(timestamp: int, msec_units: bool = True) -> datetime:

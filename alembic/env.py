@@ -1,5 +1,4 @@
 import asyncio
-import os
 from logging.config import fileConfig
 
 from sqlalchemy import create_engine
@@ -7,6 +6,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
+from option_bot.proj_constants import POSTGRES_DATABASE_URL
 from option_bot.schemas import Base
 
 
@@ -31,18 +31,9 @@ target_metadata = Base.metadata
 # ... etc.
 
 
-def _get_url() -> str:
-    """requires a PGPASSFILE env variable directing to a .pgpass file"""
-    with open(os.environ.get("PGPASSFILE"), "r") as f:
-        host, port, dbname, user, password = f.read().strip().split(":")
-        database_uri = f"postgresql+psycopg://{user}:{password}@{host}:{port}/{dbname}"
-    return database_uri
-
-
 def create_engine_(async_engine: bool = False):
     """no need for async connection to run migrations"""
-    database_uri = _get_url()
-    return create_async_engine(database_uri) if async_engine else create_engine(database_uri)
+    return create_async_engine(POSTGRES_DATABASE_URL) if async_engine else create_engine(POSTGRES_DATABASE_URL)
 
 
 def run_migrations_offline() -> None:
@@ -57,9 +48,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = _get_url()
     context.configure(
-        url=url,
+        url=POSTGRES_DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -87,7 +77,7 @@ async def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    connectable = create_async_engine(_get_url())
+    connectable = create_async_engine(POSTGRES_DATABASE_URL)
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
