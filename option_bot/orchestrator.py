@@ -1,6 +1,7 @@
-from multiprocessing import cpu_count, Lock, Pool
+from multiprocessing import cpu_count  # , Lock, Pool
 
-from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts262749
+
+# from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts
 
 
 CPUS = cpu_count()
@@ -15,7 +16,8 @@ def add_tickers_to_universe(kwargs_list):
     for i in kwargs_list:
         pass
     # TODO: Figure out the classes for the paginator, and how to run within multiple processes
-    # NOTE: pass in the number of processes being used when this function is called (num of tickers) so that the calls to get historical prices can be made with multiple processes as well
+    # NOTE: pass in the number of processes being used when this function is called (num of tickers)\
+    #  so that the calls to get historical prices can be made with multiple processes as well
 
 
 def remove_ticker_from_universe():
