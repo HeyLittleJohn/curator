@@ -6,8 +6,13 @@ Alembic can be used to take your current DB state and compare it with your schem
 then generates a delta to get your DB from its current state to the desired state based on the
 schema files.
 
-This will generate a script based on the schema - db diff. Replace `<description>` with a short
-description of what has changed in the schemas.
+The primary way to interact with alembic is via `Make` commands defined in the `Makefile`. Below is the main command for updates.
+
+```make update_db DESCRIPTION="<input your description>"```
+
+This will generate a script based on the schema - db diff. And will then apply those changes to the db. The make commands are built using the below commands.
+
+This creates the revision script:
 
 `alembic revision --autogenerate -m "<description>"`
 
