@@ -38,7 +38,7 @@ def main():
         type=str,
         nargs="*",
         metavar="underlying tickers",
-        default=None,
+        default=None,  # don't think this can be None for a required add_argument()
         help="Adds underlying tickers to our options data pull universe",
     )
 

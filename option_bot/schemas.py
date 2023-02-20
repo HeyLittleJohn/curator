@@ -1,5 +1,6 @@
 import enum
 from datetime import datetime
+from http import server
 
 from sqlalchemy import (
     BigInteger,
@@ -33,7 +34,15 @@ class StockTickers(Base):
     __tablename__ = "stock_tickers"
     id = Column(Integer, primary_key=True, unique=True, autoincrement=True)
     ticker_symbol = Column(String, nullable=False)
+    imported = Column(Boolean, nullable=False, server_default=expression.false())
+    type = Column(String, nullable=False)
     name = Column(String)
+    market = Column(String)
+    locale = Column(String)
+    exchange = Column(String)
+    cik = Column(String)
+    created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
 
 
 class OptionsTickers(Base):
