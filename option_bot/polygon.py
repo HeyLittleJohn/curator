@@ -1,16 +1,14 @@
 import asyncio
 import math
-import os
 import time
 from datetime import datetime
 from decimal import Decimal
 from multiprocessing import Lock, Pool
 
 import requests
+from proj_constants import log, POLYGON_API_KEY
 from utils import timestamp_to_datetime  # ,first_weekday_of_month
 
-
-api_key = os.getenv("POLYGON_API_KEY")
 
 # NOTE: perhaps rather than inherit, make these subclasses with the overall paginator \
 # keeping track of all your queries/logs so that it sleeps appropriately
@@ -23,39 +21,67 @@ class PolygonPaginator(object):
     MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
     polygon_api = "https://api.polygon.io"
 
-    def __init__(self, query_count: int = 0):
-        self.query_count = query_count
-        self.results = []
+    def __init__(self):  # , query_count: int = 0):
+        self.query_count = 0  # = query_count
         self.query_time_log = []
+        self.results = []
 
     def _api_sleep_time(self) -> int:
         sleep_time = 60
         if len(self.query_time_log) > 2:
             a = timestamp_to_datetime(self.query_time_log[0]["query_timestamp"])
             b = timestamp_to_datetime(self.query_time_log[-1]["query_timestamp"])
-            sleep_time = math.ceil((b - a).total_seconds())
+            diff = math.ceil((b - a).total_seconds())
+            sleep_time = diff if diff < sleep_time else sleep_time
         return sleep_time
 
-    async def query_all(self, url: str, payload: dict = {}):
-        payload["apiKey"] = api_key
-        if self.query_count >= self.MAX_QUERY_PER_MINUTE:
-            await asyncio.sleep(self.api_sleep_time())
+    async def query_all(self, url: str, payload: dict = {}, overload=False):
+        payload["apiKey"] = POLYGON_API_KEY
+        if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
+            await asyncio.sleep(self._api_sleep_time())
             self.query_count = 0
+            self.query_time_log = []
+
+        log.info(f"{url} {payload} {overload}")
         response = requests.get(url, params=payload)
         self.query_time_log.append({"request_id": response.get("request_id"), "query_timestamp": time.time()})
         self.query_count += 1
-        response.raise_for_status()
+        log.info(f"status code: {response.status_code}")
         if response.status_code == 200:
             self.results.append(response.json())
             next_url = response.get("next_url")
             if next_url:
-                self.query_all(next_url)
+                await self.query_all(next_url)
+        elif response.status_code == 429:
+            await self.query_all(url, payload, overload=True)
+        else:
+            response.raise_for_status()
 
 
 class HistoricalStockPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
 
-    pass
+    def __init__(
+        self,
+        ticker: str,
+    ):
+        pass
+
+
+class StockMetaData(PolygonPaginator):
+    """Object to query the Polygon API and retrieve information about listed stocks. \
+        It can be used to query for a single individual ticker or to pull the entire corpus"""
+
+    def __init__(self, ticker: str, all_: bool):
+        self.ticker = ticker
+        self.all_ = all_
+        self.payload = {"active": True, "market": "stocs", "limit": 1000}
+
+    def get_data(self):
+        url = self.polygon_api + "/v3/reference/tickers"
+        if not self.all_:
+            self.payload["ticker"] = self.ticker
+        self.query_all(url=url, payload=self.payload)
 
 
 class OptionsContracts(PolygonPaginator):
