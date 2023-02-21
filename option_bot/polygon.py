@@ -25,6 +25,7 @@ class PolygonPaginator(object):
         self.query_count = 0  # = query_count
         self.query_time_log = []
         self.results = []
+        self.clean_results = []
 
     def _api_sleep_time(self) -> int:
         sleep_time = 60
@@ -42,14 +43,17 @@ class PolygonPaginator(object):
             self.query_count = 0
             self.query_time_log = []
 
-        log.info(f"{url} {payload} {overload}")
+        log.info(f"{url} {payload} overload:{overload}")
         response = requests.get(url, params=payload)
-        self.query_time_log.append({"request_id": response.get("request_id"), "query_timestamp": time.time()})
-        self.query_count += 1
         log.info(f"status code: {response.status_code}")
+
+        self.query_count += 1
+
         if response.status_code == 200:
-            self.results.append(response.json())
-            next_url = response.get("next_url")
+            results = response.json()
+            self.query_time_log.append({"request_id": results.get("request_id"), "query_timestamp": time.time()})
+            self.results.append(results)
+            next_url = results.get("next_url")
             if next_url:
                 await self.query_all(next_url)
         elif response.status_code == 429:
@@ -75,13 +79,37 @@ class StockMetaData(PolygonPaginator):
     def __init__(self, ticker: str, all_: bool):
         self.ticker = ticker
         self.all_ = all_
-        self.payload = {"active": True, "market": "stocs", "limit": 1000}
+        self.payload = {"active": True, "market": "stocks", "limit": 1000}
+        super().__init__()
 
-    def get_data(self):
+    async def get_data(self):
         url = self.polygon_api + "/v3/reference/tickers"
         if not self.all_:
             self.payload["ticker"] = self.ticker
-        self.query_all(url=url, payload=self.payload)
+        await self.query_all(url=url, payload=self.payload)
+
+    def clean_metadata(self):
+        selected_keys = [
+            "ticker",
+            "name",
+            "type",
+            "active",
+            "market",
+            "locale",
+            "primary_exchange",
+            "currency_name",
+            "cik",
+        ]
+        for result_list in self.results:
+            for ticker in result_list["results"]:
+                t = {x: ticker.get(x) for x in selected_keys}
+                self.clean_results.append(t)
+
+    def clean_data_generator(self):
+        batch_size = 5000
+        for i in range(0, len(self.clean_results), batch_size):
+            clean_results_batch = self.clean_results[i : i + batch_size]
+            yield clean_results_batch
 
 
 class OptionsContracts(PolygonPaginator):
