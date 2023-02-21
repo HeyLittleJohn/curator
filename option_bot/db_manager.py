@@ -1,5 +1,4 @@
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from option_bot.schemas import StockTickers, TickerModel
