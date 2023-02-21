@@ -1,5 +1,3 @@
-import asyncio
-import json
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
@@ -25,6 +23,7 @@ def add_tickers_to_universe(kwargs_list):
     cpus_per_stock = floor(CPUS / len(kwargs_list))
     remaining_cpus = CPUS - cpus_per_stock * len(kwargs_list)
     for i in kwargs_list:
+        print(remaining_cpus)
         pass
     # TODO: Figure out the classes for the paginator, and how to run within multiple processes
     # NOTE: pass in the number of processes being used when this function is called (num of tickers)\
@@ -37,17 +36,12 @@ def remove_ticker_from_universe():
 
 async def fetch_stock_data(ticker: str = "", all_: bool = True):
     meta = StockMetaData(ticker, all_)
-    await meta.get_data()
-    meta.clean_metadata()
-    await update_stock_metadata(meta.clean_results)
-
-
-if __name__ == "__main__":
-    with open("stocks_file", "r") as f:
-        data = json.loads(f.read())
-    meta = StockMetaData("", True)
-    meta.results = [data]
+    await meta.query_data()
     meta.clean_metadata()
     clean_data_batches = meta.clean_data_generator()
     for batch in clean_data_batches:
-        asyncio.run(update_stock_metadata(batch))
+        await update_stock_metadata(batch)
+
+
+if __name__ == "__main__":
+    pass

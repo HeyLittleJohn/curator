@@ -3,11 +3,13 @@ import math
 import time
 from datetime import datetime
 from decimal import Decimal
-from multiprocessing import Lock, Pool
 
 import requests
 from proj_constants import log, POLYGON_API_KEY
 from utils import timestamp_to_datetime  # ,first_weekday_of_month
+
+
+# from multiprocessing import Lock, Pool
 
 
 # NOTE: perhaps rather than inherit, make these subclasses with the overall paginator \
@@ -82,7 +84,7 @@ class StockMetaData(PolygonPaginator):
         self.payload = {"active": True, "market": "stocks", "limit": 1000}
         super().__init__()
 
-    async def get_data(self):
+    async def query_data(self):
         url = self.polygon_api + "/v3/reference/tickers"
         if not self.all_:
             self.payload["ticker"] = self.ticker
