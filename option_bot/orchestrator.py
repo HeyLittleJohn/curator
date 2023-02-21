@@ -1,7 +1,13 @@
+import asyncio
+import json
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
+from db_manager import update_stock_metadata
 from polygon import StockMetaData
+
+
+# from schemas import TickerModel
 
 
 # from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts
@@ -29,7 +35,19 @@ def remove_ticker_from_universe():
     pass
 
 
-def fetch_stock_data(ticker: str, all_: bool = True):
+async def fetch_stock_data(ticker: str = "", all_: bool = True):
     meta = StockMetaData(ticker, all_)
-    meta.get_data()
-    # TODO: write results to the DB
+    await meta.get_data()
+    meta.clean_metadata()
+    await update_stock_metadata(meta.clean_results)
+
+
+if __name__ == "__main__":
+    with open("stocks_file", "r") as f:
+        data = json.loads(f.read())
+    meta = StockMetaData("", True)
+    meta.results = [data]
+    meta.clean_metadata()
+    clean_data_batches = meta.clean_data_generator()
+    for batch in clean_data_batches:
+        asyncio.run(update_stock_metadata(batch))

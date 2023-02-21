@@ -1,7 +1,8 @@
 import enum
 from datetime import datetime
-from http import server
+from typing import Optional
 
+from pydantic import BaseModel
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -33,16 +34,37 @@ class UTCNow(expression.FunctionElement):  # type: ignore[name-defined]
 class StockTickers(Base):
     __tablename__ = "stock_tickers"
     id = Column(Integer, primary_key=True, unique=True, autoincrement=True)
-    ticker_symbol = Column(String, nullable=False)
+    ticker = Column(String, unique=True, nullable=False)
     imported = Column(Boolean, nullable=False, server_default=expression.false())
-    type = Column(String, nullable=False)
-    name = Column(String)
+    name = Column(String, nullable=False)
+    active = Column(Boolean, nullable=False)
+    type = Column(String)
     market = Column(String)
     locale = Column(String)
-    exchange = Column(String)
+    primary_exchange = Column(String)
+    currency_name = Column(String)
     cik = Column(String)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+
+
+class TickerModel(BaseModel):
+    class Config:
+        orm_mode = True
+
+    ticker: str
+    imported: bool
+    name: str
+    type: str
+    active: bool
+    market: Optional[str]
+    locale: Optional[str]
+    primary_exchange: Optional[str]
+    currency_name: Optional[str]
+    cik: Optional[str]
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+    id: Optional[int]
 
 
 class OptionsTickers(Base):

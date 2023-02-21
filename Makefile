@@ -14,7 +14,7 @@ check:
 DESCRIPTION="DB Update"
 update_db:
 	alembic revision --autogenerate -m $(DESCRIPTION)
-	_upgrade_db
+	make _upgrade_db
 
 revert_db:
 	alembic downgrade -1
