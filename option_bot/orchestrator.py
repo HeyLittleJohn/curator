@@ -1,14 +1,16 @@
+import asyncio
+from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
-from db_manager import update_stock_metadata
-from polygon import StockMetaData
+from db_manager import lookup_ticker_id, update_stock_metadata, update_stock_prices
+from polygon_utils import HistoricalStockPrices, StockMetaData
 
 
 # from schemas import TickerModel
 
 
-# from polygon import HistoricalOptionsPrices, HistoricalStockPrices, OptionsContracts
+# from polygon import HistoricalOptionsPrices, , OptionsContracts
 
 
 CPUS = cpu_count()
@@ -34,7 +36,7 @@ def remove_ticker_from_universe():
     pass
 
 
-async def fetch_stock_data(ticker: str = "", all_: bool = True):
+async def fetch_stock_metadata(ticker: str = "", all_: bool = True):
     meta = StockMetaData(ticker, all_)
     await meta.query_data()
     meta.clean_metadata()
@@ -43,5 +45,15 @@ async def fetch_stock_data(ticker: str = "", all_: bool = True):
         await update_stock_metadata(batch)
 
 
+async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, all_: bool = False):
+    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+    ticker_id = await lookup_ticker_id(ticker, stock=True)
+    prices = HistoricalStockPrices(ticker, ticker_id, start_date, end_date)
+    await prices.query_data()
+    prices.clean_data()
+    await update_stock_prices(prices.clean_results)
+
+
 if __name__ == "__main__":
-    pass
+    asyncio.run(fetch_stock_prices("SPY", "2021-03-01", "2023-02-21"))
