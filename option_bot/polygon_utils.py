@@ -3,6 +3,7 @@ import math
 import time
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 
 import requests
 from proj_constants import log, POLYGON_API_KEY
@@ -12,8 +13,14 @@ from utils import timestamp_to_datetime  # ,first_weekday_of_month
 # from multiprocessing import Lock, Pool
 
 
-# NOTE: perhaps rather than inherit, make these subclasses with the overall paginator \
-# keeping track of all your queries/logs so that it sleeps appropriately
+class Timespans(Enum):
+    minute = "minute"
+    hour = "hour"
+    day = "day"
+    week = "week"
+    month = "month"
+    quarter = "quarter"
+    year = "year"
 
 
 class PolygonPaginator(object):
@@ -64,16 +71,6 @@ class PolygonPaginator(object):
             response.raise_for_status()
 
 
-class HistoricalStockPrices(PolygonPaginator):
-    """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
-
-    def __init__(
-        self,
-        ticker: str,
-    ):
-        pass
-
-
 class StockMetaData(PolygonPaginator):
     """Object to query the Polygon API and retrieve information about listed stocks. \
         It can be used to query for a single individual ticker or to pull the entire corpus"""
@@ -85,6 +82,7 @@ class StockMetaData(PolygonPaginator):
         super().__init__()
 
     async def query_data(self):
+        """"""
         url = self.polygon_api + "/v3/reference/tickers"
         if not self.all_:
             self.payload["ticker"] = self.ticker
@@ -108,10 +106,61 @@ class StockMetaData(PolygonPaginator):
                 self.clean_results.append(t)
 
     def clean_data_generator(self):
+        # TODO: move this to the Paginator class and dynamically set batchsize
         batch_size = 5000
         for i in range(0, len(self.clean_results), batch_size):
             clean_results_batch = self.clean_results[i : i + batch_size]
             yield clean_results_batch
+
+
+class HistoricalStockPrices(PolygonPaginator):
+    """Object to query Polygon API and retrieve historical prices for the underlying stock"""
+
+    def __init__(
+        self,
+        ticker: str,
+        ticker_id: int,
+        start_date: datetime,
+        end_date: datetime,
+        multiplier: int = 1,
+        timespan: Timespans = Timespans.day,
+        adjusted: bool = True,
+    ):
+        self.ticker = ticker
+        self.ticker_id = ticker_id
+        self.multiplier = multiplier
+        self.timespan = timespan.value
+        self.start_date = start_date.date()
+        self.end_date = end_date.date()
+        self.adjusted = adjusted
+        super().__init__()
+
+    async def query_data(self):
+        url = (
+            self.polygon_api
+            + f"/v2/aggs/ticker/{self.ticker}/range/{self.multiplier}/{self.timespan}/{self.start_date}/{self.end_date}"
+        )
+        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
+        await self.query_all(url, payload)
+
+    def clean_data(self):
+        key_mapping = {
+            "v": "volume",
+            "vw": "volume_weight_price",
+            "c": "close_price",
+            "o": "open_price",
+            "h": "high_price",
+            "l": "low_price",
+            "t": "as_of_date",
+            "n": "number_of_transactions",
+            "otc": "otc",
+        }
+        for page in self.results:
+            for record in page.get("results"):
+                t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                t["ticker_id"] = self.ticker_id
+                self.clean_results.append(t)
 
 
 class OptionsContracts(PolygonPaginator):
