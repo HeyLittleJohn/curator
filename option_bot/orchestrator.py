@@ -38,10 +38,8 @@ def remove_ticker_from_universe():
 
 async def fetch_stock_metadata(ticker: str = "", all_: bool = True):
     meta = StockMetaData(ticker, all_)
-    await meta.query_data()
-    meta.clean_metadata()
-    clean_data_batches = meta.clean_data_generator()
-    for batch in clean_data_batches:
+    await meta.fetch()
+    for batch in meta.clean_data_generator:
         await update_stock_metadata(batch)
 
 
@@ -50,9 +48,9 @@ async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, all_: 
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
     ticker_id = await lookup_ticker_id(ticker, stock=True)
     prices = HistoricalStockPrices(ticker, ticker_id, start_date, end_date)
-    await prices.query_data()
-    prices.clean_data()
-    await update_stock_prices(prices.clean_results)
+    await prices.fetch()
+    for batch in prices.clean_data_generator:
+        await update_stock_prices(batch)
 
 
 if __name__ == "__main__":
