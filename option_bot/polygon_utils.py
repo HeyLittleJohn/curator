@@ -35,6 +35,7 @@ class PolygonPaginator(object):
         self.query_time_log = []
         self.results = []
         self.clean_results = []
+        self.clean_data_generator = iter(())
 
     def _api_sleep_time(self) -> int:
         sleep_time = 60
@@ -70,6 +71,27 @@ class PolygonPaginator(object):
         else:
             response.raise_for_status()
 
+    def make_clean_generator(self):
+        record_size = len(self.clean_results[0])
+        batch_size = round(60000 / record_size)  # postgres input limit is ~65000
+        for i in range(0, len(self.clean_results), batch_size):
+            yield self.clean_results[i : i + batch_size]
+
+    async def query_data(self):
+        """shell function to be overwritten by every inheriting class"""
+        log.exception("Function undefined in inherited class")
+        raise Exception
+
+    def clean_data(self):
+        """shell function to be overwritten by every inheriting class"""
+        log.exception("Function undefined in inherited class")
+        raise Exception
+
+    async def fetch(self):
+        await self.query_data()
+        self.clean_data()
+        self.clean_data_generator = self.make_clean_generator()
+
 
 class StockMetaData(PolygonPaginator):
     """Object to query the Polygon API and retrieve information about listed stocks. \
@@ -88,7 +110,7 @@ class StockMetaData(PolygonPaginator):
             self.payload["ticker"] = self.ticker
         await self.query_all(url=url, payload=self.payload)
 
-    def clean_metadata(self):
+    def clean_data(self):
         selected_keys = [
             "ticker",
             "name",
@@ -104,13 +126,6 @@ class StockMetaData(PolygonPaginator):
             for ticker in result_list["results"]:
                 t = {x: ticker.get(x) for x in selected_keys}
                 self.clean_results.append(t)
-
-    def clean_data_generator(self):
-        # TODO: move this to the Paginator class and dynamically set batchsize
-        batch_size = 5000
-        for i in range(0, len(self.clean_results), batch_size):
-            clean_results_batch = self.clean_results[i : i + batch_size]
-            yield clean_results_batch
 
 
 class HistoricalStockPrices(PolygonPaginator):
