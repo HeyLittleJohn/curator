@@ -3,7 +3,13 @@ from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
-from db_manager import lookup_ticker_id, ticker_imported, update_stock_metadata, update_stock_prices
+from db_manager import (
+    lookup_ticker_id,
+    ticker_imported,
+    update_options_tickers,
+    update_stock_metadata,
+    update_stock_prices,
+)
 from polygon_utils import HistoricalStockPrices, OptionsContracts, StockMetaData
 
 
@@ -64,8 +70,10 @@ async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count:
     ticker_id = await lookup_ticker_id(ticker, stock=True)
     options = OptionsContracts(ticker, ticker_id, months_hist, cpu_count, all_)
     await options.fetch()
+    for batch in options.clean_data_generator:
+        await update_options_tickers(batch)
 
 
 if __name__ == "__main__":
 
-    asyncio.run(fetch_options_contracts("SPY", 24, 3))
+    asyncio.run(fetch_options_contracts("SPY", 24))
