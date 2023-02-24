@@ -3,8 +3,8 @@ from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
-from db_manager import lookup_ticker_id, update_stock_metadata, update_stock_prices
-from polygon_utils import HistoricalStockPrices, StockMetaData
+from db_manager import lookup_ticker_id, ticker_imported, update_stock_metadata, update_stock_prices
+from polygon_utils import HistoricalStockPrices, OptionsContracts, StockMetaData
 
 
 # from schemas import TickerModel
@@ -14,14 +14,14 @@ from polygon_utils import HistoricalStockPrices, StockMetaData
 
 
 CPUS = cpu_count()
+# NOTE Chain together the following process:
+# Pull ticker data, pull ticker price data, save price data, analyze ticker info,\
+# pass output to Options queries, pull options tickers, pull options prices, \
+# save tickers and prices, calculate greeks
 
 
 def add_tickers_to_universe(kwargs_list):
-    """Chain together the following process:
-    Pull ticker data, pull ticker price data, save price data, analyze ticker info,\
-    pass output to Options queries, pull options tickers, pull options prices, \
-    save tickers and prices, calculate greeks
-    """
+
     cpus_per_stock = floor(CPUS / len(kwargs_list))
     remaining_cpus = CPUS - cpus_per_stock * len(kwargs_list)
     for i in kwargs_list:
@@ -51,7 +51,21 @@ async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, all_: 
     await prices.fetch()
     for batch in prices.clean_data_generator:
         await update_stock_prices(batch)
+    await ticker_imported(ticker_id)
+
+
+async def test_query_query():
+    results = await ticker_imported(9912)  # testing SPY id lookup
+    print(results)
+
+
+async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count: int = 1, all_=False):
+    # NOTE: if refreshing, just pull the current month, months_hist = 1
+    ticker_id = await lookup_ticker_id(ticker, stock=True)
+    options = OptionsContracts(ticker, ticker_id, months_hist, cpu_count, all_)
+    await options.fetch()
 
 
 if __name__ == "__main__":
-    asyncio.run(fetch_stock_prices("SPY", "2021-03-01", "2023-02-21"))
+
+    asyncio.run(fetch_options_contracts("SPY", 24, 3))

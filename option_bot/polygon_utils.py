@@ -5,12 +5,11 @@ from datetime import datetime
 from decimal import Decimal
 from enum import Enum
 
-import requests
+import numpy as np
+from aiohttp import request
+from aiomultiprocess import Pool
 from proj_constants import log, POLYGON_API_KEY
-from utils import timestamp_to_datetime  # ,first_weekday_of_month
-
-
-# from multiprocessing import Lock, Pool
+from utils import first_weekday_of_month, timestamp_to_datetime
 
 
 class Timespans(Enum):
@@ -54,22 +53,22 @@ class PolygonPaginator(object):
             self.query_time_log = []
 
         log.info(f"{url} {payload} overload:{overload}")
-        response = requests.get(url, params=payload)
-        log.info(f"status code: {response.status_code}")
+        async with request(method="GET", url=url, params=payload) as response:
+            log.info(f"status code: {response.status}")
 
-        self.query_count += 1
+            self.query_count += 1
 
-        if response.status_code == 200:
-            results = response.json()
-            self.query_time_log.append({"request_id": results.get("request_id"), "query_timestamp": time.time()})
-            self.results.append(results)
-            next_url = results.get("next_url")
-            if next_url:
-                await self.query_all(next_url)
-        elif response.status_code == 429:
-            await self.query_all(url, payload, overload=True)
-        else:
-            response.raise_for_status()
+            if response.status == 200:
+                results = await response.json()
+                self.query_time_log.append({"request_id": results.get("request_id"), "query_timestamp": time.time()})
+                self.results.append(results)
+                next_url = results.get("next_url")
+                if next_url:
+                    await self.query_all(next_url)
+            elif response.status == 429:
+                await self.query_all(url, payload, overload=True)
+            else:
+                response.raise_for_status()
 
     def make_clean_generator(self):
         record_size = len(self.clean_results[0])
@@ -191,20 +190,59 @@ class OptionsContracts(PolygonPaginator):
             The current price of the underlying ticker
     """
 
-    def __init__(self, ticker: str, base_date: datetime, current_price: Decimal, exp_date: tuple[datetime, datetime]):
+    def __init__(self, ticker: str, ticker_id: int, months_hist: int = 24, cpu_count: int = 1, all_: bool = False):
         self.ticker = ticker
-        self.base_date = base_date
-        self.current_price = current_price
-        self.strike_range = self._determine_strike_range()
+        self.ticker_id = ticker_id
+        self.months_hist = months_hist
+        self.cpu_count = cpu_count
+        self.base_dates = self._determine_base_dates()
+        self.all_ = all_
+        super().__init__()
 
-    def _determine_strike_range(self) -> tuple[int, int]:
-        """function to determine strike range based on stock snapshot
+    def _determine_base_dates(self) -> list[datetime]:
+        year_month_array = []
+        counter = 0
+        year = datetime.now().year
+        month = datetime.now().month
+        while counter <= self.months_hist:
+            year_month_array.append(
+                str(year) + "-" + str(month) if len(str(month)) > 1 else str(year) + "-0" + str(month)
+            )
+            if month == 1:
+                month = 12
+                year -= 1
+            else:
+                month -= 1
+            counter += 1
+        return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-        Returns:
-            strike_range: tuple of ints with the max and min strike prices of interest
-        """
-        strike_range = ()
-        return strike_range
+    async def query_data(self):
+        url = self.polygon_api + "/v3/reference/options/contracts"
+        payload = {"limit": 1000}
+        if not self.all_:
+            payload["underlying_ticker"] = self.ticker
+        args = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
+        async with Pool(processes=self.cpu_count) as pool:
+            async for result in pool.starmap(self.query_all, args):
+                self.results.append(result)
+
+    def clean_data(self):
+        key_mapping = {
+            "ticker": "option_ticker",
+            "expiration_date": "expiration_date",
+            "strike_price": "strike_price",
+            "contract_type": "contract_type",
+            "shares_per_contract": "shares_per_contract",
+            "primary_exchange": "primary_exchange",
+            "exercise_style": "exercise_style",
+            "cfi": "cfi",
+        }
+        for page in self.results:
+            for record in page.get("results"):
+                t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                t["underlying_ticker_id"] = self.ticker_id
+                self.clean_results.append(t)
+                self.clean_results = list({v["option_ticker"]: v for v in self.clean_results}.values())
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
@@ -265,6 +303,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
             self.query_all(url)
             ticker_results = self._clean_api_results(ticker)
             self.hist_prices.append(ticker_results)
+
+    def query_data(self):
+        pass
+
+    def clean_data(self):
+        pass
 
 
 # TODO: figure out how you are going to handle data refreshing. Simply update the whole history?

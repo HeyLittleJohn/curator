@@ -19,6 +19,8 @@ torch = "^1.13.1"
 #pyrh = {path = "/home/jhirschi/pyrh"}
 asyncpg = "^0.27.0"
 psycopg = {extras = ["binary"], version = "^3.1.8"}
+aiomultiprocess = "^0.9.0"
+aiohttp = "^3.8.4"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.0.4"

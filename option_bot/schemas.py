@@ -36,6 +36,7 @@ class StockTickers(Base):
     id = Column(Integer, primary_key=True, unique=True, autoincrement=True)
     ticker = Column(String, unique=True, nullable=False)
     imported = Column(Boolean, nullable=False, server_default=expression.false())
+    options_imported = Column(Boolean, nullable=False, server_default=expression.false())
     name = Column(String, nullable=False)
     active = Column(Boolean, nullable=False)
     type = Column(String)
@@ -90,10 +91,14 @@ class OptionsTickers(Base):
     __tablename__ = "options_tickers"
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
     underlying_ticker_id = Column(Integer, ForeignKey("stock_tickers.id", ondelete="CASCADE"), nullable=False)
-    option_ticker = Column(String, nullable=False)
-    exp_date = Column(Date, nullable=False)
+    options_ticker = Column(String, nullable=False, unique=True)
+    expiration_date = Column(Date, nullable=False)
     strike_price = Column(DECIMAL(19, 4), nullable=False)
-    option_type = Column(Enum(OptionType), nullable=False)
+    contract_type = Column(Enum(OptionType), nullable=False)
+    shares_per_contract = Column(Integer)
+    cfi = Column(String)
+    exercise_style = Column(String)
+    primary_exchange = Column(String)
 
 
 class OptionsPricesRaw(Base):
