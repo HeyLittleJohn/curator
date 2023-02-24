@@ -22,7 +22,7 @@ from sqlalchemy.types import Date, DateTime
 Base = declarative_base()
 
 
-class OptionType(enum.Enum):
+class ContractType(enum.Enum):
     call = "call"
     put = "put"
 
@@ -94,7 +94,7 @@ class OptionsTickers(Base):
     options_ticker = Column(String, nullable=False, unique=True)
     expiration_date = Column(Date, nullable=False)
     strike_price = Column(DECIMAL(19, 4), nullable=False)
-    contract_type = Column(Enum(OptionType), nullable=False)
+    contract_type = Column(Enum(ContractType), nullable=False)
     shares_per_contract = Column(Integer)
     cfi = Column(String)
     exercise_style = Column(String)
