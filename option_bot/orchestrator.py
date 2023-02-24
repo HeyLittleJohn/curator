@@ -10,7 +10,12 @@ from db_manager import (
     update_stock_metadata,
     update_stock_prices,
 )
-from polygon_utils import HistoricalStockPrices, OptionsContracts, StockMetaData
+from polygon_utils import (
+    HistoricalOptionsPrices,
+    HistoricalStockPrices,
+    OptionsContracts,
+    StockMetaData,
+)
 
 
 # from schemas import TickerModel
@@ -72,6 +77,11 @@ async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count:
     await options.fetch()
     for batch in options.clean_data_generator:
         await update_options_tickers(batch)
+
+
+async def fetch_options_prices(o_tickers: list[str], cpu_count: int = 1):
+    prices = HistoricalOptionsPrices(o_tickers, cpu_count)
+    # TODO: Figure out the multiprocessing and asyncio
 
 
 if __name__ == "__main__":

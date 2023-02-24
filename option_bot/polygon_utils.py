@@ -2,7 +2,6 @@ import asyncio
 import math
 import time
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
 
 import numpy as np
@@ -178,17 +177,7 @@ class HistoricalStockPrices(PolygonPaginator):
 
 
 class OptionsContracts(PolygonPaginator):
-    """Object to query options contract tickers for a given underlying ticker based on given dates.
-
-    Attributes:
-        ticker: str
-            the underlying stock ticker
-        base_date: [datetime]
-            the date that is the basis for current observations. \
-            In other words: the date at which you are looking at the chain of options data
-        current_price: decimal
-            The current price of the underlying ticker
-    """
+    """Object to query options contract tickers for a given underlying ticker based on given dates."""
 
     def __init__(self, ticker: str, ticker_id: int, months_hist: int = 24, cpu_count: int = 1, all_: bool = False):
         self.ticker = ticker
@@ -246,41 +235,11 @@ class OptionsContracts(PolygonPaginator):
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
-    """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker
+    """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
 
-    Attributes:
-        options_tickers: List[str]
-            the options contract tickers
-
-        exp_date: [datetime, datetime]
-            the range of option expiration dates to be queried
-
-        strike_price: decimal
-            the strike price range want to include in our queries
-
-    Note:
-        exp_date and strike_price are inclusive ranges
-    """
-
-    def __init__(
-        self,
-        tickers: list[str],
-        base_date: datetime,
-    ):
-        self.o_tickers = tickers
-        self.base_date = base_date  # as_of date
-        self.ticker_list = self._options_tickers_constructor()
-
-    def _window_of_focus_dates(self):
-        """"""
-        return
-
-    def _time_conversion(self):
-        return
-
-    def _clean_api_results(self, ticker: str) -> list[dict]:
-        clean_results = []
-        return clean_results
+    def __init__(self, o_tickers: list[str], cpu_count: int = 1):
+        self.o_tickers = o_tickers
+        self.cpu_count = cpu_count
 
     def get_historical_prices(
         self, start_date: datetime, end_date: datetime, timespan: str = "day", multiplier: int = 1
