@@ -56,11 +56,11 @@ class PolygonPaginator(object):
             log.info(f"status code: {response.status}")
 
             self.query_count += 1
-
+            results = {"temp": "dict"}
             if response.status == 200:
                 results = await response.json()
                 self.query_time_log.append({"request_id": results.get("request_id"), "query_timestamp": time.time()})
-                self.results.append(results)
+                self.results.append(results)  # convert this to Yield
                 next_url = results.get("next_url")
                 if next_url:
                     await self.query_all(next_url)
@@ -68,6 +68,9 @@ class PolygonPaginator(object):
                 await self.query_all(url, payload, overload=True)
             else:
                 response.raise_for_status()
+
+            if results.get("request_id") == self.query_time_log[0].get("request_id"):
+                pass
 
     def make_clean_generator(self):
         record_size = len(self.clean_results[0])
@@ -212,8 +215,8 @@ class OptionsContracts(PolygonPaginator):
             payload["underlying_ticker"] = self.ticker
         args = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
         async with Pool(processes=self.cpu_count) as pool:
-            async for result in pool.starmap(self.query_all, args):
-                self.results.append(result)
+            async for value in pool.starmap(self.query_all, args):
+                pass
 
     def clean_data(self):
         key_mapping = {

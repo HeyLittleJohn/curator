@@ -86,4 +86,4 @@ async def fetch_options_prices(o_tickers: list[str], cpu_count: int = 1):
 
 if __name__ == "__main__":
 
-    asyncio.run(fetch_options_contracts("SPY", 24))
+    asyncio.run(fetch_options_contracts("SPY", 1))
