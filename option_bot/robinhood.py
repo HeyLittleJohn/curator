@@ -1,11 +1,15 @@
-import os
-
+from proj_constants import RH_USERNAME, RH_PASSWORD, QR
 from pyrh import Robinhood
 
-USERNAME = os.getenv("RH_USERNAME")
-PASSWORD = os.getenv("RH_PASSWORD")
-QR = os.getenv("RH_QR")
 
-
-rh = Robinhood(username=USERNAME, password=PASSWORD, mfa=QR)
+rh = Robinhood(username=RH_USERNAME, password=RH_PASSWORD, mfa=QR)
 rh.login()
+
+("Portfolio Data:")
+print(rh.portfolio())
+print()
+("Positions Data:")
+print(rh.positions())
+print()
+print("Account Data:")
+print(rh.get_account())
