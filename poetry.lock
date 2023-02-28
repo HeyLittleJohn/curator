@@ -749,6 +749,27 @@ files = [
 ]
 
 [[package]]
+name = "marshmallow"
+version = "3.19.0"
+description = "A lightweight library for converting complex datatypes to and from native Python datatypes."
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "marshmallow-3.19.0-py3-none-any.whl", hash = "sha256:93f0958568da045b0021ec6aeb7ac37c81bfcccbb9a0e7ed8559885070b3a19b"},
+    {file = "marshmallow-3.19.0.tar.gz", hash = "sha256:90032c0fd650ce94b6ec6dc8dfeb0e3ff50c144586462c389b81a07205bedb78"},
+]
+
+[package.dependencies]
+packaging = ">=17.0"
+
+[package.extras]
+dev = ["flake8 (==5.0.4)", "flake8-bugbear (==22.10.25)", "mypy (==0.990)", "pre-commit (>=2.4,<3.0)", "pytest", "pytz", "simplejson", "tox"]
+docs = ["alabaster (==0.7.12)", "autodocsumm (==0.2.9)", "sphinx (==5.3.0)", "sphinx-issues (==3.0.1)", "sphinx-version-warning (==1.1.2)"]
+lint = ["flake8 (==5.0.4)", "flake8-bugbear (==22.10.25)", "mypy (==0.990)", "pre-commit (>=2.4,<3.0)"]
+tests = ["pytest", "pytz", "simplejson"]
+
+[[package]]
 name = "mccabe"
 version = "0.7.0"
 description = "McCabe checker, plugin for flake8"
@@ -1023,6 +1044,18 @@ files = [
 [package.dependencies]
 setuptools = "*"
 wheel = "*"
+
+[[package]]
+name = "packaging"
+version = "23.0"
+description = "Core utilities for Python packages"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "packaging-23.0-py3-none-any.whl", hash = "sha256:714ac14496c3e68c99c29b00845f7a2b85f3bb6f1078fd9f72fd20f0570002b2"},
+    {file = "packaging-23.0.tar.gz", hash = "sha256:b6ad297f8907de0fa2fe1ccbd26fdaf387f5f47c7275fedf8cce89f99446cf97"},
+]
 
 [[package]]
 name = "pandas"
@@ -1301,6 +1334,45 @@ files = [
     {file = "pyflakes-3.0.1-py2.py3-none-any.whl", hash = "sha256:ec55bf7fe21fff7f1ad2f7da62363d749e2a470500eab1b555334b67aa1ef8cf"},
     {file = "pyflakes-3.0.1.tar.gz", hash = "sha256:ec8b276a6b60bd80defed25add7e439881c19e64850afd9b346283d4165fd0fd"},
 ]
+
+[[package]]
+name = "pyotp"
+version = "2.8.0"
+description = "Python One Time Password Library"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+files = [
+    {file = "pyotp-2.8.0-py3-none-any.whl", hash = "sha256:889d037fdde6accad28531fc62a790f089e5dfd5b638773e9ee004cce074a2e5"},
+    {file = "pyotp-2.8.0.tar.gz", hash = "sha256:c2f5e17d9da92d8ec1f7de6331ab08116b9115adbabcba6e208d46fc49a98c5a"},
+]
+
+[[package]]
+name = "pyrh"
+version = "2.1.1"
+description = "Unofficial Robinhood Python API"
+category = "main"
+optional = false
+python-versions = "^3.8.1"
+files = []
+develop = false
+
+[package.dependencies]
+certifi = "^2022.12.7"
+marshmallow = "^3.5.1"
+pyotp = "^2.8.0"
+python-dateutil = "^2.8"
+pytz = "^2022.7.1"
+requests = "^2.23"
+yarl = "^1.4.2"
+
+[package.extras]
+docs = ["autodocsumm (>=0.2.9,<0.3.0)", "sphinx (>=5.3.0,<6.0.0)", "sphinx-autodoc-typehints (>=1.19.5,<2.0.0)", "sphinx_rtd_theme (>=1.1.1,<2.0.0)"]
+notebook = ["notebook (>=6.0.3,<7.0.0)", "python-dotenv (>=0.13.0,<0.14.0)"]
+
+[package.source]
+type = "directory"
+url = "../pyrh"
 
 [[package]]
 name = "python-dateutil"
@@ -1823,4 +1895,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "9ad1e267301089da0be2b80dbf59f1b30e4274166a4f1a18f4668ead174dba7c"
+content-hash = "dda9fad8042defa0e2770cb770d1a179bcae65a055761064df1d01a131fdcc23"

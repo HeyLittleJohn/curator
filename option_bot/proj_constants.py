@@ -38,7 +38,9 @@ def db_uri_maker() -> str:
 POSTGRES_DATABASE_URL = db_uri_maker()
 
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
-
+RH_USERNAME = os.getenv("RH_USERNAME")
+RH_PASSWORD = os.getenv("RH_PASSWORD")
+QR = os.getenv("RH_QR")
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
