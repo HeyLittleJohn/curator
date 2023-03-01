@@ -41,6 +41,8 @@ POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 RH_USERNAME = os.getenv("RH_USERNAME")
 RH_PASSWORD = os.getenv("RH_PASSWORD")
 QR = os.getenv("RH_QR")
+TRAD_IRA = os.getenv("TRAD_IRA")
+ROTH_IRA = os.getenv("ROTH_IRA")
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
