@@ -3,11 +3,13 @@ import math
 import time
 from datetime import datetime
 from enum import Enum
+from multiprocessing import Manager
 
 import numpy as np
 from aiohttp import request
 from aiomultiprocess import Pool
 from proj_constants import log, POLYGON_API_KEY
+from sentry_sdk import capture_exception
 from utils import first_weekday_of_month, timestamp_to_datetime
 
 
@@ -183,13 +185,14 @@ class OptionsContracts(PolygonPaginator):
     """Object to query options contract tickers for a given underlying ticker based on given dates."""
 
     def __init__(self, ticker: str, ticker_id: int, months_hist: int = 24, cpu_count: int = 1, all_: bool = False):
+        super().__init__()
         self.ticker = ticker
         self.ticker_id = ticker_id
         self.months_hist = months_hist
         self.cpu_count = cpu_count
         self.base_dates = self._determine_base_dates()
         self.all_ = all_
-        super().__init__()
+        self.results = Manager().list()
 
     def _determine_base_dates(self) -> list[datetime]:
         year_month_array = []
@@ -214,13 +217,13 @@ class OptionsContracts(PolygonPaginator):
         if not self.all_:
             payload["underlying_ticker"] = self.ticker
         args = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
-        async with Pool(processes=self.cpu_count) as pool:
-            async for value in pool.starmap(self.query_all, args):
-                pass
+        async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
+            async for _ in pool.starmap(self.query_all, args):
+                continue
 
     def clean_data(self):
         key_mapping = {
-            "ticker": "option_ticker",
+            "ticker": "options_ticker",
             "expiration_date": "expiration_date",
             "strike_price": "strike_price",
             "contract_type": "contract_type",
@@ -234,7 +237,7 @@ class OptionsContracts(PolygonPaginator):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
                 t["underlying_ticker_id"] = self.ticker_id
                 self.clean_results.append(t)
-                self.clean_results = list({v["option_ticker"]: v for v in self.clean_results}.values())
+                self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
 
 
 class HistoricalOptionsPrices(PolygonPaginator):

@@ -3,11 +3,17 @@ import json
 import logging
 import os
 import sys
-from logging import Logger
+from logging import FileHandler, Logger, StreamHandler
 
+import sentry_sdk
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+
+sentry_sdk.init(
+    dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
+    traces_sample_rate=1.0,
+)
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
 DEBUG = True
@@ -88,7 +94,12 @@ else:
     log.setLevel(logging.INFO)
 
 # Add a stream handler to stdout
-stream_handler = logging.StreamHandler(sys.stdout)
+stream_handler = StreamHandler(sys.stdout)
 stream_handler.setFormatter(log_formatter)
 
+# Add a filehandler
+file_handler = FileHandler(".logs/option_bot_logs.log")
+file_handler.setFormatter(log_formatter)
+
 log.addHandler(stream_handler)
+log.addHandler(file_handler)
