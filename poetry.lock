@@ -1371,8 +1371,10 @@ docs = ["autodocsumm (>=0.2.9,<0.3.0)", "sphinx (>=5.3.0,<6.0.0)", "sphinx-autod
 notebook = ["notebook (>=6.0.3,<7.0.0)", "python-dotenv (>=0.13.0,<0.14.0)"]
 
 [package.source]
-type = "directory"
-url = "../pyrh"
+type = "git"
+url = "https://github.com/robinhood-unofficial/pyrh.git"
+reference = "HEAD"
+resolved_reference = "a18a717279c2a9507542d5477c9bab055c494631"
 
 [[package]]
 name = "python-dateutil"
@@ -1895,4 +1897,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "dda9fad8042defa0e2770cb770d1a179bcae65a055761064df1d01a131fdcc23"
+content-hash = "794f265e826566fe88e4b26da70eaa339daf615608f7d1bf2a8b7cad0f9df079"
