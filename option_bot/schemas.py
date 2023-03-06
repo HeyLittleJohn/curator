@@ -1,5 +1,6 @@
 import enum
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel
@@ -99,6 +100,22 @@ class OptionsTickers(Base):
     cfi = Column(String)
     exercise_style = Column(String)
     primary_exchange = Column(String)
+
+
+class OptionsTickerModel(BaseModel):
+    class Config:
+        orm_mode = True
+
+    options_ticker: str
+    underlying_ticker_id: int
+    expiration_date: date
+    strike_price: Decimal
+    contract_type: ContractType
+    shares_per_contract: Optional[int]
+    cfi: Optional[str]
+    exercise_style: Optional[str]
+    primary_exchange: Optional[str]
+    id: Optional[int]
 
 
 class OptionsPricesRaw(Base):
