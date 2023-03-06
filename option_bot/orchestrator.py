@@ -82,7 +82,7 @@ async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count:
 
 
 async def fetch_options_prices(ticker: str, cpu_count: int = 1):
-    o_tickers = await query_options_tickers(ticker)
+    o_tickers = await query_options_tickers(ticker)  # NOTE: may need to adjust to not pull all columns from table
     prices = HistoricalOptionsPrices(o_tickers, cpu_count)
     # TODO: Figure out the multiprocessing and asyncio
 

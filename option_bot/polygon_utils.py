@@ -297,9 +297,3 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def clean_data(self):
         pass
-
-
-# TODO: figure out how you are going to handle data refreshing. Simply update the whole history?
-# Or append and find a way to adjust for splits?
-
-# TODO: Make all functions with these classes async ready, and make the classes ready to manage multiple workers
