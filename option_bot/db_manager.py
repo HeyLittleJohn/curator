@@ -1,4 +1,4 @@
-from operator import index
+from datetime import datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from option_bot.schemas import (
     OptionsPricesRaw,
+    OptionsTickerModel,
     OptionsTickers,
     StockPricesRaw,
     StockTickers,
@@ -31,6 +32,32 @@ async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool =
     table = StockTickers if stock else OptionsTickers
     column = StockTickers.ticker if stock else OptionsTickers.option_ticker
     return (await session.execute(select(table.id).where(column == ticker_str))).scalars().one()
+
+
+@Session
+async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str], stock: bool = True) -> int:
+    """Function to find the pk_id of a given ticker. Handles both Stock and Option ticker lookups
+
+    Args:
+        ticker_list: list[str]
+        This is the canonical ticker (like SPY or O:SPY251219C00650000)
+
+        stock: bool (default=True)
+        An indicator of whether this is a stock (default) or option ticker being looked up
+
+    Returns:
+        ticker_ids: tuple(int)
+        The pk_id of the ticker on either the StockTickers or OptionsTickers tables"""
+    table = StockTickers if stock else OptionsTickers
+    column = StockTickers.ticker if stock else OptionsTickers.options_ticker
+    return (await session.execute(select(table.id).where(column.in_(ticker_list)))).scalars().all()
+
+
+@Session
+async def query_options_tickers(session: AsyncSession, stock_ticker: str) -> list[OptionsTickerModel]:
+    return (
+        await session.scalars(select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker))
+    ).all()
 
 
 @Session

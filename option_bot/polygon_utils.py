@@ -1,14 +1,16 @@
 import asyncio
 import math
 import time
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from multiprocessing import Manager
 
 import numpy as np
 from aiohttp import request
 from aiomultiprocess import Pool
+from dateutil.relativedelta import relativedelta
 from proj_constants import log, POLYGON_API_KEY
+from schemas import OptionsTickerModel
 from sentry_sdk import capture_exception
 from utils import first_weekday_of_month, timestamp_to_datetime
 
@@ -243,13 +245,30 @@ class OptionsContracts(PolygonPaginator):
 class HistoricalOptionsPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
 
-    def __init__(self, o_tickers: list[str], cpu_count: int = 1):
+    def __init__(
+        self,
+        o_tickers: list[OptionsTickerModel],
+        cpu_count: int = 1,
+        multiplier: int = 1,
+        month_hist: int = 24,
+        timespan: Timespans = Timespans.day,
+        adjusted: bool = True,
+    ):
+        super().__init__()
         self.o_tickers = o_tickers
         self.cpu_count = cpu_count
+        self.timespan = timespan.value
+        self.multiplier = multiplier
+        self.adjusted = adjusted
+        self.month_hist = month_hist
+        self.results = Manager().list()
 
-    def get_historical_prices(
-        self, start_date: datetime, end_date: datetime, timespan: str = "day", multiplier: int = 1
-    ):
+    def _determine_start_end_dates(self, exp_date: date):
+        end_date = datetime.now().date() if exp_date > datetime.now().date() else exp_date
+        start_date = end_date - relativedelta(months=self.month_hist)
+        return start_date, end_date
+
+    async def query_data(self):
         """api call to the aggs endpoint
 
         Parameters:
@@ -260,17 +279,21 @@ class HistoricalOptionsPrices(PolygonPaginator):
             multiplier (int) : multiples of the timespan that should be included in the call. Defaults to 1
 
         """
-        # TODO: implement async/await so it pulls and processes more quickly
-        # TODO: pull the function inputs from self, not as inputs
-        self.hist_prices = []
-        for ticker in self.ticker_list:
-            url = self.polygon_api + f"/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}/{start_date}/{end_date}"
-            self.query_all(url)
-            ticker_results = self._clean_api_results(ticker)
-            self.hist_prices.append(ticker_results)
+        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
 
-    def query_data(self):
-        pass
+        args = [
+            [
+                self.polygon_api
+                + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/{0}/{1}".format(
+                    self._determine_start_end_dates(ticker.expiration_date)
+                ),
+                payload,
+            ]
+            for ticker in self.o_tickers
+        ]
+        async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
+            async for _ in pool.starmap(self.query_all, args):
+                continue
 
     def clean_data(self):
         pass

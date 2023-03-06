@@ -4,7 +4,9 @@ from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
 from db_manager import (
+    lookup_multi_ticker_ids,
     lookup_ticker_id,
+    query_options_tickers,
     ticker_imported,
     update_options_tickers,
     update_stock_metadata,
@@ -66,7 +68,7 @@ async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, all_: 
 
 
 async def test_query_query():
-    results = await ticker_imported(9912)  # testing SPY id lookup
+    results = await query_options_tickers("SPY")  # 9912 is SPY id
     print(results)
 
 
@@ -79,11 +81,12 @@ async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count:
         await update_options_tickers(batch)
 
 
-async def fetch_options_prices(o_tickers: list[str], cpu_count: int = 1):
+async def fetch_options_prices(ticker: str, cpu_count: int = 1):
+    o_tickers = await query_options_tickers(ticker)
     prices = HistoricalOptionsPrices(o_tickers, cpu_count)
     # TODO: Figure out the multiprocessing and asyncio
 
 
 if __name__ == "__main__":
 
-    asyncio.run(fetch_options_contracts("SPY", 1))
+    asyncio.run(test_query_query())  # fetch_options_contracts("SPY", 1))
