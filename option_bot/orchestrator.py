@@ -3,11 +3,11 @@ from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
-from db_manager import (
-    lookup_multi_ticker_ids,
+from db_manager import (  # lookup_multi_ticker_ids,
     lookup_ticker_id,
     query_options_tickers,
     ticker_imported,
+    update_options_prices,
     update_options_tickers,
     update_stock_metadata,
     update_stock_prices,
@@ -83,10 +83,12 @@ async def fetch_options_contracts(ticker: str, months_hist: int = 24, cpu_count:
 
 async def fetch_options_prices(ticker: str, cpu_count: int = 1):
     o_tickers = await query_options_tickers(ticker)  # NOTE: may need to adjust to not pull all columns from table
-    prices = HistoricalOptionsPrices(o_tickers, cpu_count)
-    # TODO: Figure out the multiprocessing and asyncio
+    o_prices = HistoricalOptionsPrices(o_tickers, cpu_count)
+    await o_prices.fetch()
+    for batch in o_prices.clean_data_generator:
+        await update_options_prices(batch)
 
 
 if __name__ == "__main__":
 
-    asyncio.run(test_query_query())  # fetch_options_contracts("SPY", 1))
+    asyncio.run(fetch_options_prices("SPY"))  # fetch_options_contracts("SPY", 1))

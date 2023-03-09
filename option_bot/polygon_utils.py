@@ -10,7 +10,7 @@ from aiohttp import request
 from aiomultiprocess import Pool
 from dateutil.relativedelta import relativedelta
 from proj_constants import log, POLYGON_API_KEY
-from schemas import OptionsTickerModel
+from schemas import OptionsTickerModel, PriceModel
 from sentry_sdk import capture_exception
 from utils import first_weekday_of_month, timestamp_to_datetime
 
@@ -152,7 +152,7 @@ class HistoricalStockPrices(PolygonPaginator):
         self.timespan = timespan.value
         self.start_date = start_date.date()
         self.end_date = end_date.date()
-        self.adjusted = adjusted
+        self.adjusted = "true" if adjusted else "false"
         super().__init__()
 
     async def query_data(self):
@@ -256,10 +256,11 @@ class HistoricalOptionsPrices(PolygonPaginator):
     ):
         super().__init__()
         self.o_tickers = o_tickers
+        self.o_ticker_id_lookup = {}
         self.cpu_count = cpu_count
         self.timespan = timespan.value
         self.multiplier = multiplier
-        self.adjusted = adjusted
+        self.adjusted = "true" if adjusted else "false"
         self.month_hist = month_hist
         self.results = Manager().list()
 
@@ -267,6 +268,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
         end_date = datetime.now().date() if exp_date > datetime.now().date() else exp_date
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
+
+    def _prep_query_args(self) -> list[str]:
+        args = []
+        for 
+        return args
+    
 
     async def query_data(self):
         """api call to the aggs endpoint
@@ -284,9 +291,9 @@ class HistoricalOptionsPrices(PolygonPaginator):
         args = [
             [
                 self.polygon_api
-                + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/{0}/{1}".format(
-                    self._determine_start_end_dates(ticker.expiration_date)
-                ),
+                + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
+                + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
+                + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
                 payload,
             ]
             for ticker in self.o_tickers
@@ -296,4 +303,31 @@ class HistoricalOptionsPrices(PolygonPaginator):
                 continue
 
     def clean_data(self):
-        pass
+        results_hash = {}
+        key_mapping = {
+            "v": "volume",
+            "vw": "volume_weight_price",
+            "c": "close_price",
+            "o": "open_price",
+            "h": "high_price",
+            "l": "low_price",
+            "t": "as_of_date",
+            "n": "number_of_transactions",
+        }
+        for page in self.results:
+            for record in page.get("results"):
+                t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                if results_hash[record["ticker"]]:
+                    results_hash.append(t)
+                else:
+                    results_hash[record["ticker"]] = [t]
+        self.clean_results = self._clean_record_hash(results_hash)
+
+        def _clean_record_hash(self, results_hash: dict) -> list[PriceModel]:
+            clean_results = []
+            return clean_results
+        
+        #TODO define the PriceModel in schemas.py
+        #TODO make an efficient way to convert the hash map to a dict with option_ticker ids
+        #NOTE do this using the o_tickers list, no more pings to the DB
