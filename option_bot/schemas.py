@@ -138,4 +138,9 @@ class OptionsPricesRaw(Base):
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
+class PriceModel(BaseModel):
+    class Config:
+        orm_mode = True
+
+
 # View: OptionsPricesRich where you calculate volatility, greeks, implied volatility, daily return?

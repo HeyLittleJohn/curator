@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -136,3 +134,27 @@ async def update_options_tickers(session: AsyncSession, data: list[dict]):
         ),
     )
     await session.execute(stmt)
+
+
+@Session
+async def update_options_prices(
+    session: AsyncSession,
+    data: list[dict],
+):
+    # TODO: update list[dict] to list[StockPriceModel]
+    stmt = insert(OptionsPricesRaw).values(data)
+    stmt = stmt.on_conflict_do_update(
+        constraint="uq_options_price",
+        set_=dict(
+            as_of_date=stmt.excluded.as_of_date,
+            close_price=stmt.excluded.close_price,
+            open_price=stmt.excluded.open_price,
+            high_price=stmt.excluded.high_price,
+            low_price=stmt.excluded.low_price,
+            volume_weight_price=stmt.excluded.volume_weight_price,
+            volume=stmt.excluded.volume,
+            number_of_transactions=stmt.excluded.number_of_transactions,
+            is_overwritten=True,
+        ),
+    )
+    return await session.execute(stmt)
