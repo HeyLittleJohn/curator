@@ -287,17 +287,19 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
         """
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-
-        args = [
-            [
+        args = []
+        for ticker in self.o_tickers:
+            self.o_ticker_id_lookup[ticker.options_ticker] = ticker.id
+            args.append(
+                [
                 self.polygon_api
                 + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
                 + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
                 + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
                 payload,
             ]
-            for ticker in self.o_tickers
-        ]
+            )
+
         async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
             async for _ in pool.starmap(self.query_all, args):
                 continue
@@ -318,15 +320,16 @@ class HistoricalOptionsPrices(PolygonPaginator):
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
                 t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                if results_hash[record["ticker"]]:
-                    results_hash.append(t)
-                else:
-                    results_hash[record["ticker"]] = [t]
-        self.clean_results = self._clean_record_hash(results_hash)
+                if not results_hash[record["ticker"]]:
+                    results_hash[record["ticker"]] = []
+                results_hash.append(t)
+                    
+        self._clean_record_hash(results_hash)
 
-        def _clean_record_hash(self, results_hash: dict) -> list[PriceModel]:
-            clean_results = []
-            return clean_results
+    def _clean_record_hash(self, results_hash: dict) -> list[PriceModel]:
+        for ticker in results_hash:
+            o_ticker_id = self.o_ticker_id_lookup[ticker]
+
         
         #TODO define the PriceModel in schemas.py
         #TODO make an efficient way to convert the hash map to a dict with option_ticker ids
