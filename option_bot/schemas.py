@@ -120,10 +120,9 @@ class OptionsTickerModel(BaseModel):
 
 class OptionsPricesRaw(Base):
     __tablename__ = "option_prices"
-    __table_args__ = (UniqueConstraint("options_ticker_id", "price_date", "as_of_date", name="uq_options_price"),)
+    __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_price"),)
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
     options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
-    price_date = Column(Date, nullable=False)
     as_of_date = Column(DateTime, nullable=False)
     close_price = Column(DECIMAL(19, 4), nullable=False)
     open_price = Column(DECIMAL(19, 4), nullable=False)
@@ -132,7 +131,6 @@ class OptionsPricesRaw(Base):
     volume_weight_price = Column(DECIMAL(19, 4), nullable=False)
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
-    otc = Column(Boolean)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
     is_overwritten = Column(Boolean, server_default=expression.false())
@@ -141,6 +139,9 @@ class OptionsPricesRaw(Base):
 class PriceModel(BaseModel):
     class Config:
         orm_mode = True
+
+    options_ticker_id: int
+    as_of_date: datetime
 
 
 # View: OptionsPricesRich where you calculate volatility, greeks, implied volatility, daily return?
