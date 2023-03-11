@@ -5,7 +5,7 @@ from dateutil.relativedelta import relativedelta
 from orchestrator import add_tickers_to_universe
 
 
-DEFAULT_DAYS = 120
+DEFAULT_DAYS = 500
 DEFAULT_START_DATE = datetime.now() - relativedelta(months=24)
 
 

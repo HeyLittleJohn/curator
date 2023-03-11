@@ -326,7 +326,3 @@ class HistoricalOptionsPrices(PolygonPaginator):
         for ticker in results_hash:
             o_ticker_id = self.o_ticker_id_lookup[ticker]
             self.clean_results.extend([dict(x, **{"options_ticker_id": o_ticker_id}) for x in results_hash[ticker]])
-
-        # TODO define the PriceModel in schemas.py
-        # TODO make an efficient way to convert the hash map to a dict with option_ticker ids
-        # NOTE do this using the o_tickers list, no more pings to the DB
