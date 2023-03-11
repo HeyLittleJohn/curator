@@ -20,12 +20,6 @@ from polygon_utils import (
 )
 
 
-# from schemas import TickerModel
-
-
-# from polygon import HistoricalOptionsPrices, , OptionsContracts
-
-
 CPUS = cpu_count()
 # NOTE Chain together the following process:
 # Pull ticker data, pull ticker price data, save price data, analyze ticker info,\
@@ -90,5 +84,5 @@ async def fetch_options_prices(ticker: str, cpu_count: int = 1):
 
 
 if __name__ == "__main__":
-
-    asyncio.run(fetch_options_prices("SPY"))  # fetch_options_contracts("SPY", 1))
+    pass
+    # asyncio.run(fetch_options_prices("SPY"))  # fetch_options_contracts("SPY", 1))
