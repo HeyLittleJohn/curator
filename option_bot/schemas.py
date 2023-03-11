@@ -142,6 +142,14 @@ class PriceModel(BaseModel):
 
     options_ticker_id: int
     as_of_date: datetime
+    close_price: Decimal
+    open_price: Decimal
+    high_price: Decimal
+    low_price: Decimal
+    volume_weight_price: Decimal
+    volume: Decimal
+    number_of_transactions: int
+    id: Optional[int]
 
 
 # View: OptionsPricesRich where you calculate volatility, greeks, implied volatility, daily return?
