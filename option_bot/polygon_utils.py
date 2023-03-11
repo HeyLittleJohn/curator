@@ -269,12 +269,6 @@ class HistoricalOptionsPrices(PolygonPaginator):
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
 
-    def _prep_query_args(self) -> list[str]:
-        args = []
-        for 
-        return args
-    
-
     async def query_data(self):
         """api call to the aggs endpoint
 
@@ -292,12 +286,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
             self.o_ticker_id_lookup[ticker.options_ticker] = ticker.id
             args.append(
                 [
-                self.polygon_api
-                + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
-                + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
-                + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
-                payload,
-            ]
+                    self.polygon_api
+                    + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
+                    + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
+                    + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
+                    payload,
+                ]
             )
 
         async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
@@ -317,20 +311,21 @@ class HistoricalOptionsPrices(PolygonPaginator):
             "n": "number_of_transactions",
         }
         for page in self.results:
-            for record in page.get("results"):
-                t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                if not results_hash[record["ticker"]]:
-                    results_hash[record["ticker"]] = []
-                results_hash.append(t)
-                    
+            if page.get("results"):
+                for record in page.get("results"):
+                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                    if not results_hash.get(page["ticker"]):
+                        results_hash[page["ticker"]] = []
+                    results_hash[page["ticker"]].append(t)
+
         self._clean_record_hash(results_hash)
 
     def _clean_record_hash(self, results_hash: dict) -> list[PriceModel]:
         for ticker in results_hash:
             o_ticker_id = self.o_ticker_id_lookup[ticker]
+            self.clean_results.extend([dict(x, **{"options_ticker_id": o_ticker_id}) for x in results_hash[ticker]])
 
-        
-        #TODO define the PriceModel in schemas.py
-        #TODO make an efficient way to convert the hash map to a dict with option_ticker ids
-        #NOTE do this using the o_tickers list, no more pings to the DB
+        # TODO define the PriceModel in schemas.py
+        # TODO make an efficient way to convert the hash map to a dict with option_ticker ids
+        # NOTE do this using the o_tickers list, no more pings to the DB
