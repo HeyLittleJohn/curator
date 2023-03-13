@@ -6,7 +6,8 @@ from orchestrator import add_tickers_to_universe
 
 
 DEFAULT_DAYS = 500
-DEFAULT_START_DATE = datetime.now() - relativedelta(months=24)
+DEFAULT_MONTHS_HIST = 24
+DEFAULT_START_DATE = datetime.now() - relativedelta(months=DEFAULT_MONTHS_HIST)
 
 
 def add_ticker(args):
@@ -14,7 +15,9 @@ def add_ticker(args):
     for ticker in args.tickers:
         a = {
             "ticker": ticker,
-            "start_date": datetime.strptime(args.startdate) if args.startdate else DEFAULT_START_DATE,
+            "start_date": datetime.strptime(args.startdate)
+            if args.startdate
+            else DEFAULT_START_DATE,  # NOTE: this is type datetime
             "price_days": args.pricedays if args.pricedays else DEFAULT_DAYS,
         }
         kwargs_list.append(a)
@@ -38,7 +41,6 @@ def main():
         type=str,
         nargs="*",
         metavar="underlying tickers",
-        default=None,  # don't think this can be None for a required add_argument()
         help="Adds underlying tickers to our options data pull universe",
     )
 
@@ -47,6 +49,7 @@ def main():
         "--startdate",
         type=str,
         nargs=1,
+        default=DEFAULT_START_DATE.strftime("%Y-%m"),
         metavar="YYYY-MM",
         help="YYYY-MM formatted date str indicating start of data pull for s",
     )
@@ -64,12 +67,29 @@ def main():
     parser.add_argument(
         "-r",
         "--remove",
+        action="store_true",
+        help="Removes the specified underlying ticker(s) from our options data pull universe",
+    )
+
+    parser.add_argument(
+        "-aa",
+        "--add-all",
+        default=False,
+        action="store_true",
+        help="Adds all stocks tickers to the command. This works with refresh, or adding tickers",
+    )
+
+    parser.add_argument(
+        "-ref",
+        "--refresh",
+        default=False,
+        action="store_true",
         help="Removes the specified underlying ticker(s) from our options data pull universe",
     )
 
     args = parser.parse_args()
 
-    if args.remove is None:
+    if not args.remove:
         add_ticker(args)
 
     else:
