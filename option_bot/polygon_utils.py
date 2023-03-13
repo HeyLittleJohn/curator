@@ -28,7 +28,12 @@ class Timespans(Enum):
 
 class PolygonPaginator(object):
     """API paginator interface for calls to the Polygon API. \
-        It tracks queries made to the polygon API and calcs potential need for sleep"""
+        It tracks queries made to the polygon API and calcs potential need for sleep
+
+        self.query_all() is the universal function to query the api until all results have been returned.
+
+        self.fetch() will ultimately result in the population of self.clean_results (a list of dicts with polygon data)
+        self.clean_results will be converted into a generator that can be batch input into the db"""
 
     MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
     polygon_api = "https://api.polygon.io"
@@ -195,7 +200,7 @@ class OptionsContracts(PolygonPaginator):
         self.cpu_count = cpu_count
         self.base_dates = self._determine_base_dates()
         self.all_ = all_
-        self.results = Manager().list()
+        self.results = Manager().list()  # overwritting super().__init__()
 
     def _determine_base_dates(self) -> list[datetime]:
         year_month_array = []
@@ -240,7 +245,8 @@ class OptionsContracts(PolygonPaginator):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
                 t["underlying_ticker_id"] = self.ticker_id
                 self.clean_results.append(t)
-                self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
+        self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
+        # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
