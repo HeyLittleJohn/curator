@@ -28,19 +28,24 @@ CPUS = cpu_count()
 # save tickers and prices, calculate greeks
 
 
-def add_tickers_to_universe(kwargs_list):
+async def add_tickers_to_universe(kwargs_list):
 
     cpus_per_stock = floor(CPUS / len(kwargs_list))
     remaining_cpus = CPUS - cpus_per_stock * len(kwargs_list)
-    for i in kwargs_list:
-        print(remaining_cpus)
-        pass
+    for ticker_dict in kwargs_list:
+        ticker_dict["cpus"] = cpus_per_stock
+        await ticker_import_process(**ticker_dict)
     # TODO: Figure out the classes for the paginator, and how to run within multiple processes
     # NOTE: pass in the number of processes being used when this function is called (num of tickers)\
     #  so that the calls to get historical prices can be made with multiple processes as well
 
 
-def ticker_import_process(ticker: str, start_date: datetime, price_days: int):
+async def ticker_import_process(ticker: str, start_date: datetime, end_date: datetime, price_days: int, cpus: int):
+    await fetch_stock_metadata(ticker)
+    await fetch_stock_prices(ticker, start_date, end_date)
+    await fetch_options_contracts(
+        ticker,
+    )
     pass
 
 

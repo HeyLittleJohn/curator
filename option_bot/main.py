@@ -2,7 +2,7 @@ import argparse
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
-from orchestrator import add_tickers_to_universe
+from orchestrator import add_tickers_to_universe, remove_ticker_from_universe
 
 
 DEFAULT_DAYS = 500
@@ -10,24 +10,23 @@ DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = datetime.now() - relativedelta(months=DEFAULT_MONTHS_HIST)
 
 
-def add_ticker(args):
-    add_tickers_to_universe(
+async def add_ticker(args):
+    await add_tickers_to_universe(
         [
             {
                 "ticker": ticker,
-                "start_date": datetime.strptime(args.startdate)
-                if args.startdate
-                else DEFAULT_START_DATE,  # NOTE: this is type datetime
-                "price_days": args.pricedays if args.pricedays else DEFAULT_DAYS,
+                "start_date": datetime.strptime(args.startdate),
+                "opt_price_days": args.pricedays,
+                "months_hist": args.monthhist,
             }
             for ticker in args.tickers
         ]
     )
 
 
-def remove_ticker(args):
-    # remove from tickers table, allow cascading to remove everything else
-    return
+def remove_tickers(args):
+    tickers = list(args.tickers) if type(args.tickers) != list else args.tickers
+    remove_ticker_from_universe(tickers)
 
 
 def main():
@@ -56,7 +55,17 @@ def main():
     )
 
     parser.add_argument(
-        "-p",
+        "-m",
+        "--monthhist",
+        type=str,
+        nargs=1,
+        default=DEFAULT_MONTHS_HIST,
+        metavar="int: Months of historical data",
+        help="The number of months of historical options contracts you are going to pull",
+    )
+
+    parser.add_argument(
+        "-op",
         "--pricedays",
         type=int,
         nargs=1,
