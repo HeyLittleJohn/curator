@@ -11,17 +11,18 @@ DEFAULT_START_DATE = datetime.now() - relativedelta(months=DEFAULT_MONTHS_HIST)
 
 
 def add_ticker(args):
-    kwargs_list = []
-    for ticker in args.tickers:
-        a = {
-            "ticker": ticker,
-            "start_date": datetime.strptime(args.startdate)
-            if args.startdate
-            else DEFAULT_START_DATE,  # NOTE: this is type datetime
-            "price_days": args.pricedays if args.pricedays else DEFAULT_DAYS,
-        }
-        kwargs_list.append(a)
-    add_tickers_to_universe(kwargs_list)
+    add_tickers_to_universe(
+        [
+            {
+                "ticker": ticker,
+                "start_date": datetime.strptime(args.startdate)
+                if args.startdate
+                else DEFAULT_START_DATE,  # NOTE: this is type datetime
+                "price_days": args.pricedays if args.pricedays else DEFAULT_DAYS,
+            }
+            for ticker in args.tickers
+        ]
+    )
 
 
 def remove_ticker(args):

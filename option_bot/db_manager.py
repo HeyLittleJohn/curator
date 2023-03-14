@@ -1,4 +1,4 @@
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -158,3 +158,8 @@ async def update_options_prices(
         ),
     )
     return await session.execute(stmt)
+
+
+@Session
+async def delete_stock_ticker(session: AsyncSession, ticker: str):
+    session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))
