@@ -4,6 +4,7 @@ from math import floor
 from multiprocessing import cpu_count  # , Lock, Pool
 
 from db_manager import (  # lookup_multi_ticker_ids,
+    delete_stock_ticker,
     lookup_ticker_id,
     query_options_tickers,
     ticker_imported,
@@ -39,8 +40,13 @@ def add_tickers_to_universe(kwargs_list):
     #  so that the calls to get historical prices can be made with multiple processes as well
 
 
-def remove_ticker_from_universe():
+def ticker_import_process(ticker: str, start_date: datetime, price_days: int):
     pass
+
+
+async def remove_ticker_from_universe(tickers: list[str]):
+    for ticker in tickers:
+        await delete_stock_ticker(ticker)
 
 
 async def fetch_stock_metadata(ticker: str = "", all_: bool = True):
