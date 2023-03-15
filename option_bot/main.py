@@ -1,8 +1,9 @@
 import argparse
+import asyncio
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
-from orchestrator import add_tickers_to_universe, remove_ticker_from_universe
+from orchestrator import add_tickers_to_universe, remove_tickers_from_universe
 
 
 DEFAULT_DAYS = 500
@@ -16,7 +17,7 @@ async def add_ticker(args):
             {
                 "ticker": ticker,
                 "start_date": datetime.strptime(args.startdate),
-                "opt_price_days": args.pricedays,
+                "end_date": datetime.strptime(args.enddate),
                 "months_hist": args.monthhist,
             }
             for ticker in args.tickers
@@ -24,9 +25,21 @@ async def add_ticker(args):
     )
 
 
-def remove_tickers(args):
+async def remove_tickers(args):
     tickers = list(args.tickers) if type(args.tickers) != list else args.tickers
-    remove_ticker_from_universe(tickers)
+    await remove_tickers_from_universe(tickers)
+
+
+async def add_all_tickers(args):
+    pass
+
+
+async def refresh_tickers(args):
+    pass
+
+
+async def refresh_all_tickers(args):
+    pass
 
 
 def main():
@@ -45,13 +58,23 @@ def main():
     )
 
     parser.add_argument(
-        "-d",
+        "-s",
         "--startdate",
         type=str,
         nargs=1,
         default=DEFAULT_START_DATE.strftime("%Y-%m"),
         metavar="YYYY-MM",
-        help="YYYY-MM formatted date str indicating start of data pull for s",
+        help="YYYY-MM formatted date str indicating start of data pull for ticker stock price",
+    )
+
+    parser.add_argument(
+        "-e",
+        "--enddate",
+        type=str,
+        nargs=1,
+        default=datetime.now().strftime("%Y-%m"),
+        metavar="YYYY-MM",
+        help="YYYY-MM formatted date str indicating end date of for ticker stock price",
     )
 
     parser.add_argument(
@@ -62,16 +85,6 @@ def main():
         default=DEFAULT_MONTHS_HIST,
         metavar="int: Months of historical data",
         help="The number of months of historical options contracts you are going to pull",
-    )
-
-    parser.add_argument(
-        "-op",
-        "--pricedays",
-        type=int,
-        nargs=1,
-        default=DEFAULT_DAYS,
-        metavar="num_days",
-        help="Int specifying number of price days wanted for each options contract",
     )
 
     parser.add_argument(
@@ -98,12 +111,13 @@ def main():
     )
 
     args = parser.parse_args()
+    pass
 
-    if not args.remove:
-        add_ticker(args)
+    if args.remove:
+        asyncio.run(remove_tickers(args))
 
     else:
-        remove_ticker(args)
+        asyncio.run(add_ticker(args))
 
 
 if __name__ == "__main__":
