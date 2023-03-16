@@ -14,7 +14,7 @@
             "args":["SPY", "HOOD", "-r"]
         },
         {
-            "name": "Robinhood",
+            "name": "Generic Python Debug",
             "type": "python",
             "request": "launch",
             "program": "${file}",
