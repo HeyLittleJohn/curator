@@ -301,13 +301,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
         args = []
         for ticker in self.o_tickers:
-            self.o_ticker_id_lookup[ticker["options_ticker"]] = ticker["id"]
+            self.o_ticker_id_lookup[ticker.options_ticker] = ticker.id
             args.append(
                 [
                     self.polygon_api
-                    + f"/v2/aggs/ticker/{ticker["options_ticker"]}/range/{self.multiplier}/{self.timespan}/"
-                    + f"{self._determine_start_end_dates(ticker["expiration_date"])[0]}/"
-                    + f"{self._determine_start_end_dates(ticker["expiration_date"])[1]}",
+                    + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
+                    + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
+                    + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
                     payload,
                 ]
             )
