@@ -111,7 +111,7 @@ class StockMetaData(PolygonPaginator):
     def __init__(self, ticker: str, all_: bool):
         self.ticker = ticker
         self.all_ = all_
-        self.payload = {"active": True, "market": "stocks", "limit": 1000}
+        self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
     async def query_data(self):
