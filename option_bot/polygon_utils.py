@@ -192,7 +192,15 @@ class HistoricalStockPrices(PolygonPaginator):
 class OptionsContracts(PolygonPaginator):
     """Object to query options contract tickers for a given underlying ticker based on given dates."""
 
-    def __init__(self, ticker: str, ticker_id: int, months_hist: int = 24, cpu_count: int = 1, all_: bool = False):
+    def __init__(
+        self,
+        ticker: str,
+        ticker_id: int,
+        months_hist: int = 24,
+        cpu_count: int = 1,
+        all_: bool = False,
+        all_ticker_id_lookup: dict | None = None,
+    ):
         super().__init__()
         self.ticker = ticker
         self.ticker_id = ticker_id
@@ -200,6 +208,7 @@ class OptionsContracts(PolygonPaginator):
         self.cpu_count = cpu_count
         self.base_dates = self._determine_base_dates()
         self.all_ = all_
+        self.all_ticker_id_lookup = all_ticker_id_lookup
         self.results = Manager().list()  # overwritting super().__init__()
 
     def _determine_base_dates(self) -> list[datetime]:
@@ -243,7 +252,9 @@ class OptionsContracts(PolygonPaginator):
         for page in self.results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = self.ticker_id
+                t["underlying_ticker_id"] = (
+                    self.all_ticker_id_lookup[record.get("underlying_ticker")] if self.all_ else self.ticker_id
+                )
                 self.clean_results.append(t)
         self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique

@@ -12,6 +12,8 @@ from option_bot.schemas import (
 )
 from option_bot.utils import Session
 
+from .polygon_utils import StockMetaData
+
 
 @Session
 async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool = True) -> int:
@@ -56,6 +58,11 @@ async def query_options_tickers(session: AsyncSession, stock_ticker: str) -> lis
     return (
         await session.scalars(select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker))
     ).all()
+
+
+@Session
+async def query_all_stock_tickers(session: AsyncSession) -> list[TickerModel]:
+    return (await session.execute(select(StockTickers.id, StockTickers.ticker))).all()
 
 
 @Session
