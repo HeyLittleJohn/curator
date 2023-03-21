@@ -199,7 +199,7 @@ class OptionsContracts(PolygonPaginator):
         months_hist: int = 24,
         cpu_count: int = 1,
         all_: bool = False,
-        all_ticker_id_lookup: dict | None = None,
+        ticker_id_lookup: dict | None = None,
     ):
         super().__init__()
         self.ticker = ticker
@@ -208,7 +208,7 @@ class OptionsContracts(PolygonPaginator):
         self.cpu_count = cpu_count
         self.base_dates = self._determine_base_dates()
         self.all_ = all_
-        self.all_ticker_id_lookup = all_ticker_id_lookup
+        self.ticker_id_lookup = ticker_id_lookup
         self.results = Manager().list()  # overwritting super().__init__()
 
     def _determine_base_dates(self) -> list[datetime]:
@@ -253,7 +253,7 @@ class OptionsContracts(PolygonPaginator):
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
                 t["underlying_ticker_id"] = (
-                    self.all_ticker_id_lookup[record.get("underlying_ticker")] if self.all_ else self.ticker_id
+                    self.ticker_id_lookup[record.get("underlying_ticker")] if self.all_ else self.ticker_id
                 )
                 self.clean_results.append(t)
         self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
@@ -301,13 +301,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
         args = []
         for ticker in self.o_tickers:
-            self.o_ticker_id_lookup[ticker.options_ticker] = ticker.id
+            self.o_ticker_id_lookup[ticker["options_ticker"]] = ticker["id"]
             args.append(
                 [
                     self.polygon_api
-                    + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
-                    + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
-                    + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
+                    + f"/v2/aggs/ticker/{ticker["options_ticker"]}/range/{self.multiplier}/{self.timespan}/"
+                    + f"{self._determine_start_end_dates(ticker["expiration_date"])[0]}/"
+                    + f"{self._determine_start_end_dates(ticker["expiration_date"])[1]}",
                     payload,
                 ]
             )
