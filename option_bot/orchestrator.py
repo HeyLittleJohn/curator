@@ -165,7 +165,7 @@ async def fetch_options_contracts(
 
 async def fetch_options_prices(ticker: str, cpu_count: int = 1, batch: list[dict] | None = None):
 
-    o_tickers = await query_options_tickers(ticker)
+    o_tickers = await query_options_tickers(ticker, batch)
     # NOTE: may need to adjust to not pull all columns from table
 
     o_prices = HistoricalOptionsPrices(o_tickers, cpu_count)

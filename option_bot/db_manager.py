@@ -12,8 +12,6 @@ from option_bot.schemas import (
 )
 from option_bot.utils import Session
 
-from .polygon_utils import StockMetaData
-
 
 @Session
 async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool = True) -> int:
@@ -54,10 +52,15 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
 
 
 @Session
-async def query_options_tickers(session: AsyncSession, stock_ticker: str) -> list[OptionsTickerModel]:
-    return (
-        await session.scalars(select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker))
-    ).all()
+async def query_options_tickers(
+    session: AsyncSession, stock_ticker: str, batch: list[dict] | None = None
+) -> list[OptionsTickerModel]:
+    stmt = select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker)
+    if batch:
+        batch_tickers = [x["options_ticker"] for x in batch]
+        stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
+
+    return (await session.scalars(stmt)).all()
 
 
 @Session
