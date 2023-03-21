@@ -32,8 +32,8 @@ async def add_ticker(args):
         [
             {
                 "ticker": ticker,
-                "start_date": datetime.strptime(args.startdate),
-                "end_date": datetime.strptime(args.enddate),
+                "start_date": datetime.strptime(args.startdate, "%Y-%m"),
+                "end_date": datetime.strptime(args.enddate, "%Y-%m"),
                 "months_hist": args.monthhist,
             }
             for ticker in args.tickers
@@ -138,7 +138,10 @@ def main():
         asyncio.run(refresh_tickers(args))
 
     else:
-        asyncio.run(add_ticker(args))
+        if args.add_all:
+            asyncio.run(add_all_tickers(args))
+        else:
+            asyncio.run(add_ticker(args))
 
 
 if __name__ == "__main__":
