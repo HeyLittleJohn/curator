@@ -93,20 +93,21 @@ async def import_all_ticker_metadata(args, stock_queue: Queue, option_queue: Que
 
 
 async def import_all_stock_prices(args: dict, stock_queue: Queue):
-    ticker_lookup = await stock_queue.get()
-    for ticker_id in ticker_lookup:
-        await fetch_stock_prices(
-            ticker=ticker_lookup[ticker_id],
-            start_date=args["start_date"],
-            end_date=args["end_date"],
-            ticker_id=ticker_id,
-        )
+    while True:
+        ticker_lookup = await stock_queue.get()
+        for ticker_id in ticker_lookup:
+            await fetch_stock_prices(
+                ticker=ticker_lookup[ticker_id],
+                start_date=args["start_date"],
+                end_date=args["end_date"],
+                ticker_id=ticker_id,
+            )
 
 
 async def import_all_options_prices(args: dict, option_queue: Queue):
-    contract_batch = await option_queue.get()
-    for contract in contract_batch:
-        await fetch_options_prices()
+    while True:
+        contract_batch = await option_queue.get()
+        await fetch_options_prices(ticker="all_", cpu_count=CPUS, batch=contract_batch)
 
 
 async def fetch_stock_metadata(ticker: str = "", all_: bool = True):
@@ -164,12 +165,13 @@ async def fetch_options_contracts(
 
 
 async def fetch_options_prices(ticker: str, cpu_count: int = 1, batch: list[dict] | None = None):
-
+    log.info(f"pulling options contract info for ticker: {ticker}")
     o_tickers = await query_options_tickers(ticker, batch)
     # NOTE: may need to adjust to not pull all columns from table
-
+    log.info(f"pulling options contract pricing for ticker: {ticker}")
     o_prices = HistoricalOptionsPrices(o_tickers, cpu_count)
     await o_prices.fetch()
+    log.info(f"uploading option batch prices for ticker: {ticker}")
     for batch in o_prices.clean_data_generator:
         await update_options_prices(batch)
 
