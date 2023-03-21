@@ -3,8 +3,24 @@ import asyncio
 from datetime import datetime
 
 from dateutil.relativedelta import relativedelta
-from orchestrator import add_tickers_to_universe, remove_tickers_from_universe
 
+from option_bot.exceptions import InvalidCLIArgs
+from option_bot.orchestrator import (
+    add_tickers_to_universe,
+    import_all_tickers,
+    remove_tickers_from_universe,
+)
+
+
+# def my_excepthook(etype, value, traceback):
+#     if issubclass(etype, BaseException):
+#         etype = etype.__name__
+#         etype = "Proj" + etype
+#         etype = globals()[etype]
+#     sys.__excepthook__(etype, etype(*value.args), traceback)
+
+
+# sys.excepthook = my_excepthook
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
@@ -31,7 +47,7 @@ async def remove_tickers(args):
 
 
 async def add_all_tickers(args):
-    pass
+    await import_all_tickers(args)
 
 
 async def refresh_tickers(args):
@@ -114,7 +130,12 @@ def main():
     pass
 
     if args.remove:
+        if args.add_all:
+            raise InvalidCLIArgs("Can't --remove and --add_all at the same time. Remove explicit tickers via CLI")
         asyncio.run(remove_tickers(args))
+
+    elif args.refresh:
+        asyncio.run(refresh_tickers(args))
 
     else:
         asyncio.run(add_ticker(args))
