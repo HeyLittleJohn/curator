@@ -11,7 +11,7 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["SPY", "HOOD", "-r"]
+            "args":["all_", "-aa"]
         },
         {
             "name": "Generic Python Debug",

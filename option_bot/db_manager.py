@@ -28,7 +28,7 @@ async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool =
         ticker_id: int
         The pk_id of the ticker on either the StockTickers or OptionsTickers tables"""
     table = StockTickers if stock else OptionsTickers
-    column = StockTickers.ticker if stock else OptionsTickers.option_ticker
+    column = StockTickers.ticker if stock else OptionsTickers.options_ticker
     return (await session.execute(select(table.id).where(column == ticker_str))).scalars().one()
 
 

@@ -2,6 +2,7 @@ import argparse
 import asyncio
 from datetime import datetime
 
+import sentry_sdk
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import InvalidCLIArgs
@@ -11,6 +12,11 @@ from option_bot.orchestrator import (
     remove_tickers_from_universe,
 )
 
+
+sentry_sdk.init(
+    dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
+    traces_sample_rate=1.0,
+)
 
 # def my_excepthook(etype, value, traceback):
 #     if issubclass(etype, BaseException):
@@ -32,8 +38,8 @@ async def add_ticker(args):
         [
             {
                 "ticker": ticker,
-                "start_date": datetime.strptime(args.startdate, "%Y-%m"),
-                "end_date": datetime.strptime(args.enddate, "%Y-%m"),
+                "start_date": args.startdate,
+                "end_date": args.enddate,
                 "months_hist": args.monthhist,
             }
             for ticker in args.tickers
@@ -127,7 +133,8 @@ def main():
     )
 
     args = parser.parse_args()
-    pass
+    args.startdate = datetime.strptime(args.startdate, "%Y-%m")
+    args.enddate = datetime.strptime(args.enddate, "%Y-%m")
 
     if args.remove:
         if args.add_all:
