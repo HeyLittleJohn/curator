@@ -83,31 +83,39 @@ async def remove_tickers_from_universe(tickers: list[str]):
 
 
 async def import_all_ticker_metadata(args, stock_queue: Queue, option_queue: Queue):
-    await fetch_stock_metadata(all_=True)
+    # log.info("fetching all stock ticker metadata")
+    # await fetch_stock_metadata(all_=True)
     ticker_results = await query_all_stock_tickers()
     ticker_lookup = [{x[1]: x[0]} for x in ticker_results]
     await stock_queue.put(ticker_lookup)
+    log.info("fetching all options contracts metadata")
     await fetch_options_contracts(
-        ticker="all_", all_=True, all_ticker_id_lookup=ticker_lookup, cpu_count=CPUS / 4, queue=option_queue
+        ticker="all_", all_=True, ticker_id_lookup=ticker_lookup, cpu_count=CPUS - 1, queue=option_queue
     )
 
 
 async def import_all_stock_prices(args: dict, stock_queue: Queue):
+    """
+    ticker_lookup from the queue will be a list of dicts
+    each dict will be a {"ticker": "ticker_id"} pair.
+
+    eg: [{'AAWW': 125}, {'ABGI': 138}, {'AA': 94}]
+    """
     while True:
         ticker_lookup = await stock_queue.get()
-        for ticker_id in ticker_lookup:
+        for ticker_id_pair in ticker_lookup:
             await fetch_stock_prices(
-                ticker=ticker_lookup[ticker_id],
-                start_date=args["start_date"],
-                end_date=args["end_date"],
-                ticker_id=ticker_id,
+                ticker=list(ticker_id_pair.keys())[0],
+                start_date=args.startdate,
+                end_date=args.enddate,
+                ticker_id=list(ticker_id_pair.values())[0],
             )
 
 
 async def import_all_options_prices(args: dict, option_queue: Queue):
     while True:
         contract_batch = await option_queue.get()
-        await fetch_options_prices(ticker="all_", cpu_count=CPUS, batch=contract_batch)
+        await fetch_options_prices(ticker="all_", cpu_count=CPUS - 1, batch=contract_batch)
 
 
 async def fetch_stock_metadata(ticker: str = "", all_: bool = True):
@@ -152,7 +160,7 @@ async def fetch_options_contracts(
     queue: asyncio.Queue | None = None,
 ):
     # NOTE: if refreshing, just pull the current month, months_hist = 1
-    if not ticker_id:
+    if not all_ and not ticker_id:
         ticker_id = await lookup_ticker_id(ticker, stock=True)
     options = OptionsContracts(ticker, ticker_id, months_hist, cpu_count, all_, ticker_id_lookup)
     await options.fetch()
