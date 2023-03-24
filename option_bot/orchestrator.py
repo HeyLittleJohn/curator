@@ -2,7 +2,7 @@ import asyncio
 from asyncio import Queue
 from datetime import datetime
 from math import floor
-from multiprocessing import cpu_count
+from multiprocessing import cpu_count, Manager
 
 from aiohttp import ClientSession, TCPConnector
 from aiomultiprocess import Pool
@@ -37,16 +37,19 @@ async def add_tickers_to_universe(kwargs_list):
     cpus_per_stock = floor(CPUS / len(kwargs_list))
     remaining_cpus = CPUS - cpus_per_stock * len(kwargs_list)
     async with ClientSession(connector=connector) as session:
+        with Manager() as manager:
+            shared_session = manager.Namespace()
+            shared_session.session = session
 
-        for i, ticker_dict in enumerate(kwargs_list):
-            ticker_dict["session"] = session
-            ticker_dict["cpus"] = cpus_per_stock
-            if i + 1 <= remaining_cpus:
-                ticker_dict["cpus"] += 1
+            for i, ticker_dict in enumerate(kwargs_list):
+                ticker_dict["session"] = shared_session
+                ticker_dict["cpus"] = cpus_per_stock
+                if i + 1 <= remaining_cpus:
+                    ticker_dict["cpus"] += 1
 
-        async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
-            async for _ in pool.starmap(ticker_import_process, kwargs_list):
-                continue
+            async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
+                async for _ in pool.starmap(ticker_import_process, kwargs_list):
+                    continue
 
 
 async def ticker_import_process(
@@ -80,11 +83,14 @@ months_hist: {months_hist}, cpus: {cpus}"
 async def import_all_tickers(args):
     async with ClientSession(connector=connector) as session:
         stock_queue, option_queue = Queue(), Queue()
-        await asyncio.gather(
-            import_all_ticker_metadata(stock_queue, option_queue, session),
-            import_all_stock_prices(args, stock_queue, session),
-            import_all_options_prices(option_queue, session),
-        )
+        with Manager() as manager:
+            shared_session = manager.Namespace()
+            shared_session.session = session
+            await asyncio.gather(
+                import_all_ticker_metadata(stock_queue, option_queue, shared_session),
+                import_all_stock_prices(args, stock_queue, shared_session),
+                import_all_options_prices(option_queue, shared_session),
+            )
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
