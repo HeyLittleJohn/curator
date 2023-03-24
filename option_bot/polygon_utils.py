@@ -6,7 +6,7 @@ from enum import Enum
 from multiprocessing import Manager
 
 import numpy as np
-from aiohttp import ClientSession
+from aiohttp import request
 from aiomultiprocess import Pool
 from dateutil.relativedelta import relativedelta
 from sentry_sdk import capture_exception
@@ -39,8 +39,7 @@ class PolygonPaginator(object):
     MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
     polygon_api = "https://api.polygon.io"
 
-    def __init__(self, session: ClientSession):  # , query_count: int = 0):
-        self.session = session
+    def __init__(self):  # , query_count: int = 0):
         self.query_count = 0  # = query_count
         self.query_time_log = []
         self.results = []
@@ -62,15 +61,15 @@ class PolygonPaginator(object):
             await asyncio.sleep(self._api_sleep_time())
             self.query_count = 0
             self.query_time_log = []
-        # elif self.query_count >= self.MAX_QUERY_PER_SECOND / 4:
-        #     time.sleep(1)
-        #     self.query_count = 0
-        #     self.query_time_log = []
-        # else:
-        #     time.sleep(0.01)
+        elif self.query_count >= self.MAX_QUERY_PER_SECOND / 4:
+            time.sleep(1)
+            self.query_count = 0
+            self.query_time_log = []
+        else:
+            await asyncio.sleep(0.01)
 
         log.info(f"{url} {payload} overload:{overload}")
-        async with self.session.request(method="GET", url=url, params=payload) as response:
+        async with request(method="GET", url=url, params=payload) as response:
             log.info(f"status code: {response.status}")
 
             self.query_count += 1
@@ -116,11 +115,11 @@ class StockMetaData(PolygonPaginator):
     """Object to query the Polygon API and retrieve information about listed stocks. \
         It can be used to query for a single individual ticker or to pull the entire corpus"""
 
-    def __init__(self, session: ClientSession, ticker: str, all_: bool):
-        super().__init__(session)
+    def __init__(self, ticker: str, all_: bool):
         self.ticker = ticker
         self.all_ = all_
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
+        super().__init__()
 
     async def query_data(self):
         """"""
@@ -152,7 +151,6 @@ class HistoricalStockPrices(PolygonPaginator):
 
     def __init__(
         self,
-        session: ClientSession,
         ticker: str,
         ticker_id: int,
         start_date: datetime,
@@ -161,7 +159,6 @@ class HistoricalStockPrices(PolygonPaginator):
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
-        super().__init__(session)
         self.ticker = ticker
         self.ticker_id = ticker_id
         self.multiplier = multiplier
@@ -169,6 +166,7 @@ class HistoricalStockPrices(PolygonPaginator):
         self.start_date = start_date.date()
         self.end_date = end_date.date()
         self.adjusted = "true" if adjusted else "false"
+        super().__init__()
 
     async def query_data(self):
         url = (
@@ -203,7 +201,6 @@ class OptionsContracts(PolygonPaginator):
 
     def __init__(
         self,
-        session: ClientSession,
         ticker: str,
         ticker_id: int,
         months_hist: int = 24,
@@ -211,7 +208,7 @@ class OptionsContracts(PolygonPaginator):
         all_: bool = False,
         ticker_id_lookup: dict | None = None,
     ):
-        super().__init__(session)
+        super().__init__()
         self.ticker = ticker
         self.ticker_id = ticker_id
         self.months_hist = months_hist
@@ -275,7 +272,6 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        session: ClientSession,
         o_tickers: list[OptionsTickerModel],
         cpu_count: int = 1,
         multiplier: int = 1,
@@ -283,7 +279,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
-        super().__init__(session)
+        super().__init__()
         self.o_tickers = o_tickers
         self.o_ticker_id_lookup = {}
         self.cpu_count = cpu_count
