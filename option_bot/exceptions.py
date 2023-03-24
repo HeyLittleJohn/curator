@@ -43,3 +43,7 @@ class ProjTypeError(ProjBaseException, TypeError):
 
 class ProjValueError(ProjBaseException, ValueError):
     """A custom ValueError that inherits from MyProjectError and ValueError."""
+
+
+class ProjRuntimeError(ProjBaseException, RuntimeError):
+    """A custom RuntimeError that inherits from MyProjectError and ValueError."""
