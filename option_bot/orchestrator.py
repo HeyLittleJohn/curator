@@ -5,7 +5,7 @@ from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count
 
-from aiomultiprocess import Pool
+from aiomultiprocess import Manager, Pool
 from sentry_sdk import capture_exception
 
 from option_bot.db_manager import (
@@ -19,7 +19,6 @@ from option_bot.db_manager import (
     update_stock_metadata,
     update_stock_prices,
 )
-from option_bot.exceptions import ProjBaseException
 from option_bot.polygon_utils import (
     HistoricalOptionsPrices,
     HistoricalStockPrices,
@@ -69,7 +68,25 @@ months_hist: {months_hist}, cpus: {cpus}"
 
 
 async def import_all_tickers(args: Namespace):
-    stock_queue, option_contract_queue, option_price_queue = Queue(), Queue(), Queue()
+    manager = Manager()
+    stock_queue = manager.Queue()
+    option_contract_queue = manager.Queue()
+    option_price_queue = manager.Queue()
+    kwargs = {
+        "args": args,
+        "stock_queue": stock_queue,
+        "option_contract_queue": option_contract_queue,
+        "option_price_queue": option_price_queue,
+    }
+    async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
+        async for _ in pool.apply(import_all_tickers_process, kwds=kwargs):
+            continue
+
+
+async def import_all_tickers_process(
+    args: Namespace, stock_queue: Queue, option_contract_queue: Queue, option_price_queue: Queue
+):
+
     await asyncio.gather(
         import_all_ticker_metadata(stock_queue, option_contract_queue),
         import_all_stock_prices(args, stock_queue),
@@ -97,18 +114,20 @@ async def import_all_ticker_metadata(stock_queue: Queue, option_contract_queue: 
 async def import_all_options_contracts(args, option_contract_queue: Queue, option_price_queue: Queue):
     while True:
         ticker_lookup = await option_contract_queue.get()
-        for ticker_id_pair in ticker_lookup:  # ticker_id_pair is a dict
-            ticker = list(ticker_id_pair.keys())[0]
-            try:
-                log.info(f"fetching options contracts metadata for {ticker}")
-                await fetch_options_contracts(
-                    ticker=ticker,
-                    months_hist=args.monthhist,
-                    ticker_id=ticker_id_pair[ticker],
-                    option_price_queue=option_price_queue,
-                )
-            except Exception:
-                raise BaseException(f"Error with ticker {ticker}, id:{ticker_id_pair[ticker]}")
+        kwargs_list = [
+            {
+                "ticker": list(x.keys())[0],
+                "ticker_id": list(x.values())[0],
+                "months_hist": args.monthhist,
+                "option_price_queue": option_price_queue,
+                "cpu_count": 1,
+                "all_": False,
+            }
+            for x in ticker_lookup
+        ]
+        async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
+            async for _ in pool.starmap(fetch_options_contracts, kwargs_list):
+                continue
 
 
 async def import_all_stock_prices(args: Namespace, stock_queue: Queue):
