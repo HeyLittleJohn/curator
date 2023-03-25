@@ -61,12 +61,12 @@ class PolygonPaginator(object):
             await asyncio.sleep(self._api_sleep_time())
             self.query_count = 0
             self.query_time_log = []
-        elif self.query_count >= self.MAX_QUERY_PER_SECOND / 4:
+        elif self.query_count >= self.MAX_QUERY_PER_SECOND / 30:
             time.sleep(1)
             self.query_count = 0
             self.query_time_log = []
         else:
-            await asyncio.sleep(0.01)
+            time.sleep(0.01)  # trying to keep things under 100 requests per second
 
         log.info(f"{url} {payload} overload:{overload}")
         async with request(method="GET", url=url, params=payload) as response:

@@ -1,4 +1,5 @@
 import asyncio
+from argparse import Namespace
 from asyncio import Queue
 from datetime import datetime
 from math import floor
@@ -18,6 +19,7 @@ from option_bot.db_manager import (
     update_stock_metadata,
     update_stock_prices,
 )
+from option_bot.exceptions import ProjBaseException
 from option_bot.polygon_utils import (
     HistoricalOptionsPrices,
     HistoricalStockPrices,
@@ -66,12 +68,13 @@ months_hist: {months_hist}, cpus: {cpus}"
     # NOTE: since this is called by starmap, may not need to use .gather()
 
 
-async def import_all_tickers(args):
-    stock_queue, option_queue = Queue(), Queue()
+async def import_all_tickers(args: Namespace):
+    stock_queue, option_contract_queue, option_price_queue = Queue(), Queue(), Queue()
     await asyncio.gather(
-        import_all_ticker_metadata(args, stock_queue, option_queue),
+        import_all_ticker_metadata(stock_queue, option_contract_queue),
         import_all_stock_prices(args, stock_queue),
-        import_all_options_prices(args, option_queue),
+        import_all_options_contracts(args, option_contract_queue, option_price_queue),
+        import_all_options_prices(option_price_queue),
     )
 
 
@@ -82,19 +85,33 @@ async def remove_tickers_from_universe(tickers: list[str]):
         log.info(f"ticker {ticker} successfully deleted")
 
 
-async def import_all_ticker_metadata(args, stock_queue: Queue, option_queue: Queue):
+async def import_all_ticker_metadata(stock_queue: Queue, option_contract_queue: Queue):
     # log.info("fetching all stock ticker metadata")
     # await fetch_stock_metadata(all_=True)
     ticker_results = await query_all_stock_tickers()
     ticker_lookup = [{x[1]: x[0]} for x in ticker_results]
     await stock_queue.put(ticker_lookup)
-    log.info("fetching all options contracts metadata")
-    await fetch_options_contracts(
-        ticker="all_", all_=True, ticker_id_lookup=ticker_lookup, cpu_count=CPUS - 1, queue=option_queue
-    )
+    await option_contract_queue.put(ticker_lookup)
 
 
-async def import_all_stock_prices(args: dict, stock_queue: Queue):
+async def import_all_options_contracts(args, option_contract_queue: Queue, option_price_queue: Queue):
+    while True:
+        ticker_lookup = await option_contract_queue.get()
+        for ticker_id_pair in ticker_lookup:  # ticker_id_pair is a dict
+            ticker = list(ticker_id_pair.keys())[0]
+            try:
+                log.info(f"fetching options contracts metadata for {ticker}")
+                await fetch_options_contracts(
+                    ticker=ticker,
+                    months_hist=args.monthhist,
+                    ticker_id=ticker_id_pair[ticker],
+                    option_price_queue=option_price_queue,
+                )
+            except Exception:
+                raise BaseException(f"Error with ticker {ticker}, id:{ticker_id_pair[ticker]}")
+
+
+async def import_all_stock_prices(args: Namespace, stock_queue: Queue):
     """
     ticker_lookup from the queue will be a list of dicts
     each dict will be a {"ticker": "ticker_id"} pair.
@@ -112,9 +129,9 @@ async def import_all_stock_prices(args: dict, stock_queue: Queue):
             )
 
 
-async def import_all_options_prices(args: dict, option_queue: Queue):
+async def import_all_options_prices(option_price_queue: Queue):
     while True:
-        contract_batch = await option_queue.get()
+        contract_batch = await option_price_queue.get()
         await fetch_options_prices(ticker="all_", cpu_count=CPUS - 1, batch=contract_batch)
 
 
@@ -157,7 +174,7 @@ async def fetch_options_contracts(
     all_=False,
     ticker_id: int | None = None,
     ticker_id_lookup: dict | None = None,
-    queue: asyncio.Queue | None = None,
+    option_price_queue: asyncio.Queue | None = None,
 ):
     # NOTE: if refreshing, just pull the current month, months_hist = 1
     if not all_ and not ticker_id:
@@ -169,7 +186,8 @@ async def fetch_options_contracts(
         await update_options_tickers(batch)
         log.info("options-tickers uploaded for ticker: {}".format(ticker if not all_ else f"all_batch:{batch_counter}"))
         batch_counter += 1
-        await queue.put(batch)
+        if option_price_queue:
+            await option_price_queue.put(batch)
 
 
 async def fetch_options_prices(ticker: str, cpu_count: int = 1, batch: list[dict] | None = None):
