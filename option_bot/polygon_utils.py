@@ -12,7 +12,11 @@ from aiomultiprocess import Pool
 from dateutil.relativedelta import relativedelta
 from sentry_sdk import capture_exception
 
-from option_bot.exceptions import ProfClientConnectionError, ProjClientResponseError
+from option_bot.exceptions import (
+    ProfClientConnectionError,
+    ProjBaseException,
+    ProjClientResponseError,
+)
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.schemas import OptionsTickerModel, PriceModel
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
@@ -93,21 +97,25 @@ class PolygonPaginator(object):
                     response.raise_for_status()
 
         except (ClientResponseError, ProjClientResponseError) as e:
-            log.error(msg=e.message, args=e.args, exc_info=1)
+            log.error(e, exc_info=1)
+            log.error(f"args:{url}, {payload}, {retry}")
             if not retry:
                 await self.query_all(url, payload, retry=True)
             else:
-                log.error(msg=e.message + "failed retry", args=e.args, exc_info=1)
+                log.error(e, exc_info=1)
+                log.error(f"failed retry, args:{url}, {payload}, {retry}")
 
         except (ClientConnectionError, ProfClientConnectionError) as e:
             if not retry:
-                log.error(msg=e.message, args=e.args, exc_info=1)
+                log.error(e)
+                log.error(f"args:{url}, {payload}, {retry}")
                 log.info("sleeping for one minute")
                 await asyncio.sleep(60)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
-                log.error(msg=e.message + "failed to reconnect on retry", args=e.args, exc_info=1)
+                log.error(e)
+                log.error(f"failed to reconnect on retry. args:{url}, {payload}, {retry}")
 
     def make_clean_generator(self):
         record_size = len(self.clean_results[0])
@@ -117,13 +125,11 @@ class PolygonPaginator(object):
 
     async def query_data(self):
         """shell function to be overwritten by every inheriting class"""
-        log.exception("Function undefined in inherited class")
-        raise Exception
+        raise ProjBaseException("Function undefined in inherited class")
 
     def clean_data(self):
         """shell function to be overwritten by every inheriting class"""
-        log.exception("Function undefined in inherited class")
-        raise Exception
+        raise ProjBaseException("Function undefined in inherited class")
 
     async def fetch(self):
         await self.query_data()
