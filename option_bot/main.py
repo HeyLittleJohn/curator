@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import tracemalloc
 from datetime import datetime
 
 import sentry_sdk
@@ -13,20 +14,12 @@ from option_bot.orchestrator import (
 )
 
 
+tracemalloc.start()
 sentry_sdk.init(
     dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
     traces_sample_rate=1.0,
 )
 
-# def my_excepthook(etype, value, traceback):
-#     if issubclass(etype, BaseException):
-#         etype = etype.__name__
-#         etype = "Proj" + etype
-#         etype = globals()[etype]
-#     sys.__excepthook__(etype, etype(*value.args), traceback)
-
-
-# sys.excepthook = my_excepthook
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24

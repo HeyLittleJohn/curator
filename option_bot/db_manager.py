@@ -55,12 +55,15 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
 async def query_options_tickers(
     session: AsyncSession, stock_ticker: str, batch: list[dict] | None = None
 ) -> list[OptionsTickerModel]:
-    stmt = select(OptionsTickers).join(StockTickers)
+    """
+    This is to pull all options contracts for a given underlying ticker.
+    The batch input is to only pull o_ticker_ids for given o_tickers
+    """
+
+    stmt = select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker)
     if batch:
         batch_tickers = [x["options_ticker"] for x in batch]
         stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
-    else:
-        stmt.where(StockTickers.ticker == stock_ticker)
 
     return (await session.scalars(stmt)).all()
 

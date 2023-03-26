@@ -5,7 +5,7 @@ from datetime import datetime
 from math import floor
 from multiprocessing import cpu_count
 
-from aiomultiprocess import Manager, Pool
+from aiomultiprocess import Pool
 from sentry_sdk import capture_exception
 
 from option_bot.db_manager import (
@@ -41,11 +41,11 @@ async def add_tickers_to_universe(kwargs_list):
             ticker_dict["cpus"] += 1
 
     async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
-        async for _ in pool.starmap(ticker_import_process, kwargs_list):
+        async for _ in pool.starmap(ticker_import_process_old, kwargs_list):
             continue
 
 
-async def ticker_import_process(
+async def ticker_import_process_old(  # will remove
     ticker: str, start_date: datetime, end_date: datetime, opt_price_days: int, months_hist: int, cpus: int
 ):
     """Process of fetching stock, contract, and pricing data for individual stock tickers.
@@ -68,30 +68,57 @@ months_hist: {months_hist}, cpus: {cpus}"
 
 
 async def import_all_tickers(args: Namespace):
-    manager = Manager()
-    stock_queue = manager.Queue()
-    option_contract_queue = manager.Queue()
-    option_price_queue = manager.Queue()
-    kwargs = {
-        "args": args,
-        "stock_queue": stock_queue,
-        "option_contract_queue": option_contract_queue,
-        "option_price_queue": option_price_queue,
-    }
+    log.info("fetching all stock ticker metadata")
+    ticker_lookup = await import_all_ticker_metadata()
+    kwargs_list = [
+        [
+            list(x.keys())[0],  # "ticker":
+            list(x.values())[0],  # "ticker_id":
+            args.startdate,  # "start_date":
+            args.enddate,  # "end_date":
+            args.monthhist,  # "months_hist":
+            1,  # "cpu_count":
+        ]
+        for x in ticker_lookup
+    ]
+
     async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
-        async for _ in pool.apply(import_all_tickers_process, kwds=kwargs):
+        async for _ in pool.starmap(import_tickers_process, kwargs_list):
             continue
 
 
-async def import_all_tickers_process(
-    args: Namespace, stock_queue: Queue, option_contract_queue: Queue, option_price_queue: Queue
+async def import_tickers_process(
+    ticker: str,
+    ticker_id: int,
+    start_date: datetime,
+    end_date: datetime,
+    months_hist: int,
+    cpu_count: int,
 ):
+    """
+    This is the event loop to import a ticker. Both all_ and individual import processes will hit this loop.
+    AioMultiprocessing will apply multiple processes to this event loop to scale it
+    Within it, options contracts and options prices may scale according to the cpu_count input
+
+    The input dict will have ticker, ticker_id and other args to initiate stock_prices and options imports.
+
+    This function needs to be run after stock ticker metadata has already been retrieved.
+
+    We instantiate a queue to pass option contract metadata to the options_price imports.
+    """
+
+    option_price_queue = asyncio.Queue()
 
     await asyncio.gather(
-        import_all_ticker_metadata(stock_queue, option_contract_queue),
-        import_all_stock_prices(args, stock_queue),
-        import_all_options_contracts(args, option_contract_queue, option_price_queue),
-        import_all_options_prices(option_price_queue),
+        fetch_stock_prices(ticker=ticker, ticker_id=ticker_id, start_date=start_date, end_date=end_date),
+        fetch_options_contracts(
+            ticker=ticker,
+            ticker_id=ticker_id,
+            months_hist=months_hist,
+            cpu_count=cpu_count,
+            option_price_queue=option_price_queue,
+        ),
+        option_prices_queue_consumer(ticker=ticker, cpu_count=cpu_count, option_price_queue=option_price_queue),
     )
 
 
@@ -102,13 +129,21 @@ async def remove_tickers_from_universe(tickers: list[str]):
         log.info(f"ticker {ticker} successfully deleted")
 
 
-async def import_all_ticker_metadata(stock_queue: Queue, option_contract_queue: Queue):
+async def import_all_ticker_metadata():
+    """
+    This function fetches all stock ticker metadata from polygon.
+    It then loads to postgres, and returns a list of rows with each ticker's ticker_id
+
+    the ticker_lookup produced will be a list of dicts
+    each dict will be a {"ticker": "ticker_id"} pair.
+
+    eg: [{'AAWW': 125}, {'ABGI': 138}, {'AA': 94}]"""
+
     # log.info("fetching all stock ticker metadata")
     # await fetch_stock_metadata(all_=True)
     ticker_results = await query_all_stock_tickers()
     ticker_lookup = [{x[1]: x[0]} for x in ticker_results]
-    await stock_queue.put(ticker_lookup)
-    await option_contract_queue.put(ticker_lookup)
+    return ticker_lookup
 
 
 async def import_all_options_contracts(args, option_contract_queue: Queue, option_price_queue: Queue):
@@ -128,24 +163,6 @@ async def import_all_options_contracts(args, option_contract_queue: Queue, optio
         async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
             async for _ in pool.starmap(fetch_options_contracts, kwargs_list):
                 continue
-
-
-async def import_all_stock_prices(args: Namespace, stock_queue: Queue):
-    """
-    ticker_lookup from the queue will be a list of dicts
-    each dict will be a {"ticker": "ticker_id"} pair.
-
-    eg: [{'AAWW': 125}, {'ABGI': 138}, {'AA': 94}]
-    """
-    while True:
-        ticker_lookup = await stock_queue.get()
-        for ticker_id_pair in ticker_lookup:
-            await fetch_stock_prices(
-                ticker=list(ticker_id_pair.keys())[0],
-                start_date=args.startdate,
-                end_date=args.enddate,
-                ticker_id=list(ticker_id_pair.values())[0],
-            )
 
 
 async def import_all_options_prices(option_price_queue: Queue):
@@ -196,6 +213,7 @@ async def fetch_options_contracts(
     option_price_queue: asyncio.Queue | None = None,
 ):
     # NOTE: if refreshing, just pull the current month, months_hist = 1
+
     if not all_ and not ticker_id:
         ticker_id = await lookup_ticker_id(ticker, stock=True)
     options = OptionsContracts(ticker, ticker_id, months_hist, cpu_count, all_, ticker_id_lookup)
@@ -206,12 +224,16 @@ async def fetch_options_contracts(
         log.info("options-tickers uploaded for ticker: {}".format(ticker if not all_ else f"all_batch:{batch_counter}"))
         batch_counter += 1
         if option_price_queue:
-            await option_price_queue.put(batch)
+            option_price_queue.put(batch)
 
 
-async def fetch_options_prices(ticker: str, cpu_count: int = 1, batch: list[dict] | None = None):
-    log.info(f"pulling options contract info for ticker: {ticker}")
-    o_tickers = await query_options_tickers(ticker, batch)
+async def fetch_options_prices(ticker: str, cpu_count: int = 1, input_batch: list[dict] | None = None):
+    log.info(
+        "pulling options contract info for ticker: {0}, batch size: {1}".format(
+            ticker, len(input_batch) if input_batch else "No batch"
+        )
+    )
+    o_tickers = await query_options_tickers(ticker, input_batch)
     # NOTE: may need to adjust to not pull all columns from table
     log.info(f"pulling options contract pricing for ticker: {ticker}")
     o_prices = HistoricalOptionsPrices(o_tickers, cpu_count)
@@ -219,6 +241,13 @@ async def fetch_options_prices(ticker: str, cpu_count: int = 1, batch: list[dict
     log.info(f"uploading option batch prices for ticker: {ticker}")
     for batch in o_prices.clean_data_generator:
         await update_options_prices(batch)
+
+
+async def option_prices_queue_consumer(ticker: str, cpu_count: int = 1, option_price_queue: Queue | None = None):
+    while True:
+        batch = await option_price_queue.get()
+        await fetch_options_prices(ticker, cpu_count, input_batch=batch)
+        option_price_queue.task_done()
 
 
 if __name__ == "__main__":
