@@ -34,7 +34,7 @@ def my_excepthook(etype, value, traceback):
 sys.excepthook = my_excepthook
 
 
-class InvalidCLIArgs(ProjBaseException):
+class InvalidArgs(ProjBaseException):
     """Exception when incorrect args are passed to the CLI"""
 
 

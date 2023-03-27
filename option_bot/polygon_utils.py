@@ -18,7 +18,6 @@ from option_bot.exceptions import (
     ProjClientResponseError,
 )
 from option_bot.proj_constants import log, POLYGON_API_KEY
-from option_bot.schemas import OptionsTickerModel, PriceModel
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
 
 
@@ -298,22 +297,22 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        o_tickers: list[OptionsTickerModel],
-        cpu_count: int = 1,
-        multiplier: int = 1,
+        o_ticker: str,
+        o_ticker_id: int,
+        expiration_date: datetime,
         month_hist: int = 24,
+        multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
         super().__init__()
-        self.o_tickers = o_tickers
-        self.o_ticker_id_lookup = {}
-        self.cpu_count = cpu_count
+        self.o_ticker = o_ticker
+        self.o_ticker_id = o_ticker_id
+        self.expiration_date = expiration_date
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
         self.month_hist = month_hist
-        self.results = Manager().list()
 
     def _determine_start_end_dates(self, exp_date: date):
         end_date = datetime.now().date() if exp_date > datetime.now().date() else exp_date
@@ -332,22 +331,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
         """
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-        args = []
-        for ticker in self.o_tickers:
-            self.o_ticker_id_lookup[ticker.options_ticker] = ticker.id
-            args.append(
-                [
-                    self.polygon_api
-                    + f"/v2/aggs/ticker/{ticker.options_ticker}/range/{self.multiplier}/{self.timespan}/"
-                    + f"{self._determine_start_end_dates(ticker.expiration_date)[0]}/"
-                    + f"{self._determine_start_end_dates(ticker.expiration_date)[1]}",
-                    payload,
-                ]
-            )
-
-        async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
-            async for _ in pool.starmap(self.query_all, args):
-                continue
+        url = (
+            self.polygon_api
+            + f"/v2/aggs/ticker/{self.o_ticker}/range/{self.multiplier}/{self.timespan}/"
+            + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
+            + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
+        )
+        await self.query_all(url, payload)
 
     def clean_data(self):
         results_hash = {}
@@ -372,7 +362,8 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
         self._clean_record_hash(results_hash)
 
-    def _clean_record_hash(self, results_hash: dict) -> list[PriceModel]:
+    def _clean_record_hash(self, results_hash: dict):
         for ticker in results_hash:
-            o_ticker_id = self.o_ticker_id_lookup[ticker]
-            self.clean_results.extend([dict(x, **{"options_ticker_id": o_ticker_id}) for x in results_hash[ticker]])
+            self.clean_results.extend(
+                [dict(x, **{"options_ticker_id": self.o_ticker_id}) for x in results_hash[ticker]]
+            )
