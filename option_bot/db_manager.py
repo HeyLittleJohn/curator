@@ -2,6 +2,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from option_bot.exceptions import InvalidArgs
 from option_bot.schemas import (
     OptionsPricesRaw,
     OptionsTickerModel,
@@ -53,14 +54,17 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
 
 @Session
 async def query_options_tickers(
-    session: AsyncSession, stock_ticker: str, batch: list[dict] | None = None
+    session: AsyncSession, stock_ticker: str, batch: list[dict] | None = None, all_=False
 ) -> list[OptionsTickerModel]:
     """
     This is to pull all options contracts for a given underlying ticker.
     The batch input is to only pull o_ticker_ids for given o_tickers
     """
-
-    stmt = select(OptionsTickers).join(StockTickers).where(StockTickers.ticker == stock_ticker)
+    if batch and all_:
+        raise InvalidArgs("Can't have query all_ and a batch")
+    stmt = select(OptionsTickers)
+    if not all_:
+        stmt.join(StockTickers).where(StockTickers.ticker == stock_ticker)
     if batch:
         batch_tickers = [x["options_ticker"] for x in batch]
         stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
