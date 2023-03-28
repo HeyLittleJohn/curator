@@ -8,9 +8,7 @@ from multiprocessing import Manager
 import numpy as np
 from aiohttp import request
 from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
-from aiomultiprocess import Pool
 from dateutil.relativedelta import relativedelta
-from sentry_sdk import capture_exception
 
 from option_bot.exceptions import (
     ProfClientConnectionError,
@@ -107,14 +105,14 @@ class PolygonPaginator(object):
         except (ClientConnectionError, ProfClientConnectionError) as e:
             if not retry:
                 log.error(e)
-                log.error(f"args:{url}, {payload}, {retry}")
+                log.error(f"ProjClientConnectionError. args: {url}, {payload}, {retry}")
                 log.info("sleeping for one minute")
                 await asyncio.sleep(60)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
                 log.error(e)
-                log.error(f"failed to reconnect on retry. args:{url}, {payload}, {retry}")
+                log.error(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
 
     def make_clean_generator(self):
         record_size = len(self.clean_results[0])
@@ -265,10 +263,9 @@ class OptionsContracts(PolygonPaginator):
         payload = {"limit": 1000}
         if not self.all_:
             payload["underlying_ticker"] = self.ticker
-        args = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
-        async with Pool(processes=self.cpu_count, exception_handler=capture_exception) as pool:
-            async for _ in pool.starmap(self.query_all, args):
-                continue
+        args_list = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
+        for args in args_list:
+            await self.query_all(*args)
 
     def clean_data(self):
         key_mapping = {
@@ -308,7 +305,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         super().__init__()
         self.o_ticker = o_ticker
         self.o_ticker_id = o_ticker_id
-        self.expiration_date = expiration_date
+        self.expiration_date = expiration_date.date()
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"

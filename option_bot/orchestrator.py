@@ -27,7 +27,7 @@ from option_bot.polygon_utils import (
 from option_bot.proj_constants import log
 
 
-CPUS = cpu_count()
+CPUS = cpu_count() - 1
 # CPUS -= 1  # so as to not jam the computer
 
 
@@ -76,24 +76,29 @@ async def import_all_tickers(args: Namespace):
             args.startdate,  # "start_date":
             args.enddate,  # "end_date":
             args.monthhist,  # "months_hist":
-            1,  # "cpu_count":
         ]
         for x in ticker_lookup
     ]
 
     log.info("importing all stock prices and options contract metadata")
     async with Pool(
-        processes=CPUS, exception_handler=capture_exception, maxtasksperchild=20, queuecount=CPUS, childconcurrency=10
+        processes=CPUS,
+        exception_handler=capture_exception,
+        maxtasksperchild=10,
+        queuecount=CPUS,  # , childconcurrency=10
     ) as pool:
         await pool.starmap(import_tickers_and_contracts_process, args_list)
-    # TODO: remove the cpu_count and multiprocessing within paginator
+
     log.info("queuing options contracts metadata")
     o_tickers = await query_options_tickers(ticker="all_", all_=True)
     # NOTE: may need to adjust to not pull all columns from table
     op_args = [[x.options_ticker, x.id, x.expiration_date, args.monthhist] for x in o_tickers]
 
     async with Pool(
-        processes=CPUS, exception_handler=capture_exception, maxtasksperchild=30, queuecount=CPUS, childconcurrency=20
+        processes=CPUS,
+        exception_handler=capture_exception,
+        maxtasksperchild=10,
+        queuecount=CPUS,  # childconcurrency=20
     ) as pool:
         await pool.starmap(fetch_options_prices, op_args)
 
@@ -117,7 +122,7 @@ async def import_tickers_and_contracts_process(
     """
 
     await asyncio.gather(
-        fetch_stock_prices(ticker=ticker, ticker_id=ticker_id, start_date=start_date, end_date=end_date),
+        # fetch_stock_prices(ticker=ticker, ticker_id=ticker_id, start_date=start_date, end_date=end_date),
         fetch_options_contracts(ticker=ticker, ticker_id=ticker_id, months_hist=months_hist),
     )
 
@@ -209,4 +214,4 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
 
 
 if __name__ == "__main__":
-    asyncio.run(test_query())
+    asyncio.run(fetch_options_prices("O:SPY230301C00320000", 1, datetime(2023, 3, 1), 24))

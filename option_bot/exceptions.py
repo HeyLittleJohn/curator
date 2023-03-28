@@ -1,6 +1,7 @@
 import sys
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
+from aiomultiprocess.types import ProxyException
 from sentry_sdk import capture_exception
 
 from option_bot.proj_constants import log
@@ -47,16 +48,20 @@ class ProjValueError(ProjBaseException, ValueError):
 
 
 class ProjRuntimeError(ProjBaseException, RuntimeError):
-    """A custom RuntimeError that inherits from MyProjectError and RuntimeError."""
+    """A custom RuntimeError that inherits from ProjBaseException and RuntimeError."""
 
 
 class ProjTimeoutError(ProjBaseException, TimeoutError):
-    """A custom TimeoutError that inherits from MyProjectError and TimeoutError."""
+    """A custom TimeoutError that inherits from ProjBaseException and TimeoutError."""
 
 
 class ProfClientConnectionError(ProjBaseException, ClientConnectionError):
-    """A custom ClientConnectionError that inherits from MyProjectError and ClientConnectionError."""
+    """A custom ClientConnectionError that inherits from ProjBaseException and ClientConnectionError."""
 
 
 class ProjClientResponseError(ProjBaseException, ClientResponseError):
-    """A custom ClientResponseError that inherits from MyProjectError and ClientResponseError."""
+    """A custom ClientResponseError that inherits from ProjBaseException and ClientResponseError."""
+
+
+class ProjProxyException(ProjBaseException, ProxyException):
+    """A custom ProxyException that inherits from ProjBaseException and ProxyException."""
