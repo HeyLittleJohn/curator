@@ -3,10 +3,10 @@ import asyncio
 import tracemalloc
 from datetime import datetime
 
-import sentry_sdk
+# import sentry_sdk
 from dateutil.relativedelta import relativedelta
 
-from option_bot.exceptions import InvalidCLIArgs
+from option_bot.exceptions import InvalidArgs
 from option_bot.orchestrator import (
     add_tickers_to_universe,
     import_all_tickers,
@@ -15,10 +15,10 @@ from option_bot.orchestrator import (
 
 
 tracemalloc.start()
-sentry_sdk.init(
-    dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
-    traces_sample_rate=1.0,
-)
+# sentry_sdk.init(
+#     dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
+#     traces_sample_rate=1.0,
+# )
 
 
 DEFAULT_DAYS = 500
@@ -131,7 +131,7 @@ def main():
 
     if args.remove:
         if args.add_all:
-            raise InvalidCLIArgs("Can't --remove and --add_all at the same time. Remove explicit tickers via CLI")
+            raise InvalidArgs("Can't --remove and --add_all at the same time. Remove explicit tickers via CLI")
         asyncio.run(remove_tickers(args))
 
     elif args.refresh:
