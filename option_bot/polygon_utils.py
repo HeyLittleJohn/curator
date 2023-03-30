@@ -3,7 +3,6 @@ import math
 import time
 from datetime import date, datetime
 from enum import Enum
-from multiprocessing import Manager
 
 import numpy as np
 from aiohttp import request
@@ -14,6 +13,8 @@ from option_bot.exceptions import (
     ProfClientConnectionError,
     ProjBaseException,
     ProjClientResponseError,
+    ProjIndexError,
+    ProjTimeoutError,
 )
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
@@ -37,6 +38,8 @@ class PolygonPaginator(object):
 
         self.fetch() will ultimately result in the population of self.clean_results (a list of dicts with polygon data)
         self.clean_results will be converted into a generator that can be batch input into the db"""
+
+    paginator_type = "Generic"
 
     MAX_QUERY_PER_SECOND = 99
     MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
@@ -94,31 +97,48 @@ class PolygonPaginator(object):
                     response.raise_for_status()
 
         except (ClientResponseError, ProjClientResponseError) as e:
-            log.error(e, exc_info=1)
-            log.error(f"args:{url}, {payload}, {retry}")
+            log.error(e, exc_info=True)
             if not retry:
+                log.error(f"ClientResponseError: args:{url}, {payload}, {retry}. Will retry")
                 await self.query_all(url, payload, retry=True)
             else:
-                log.error(e, exc_info=1)
-                log.error(f"failed retry, args:{url}, {payload}, {retry}")
+                raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
 
         except (ClientConnectionError, ProfClientConnectionError) as e:
+            log.error(e, exc_info=True)
             if not retry:
-                log.error(e)
                 log.error(f"ProjClientConnectionError. args: {url}, {payload}, {retry}")
                 log.info("sleeping for one minute")
                 await asyncio.sleep(60)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
-                log.error(e)
-                log.error(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+                raise ProfClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+
+        except (TimeoutError, ProjTimeoutError) as e:
+            log.error(e, exc_info=True)
+            if not retry:
+                log.error(f"ProjTimeoutError. args: {url}, {payload}, {retry}")
+                log.info("sleeping for one minute")
+                await asyncio.sleep(60)
+                log.info("retrying connection and query")
+                await self.query_all(url, payload, retry=True)
+            else:
+                raise ProjTimeoutError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
 
     def make_clean_generator(self):
-        record_size = len(self.clean_results[0])
-        batch_size = round(60000 / record_size)  # postgres input limit is ~65000
-        for i in range(0, len(self.clean_results), batch_size):
-            yield self.clean_results[i : i + batch_size]
+        try:
+            record_size = len(self.clean_results[0])
+            batch_size = round(60000 / record_size)  # postgres input limit is ~65000
+            for i in range(0, len(self.clean_results), batch_size):
+                yield self.clean_results[i : i + batch_size]
+        except IndexError as e:
+            log.error(e, exc_info=True)
+            if hasattr(self, "ticker"):
+                t = self.ticker
+            elif hasattr(self, "o_ticker"):
+                t = self.o_ticker
+            raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
     async def query_data(self):
         """shell function to be overwritten by every inheriting class"""
@@ -137,6 +157,8 @@ class PolygonPaginator(object):
 class StockMetaData(PolygonPaginator):
     """Object to query the Polygon API and retrieve information about listed stocks. \
         It can be used to query for a single individual ticker or to pull the entire corpus"""
+
+    paginator_type = "StockMetaData"
 
     def __init__(self, ticker: str, all_: bool):
         self.ticker = ticker
@@ -171,6 +193,8 @@ class StockMetaData(PolygonPaginator):
 
 class HistoricalStockPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the underlying stock"""
+
+    paginator_type = "StockPrices"
 
     def __init__(
         self,
@@ -220,14 +244,17 @@ class HistoricalStockPrices(PolygonPaginator):
 
 
 class OptionsContracts(PolygonPaginator):
-    """Object to query options contract tickers for a given underlying ticker based on given dates."""
+    """Object to query options contract tickers for a given underlying ticker based on given dates.
+    It will pull all options contracts that exist for each underlying ticker as of the first business day of each month.
+    Number of months are determined by `month_hist`"""
+
+    paginator_type = "OptionsContracts"
 
     def __init__(
         self,
         ticker: str,
         ticker_id: int,
         months_hist: int = 24,
-        cpu_count: int = 1,
         all_: bool = False,
         ticker_id_lookup: dict | None = None,
     ):
@@ -235,11 +262,9 @@ class OptionsContracts(PolygonPaginator):
         self.ticker = ticker
         self.ticker_id = ticker_id
         self.months_hist = months_hist
-        self.cpu_count = cpu_count
         self.base_dates = self._determine_base_dates()
         self.all_ = all_
         self.ticker_id_lookup = ticker_id_lookup
-        self.results = Manager().list()  # overwritting super().__init__()
 
     def _determine_base_dates(self) -> list[datetime]:
         year_month_array = []
@@ -291,6 +316,8 @@ class OptionsContracts(PolygonPaginator):
 
 class HistoricalOptionsPrices(PolygonPaginator):
     """Object to query Polygon API and retrieve historical prices for the options chain for a given ticker"""
+
+    paginator_type = "OptionsPrices"
 
     def __init__(
         self,

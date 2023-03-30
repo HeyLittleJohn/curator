@@ -34,7 +34,7 @@ async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool =
 
 
 @Session
-async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str], stock: bool = True) -> int:
+async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str], stock: bool = True):
     """Function to find the pk_id of a given ticker. Handles both Stock and Option ticker lookups
 
     Args:
@@ -54,17 +54,18 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
 
 @Session
 async def query_options_tickers(
-    session: AsyncSession, stock_ticker: str, batch: list[dict] | None = None, all_=False
+    session: AsyncSession, stock_tickers: list[str], batch: list[dict] | None = None, all_=False
 ) -> list[OptionsTickerModel]:
     """
     This is to pull all options contracts for a given underlying ticker.
     The batch input is to only pull o_ticker_ids for given o_tickers
     """
+    # NOTE: may need to adjust to not pull all columns from table
     if batch and all_:
         raise InvalidArgs("Can't have query all_ and a batch")
     stmt = select(OptionsTickers)
     if not all_:
-        stmt.join(StockTickers).where(StockTickers.ticker == stock_ticker)
+        stmt.join(StockTickers).where(StockTickers.ticker.in_(stock_tickers))
     if batch:
         batch_tickers = [x["options_ticker"] for x in batch]
         stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
