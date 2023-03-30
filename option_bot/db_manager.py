@@ -63,14 +63,14 @@ async def query_options_tickers(
     # NOTE: may need to adjust to not pull all columns from table
     if batch and all_:
         raise InvalidArgs("Can't have query all_ and a batch")
-    stmt = select(OptionsTickers)
+    stmt = select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date)
     if not all_:
-        stmt.join(StockTickers).where(StockTickers.ticker.in_(stock_tickers))
+        stmt = stmt.join(StockTickers).where(StockTickers.ticker.in_(stock_tickers))
     if batch:
         batch_tickers = [x["options_ticker"] for x in batch]
-        stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
+        stmt = stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
 
-    return (await session.scalars(stmt)).all()
+    return (await session.execute(stmt)).all()
 
 
 @Session

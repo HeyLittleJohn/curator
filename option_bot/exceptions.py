@@ -69,3 +69,7 @@ class ProjClientResponseError(ProjBaseException, ClientResponseError):
 
 class ProjProxyException(ProjBaseException, ProxyException):
     """A custom ProxyException that inherits from ProjBaseException and ProxyException."""
+
+
+class ProjAttributeError(ProjBaseException, AttributeError):
+    """A custom AttributeError that inherits from ProjBaseException and AttributeError."""

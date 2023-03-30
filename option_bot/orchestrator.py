@@ -101,18 +101,18 @@ async def import_all_tickers(args: Namespace):
         for x in ticker_lookup
     ]
 
-    log.info("importing all stock prices and options contract metadata")
-    async with Pool(
-        processes=CPUS,
-        exception_handler=capture_exception,
-        maxtasksperchild=10,
-        childconcurrency=3,
-        queuecount=CPUS,
-    ) as pool:
-        await pool.starmap(import_tickers_and_contracts_process, args_list)
+    # log.info("importing all stock prices and options contract metadata")
+    # async with Pool(
+    #     processes=CPUS,
+    #     exception_handler=capture_exception,
+    #     maxtasksperchild=10,
+    #     childconcurrency=3,
+    #     queuecount=CPUS,
+    # ) as pool:
+    #     await pool.starmap(import_tickers_and_contracts_process, args_list)
 
     log.info("queuing options contracts metadata")
-    op_args = await prep_options_prices_args(tickers=[x[0] for x in args_list], all_=True)
+    op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
 
     log.info("fetching options contracts prices")
     async with Pool(
@@ -159,7 +159,7 @@ async def prep_options_prices_args(tickers: list[str], all_=False):
     else:
         o_tickers = await query_options_tickers(stock_tickers=tickers)
 
-    return [[x.options_ticker, x.id, x.expiration_date] for x in o_tickers]
+    return o_tickers
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
@@ -259,4 +259,4 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
 
 
 if __name__ == "__main__":
-    asyncio.run(fetch_options_prices("O:SPY230301C00320000", 1, datetime(2023, 3, 1), 24))
+    asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=False))
