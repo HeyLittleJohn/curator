@@ -332,7 +332,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         super().__init__()
         self.o_ticker = o_ticker
         self.o_ticker_id = o_ticker_id
-        self.expiration_date = expiration_date.date()
+        self.expiration_date = expiration_date  # datetime.date
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
