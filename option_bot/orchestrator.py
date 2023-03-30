@@ -106,7 +106,8 @@ async def import_all_tickers(args: Namespace):
         processes=CPUS,
         exception_handler=capture_exception,
         maxtasksperchild=10,
-        queuecount=CPUS,  # , childconcurrency=10
+        childconcurrency=3,
+        queuecount=CPUS,
     ) as pool:
         await pool.starmap(import_tickers_and_contracts_process, args_list)
 
@@ -118,7 +119,8 @@ async def import_all_tickers(args: Namespace):
         processes=CPUS,
         exception_handler=capture_exception,
         maxtasksperchild=10,
-        queuecount=CPUS,  # childconcurrency=20
+        childconcurrency=3,
+        queuecount=CPUS,
     ) as pool:
         await pool.starmap(fetch_options_prices, op_args)
 
@@ -227,7 +229,7 @@ async def fetch_options_contracts(
     try:
         if not all_ and not ticker_id:
             ticker_id = await lookup_ticker_id(ticker, stock=True)
-        options = OptionsContracts(ticker, ticker_id, months_hist, cpu_count, all_, ticker_id_lookup)
+        options = OptionsContracts(ticker, ticker_id, months_hist, all_, ticker_id_lookup)
         await options.fetch()
         batch_counter = 0
         for batch in options.clean_data_generator:
