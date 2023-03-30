@@ -71,8 +71,8 @@ class PolygonPaginator(object):
         #     time.sleep(1)
         #     self.query_count = 0
         #     self.query_time_log = []
-        # else:
-        #     time.sleep(0.01)  # trying to keep things under 100 requests per second
+
+        time.sleep(0.3)  # trying to keep things under 100 requests per second. Not async
 
         log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
 
@@ -109,7 +109,7 @@ class PolygonPaginator(object):
             if not retry:
                 log.error(f"ProjClientConnectionError. args: {url}, {payload}, {retry}")
                 log.info("sleeping for one minute")
-                await asyncio.sleep(60)
+                await asyncio.sleep(15)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
@@ -120,7 +120,7 @@ class PolygonPaginator(object):
             if not retry:
                 log.error(f"ProjTimeoutError. args: {url}, {payload}, {retry}")
                 log.info("sleeping for one minute")
-                await asyncio.sleep(60)
+                await asyncio.sleep(15)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
