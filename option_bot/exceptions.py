@@ -8,13 +8,13 @@ from option_bot.proj_constants import log
 
 
 class ProjBaseException(Exception):
-    def __init__(self, message: str | None = None, args: dict | None = None):
+    def __init__(self, message: str | None = None, func_args: dict | None = None):
         capture_exception(self)
-        log.error(self)
+        log.error(self, exc_info=True)
         super().__init__(message)
-        if args:
-            message += "; see logs for Args"
-            log.error(f"exception triggering args: {args} ")
+        if func_args:
+            message += "; see logs for Func Args"
+            log.error(f"exception triggering args: {func_args} ")
         log.error(message)
 
     def __new__(cls, *args, **kwargs):
@@ -49,6 +49,10 @@ class ProjValueError(ProjBaseException, ValueError):
 
 class ProjRuntimeError(ProjBaseException, RuntimeError):
     """A custom RuntimeError that inherits from ProjBaseException and RuntimeError."""
+
+
+class ProjIndexError(ProjBaseException, IndexError):
+    """A custom ProjIndexError that inherits from ProjBaseException and ProjIndexError."""
 
 
 class ProjTimeoutError(ProjBaseException, TimeoutError):
