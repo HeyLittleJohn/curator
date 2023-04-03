@@ -6,7 +6,11 @@ from enum import Enum
 
 import numpy as np
 from aiohttp import request
-from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
+from aiohttp.client_exceptions import (
+    ClientConnectionError,
+    ClientConnectorError,
+    ClientResponseError,
+)
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import (
@@ -72,7 +76,7 @@ class PolygonPaginator(object):
         #     self.query_count = 0
         #     self.query_time_log = []
 
-        time.sleep(0.3)  # trying to keep things under 100 requests per second. Not async
+        # time.sleep(0.3)  # trying to keep things under 100 requests per second. Not async
 
         log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
 
@@ -96,30 +100,24 @@ class PolygonPaginator(object):
                 else:
                     response.raise_for_status()
 
-        except (ClientResponseError, ProjClientResponseError) as e:
-            log.error(e, exc_info=True)
+        except (ClientResponseError, ProjClientResponseError):
             if not retry:
-                log.error(f"ClientResponseError: args:{url}, {payload}, {retry}. Will retry")
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
 
-        except (ClientConnectionError, ProfClientConnectionError) as e:
-            log.error(e, exc_info=True)
+        except (ClientConnectionError, ClientConnectorError, ProfClientConnectionError):
             if not retry:
-                log.error(f"ProjClientConnectionError. args: {url}, {payload}, {retry}")
-                log.info("sleeping for one minute")
+                log.info("sleeping for 15 sec")
                 await asyncio.sleep(15)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProfClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
 
-        except (TimeoutError, ProjTimeoutError) as e:
-            log.error(e, exc_info=True)
+        except (TimeoutError, ProjTimeoutError):
             if not retry:
-                log.error(f"ProjTimeoutError. args: {url}, {payload}, {retry}")
-                log.info("sleeping for one minute")
+                log.info("sleeping for 15 sec")
                 await asyncio.sleep(15)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)

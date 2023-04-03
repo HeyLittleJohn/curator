@@ -7,15 +7,13 @@ from sentry_sdk import capture_exception
 from option_bot.proj_constants import log
 
 
+log.error()
+
+
 class ProjBaseException(Exception):
-    def __init__(self, message: str | None = None, func_args: dict | None = None):
-        capture_exception(self)
-        log.error(self, exc_info=True)
+    def __init__(self, message: str | None = None):
         super().__init__(message)
-        if func_args:
-            message += "; see logs for Func Args"
-            log.error(f"exception triggering args: {func_args} ")
-        log.error(message)
+        capture_exception(self)
 
     def __new__(cls, *args, **kwargs):
         new_cls = super().__new__(cls, *args, **kwargs)

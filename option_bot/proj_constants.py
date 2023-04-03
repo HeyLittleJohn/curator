@@ -12,7 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 sentry_sdk.init(
     dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
-    traces_sample_rate=1.0,
+    traces_sample_rate=0.2,
 )
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
