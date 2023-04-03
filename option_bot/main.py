@@ -1,9 +1,7 @@
 import argparse
 import asyncio
-import tracemalloc
 from datetime import datetime
 
-# import sentry_sdk
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import InvalidArgs
@@ -12,13 +10,6 @@ from option_bot.orchestrator import (
     import_all_tickers,
     remove_tickers_from_universe,
 )
-
-
-tracemalloc.start()
-# sentry_sdk.init(
-#     dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
-#     traces_sample_rate=1.0,
-# )
 
 
 DEFAULT_DAYS = 500
