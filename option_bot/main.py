@@ -2,19 +2,18 @@ import argparse
 import asyncio
 from datetime import datetime
 
-from dateutil.relativedelta import relativedelta
-
 from option_bot.exceptions import InvalidArgs
 from option_bot.orchestrator import (
     add_tickers_to_universe,
     import_all_tickers,
     remove_tickers_from_universe,
 )
+from option_bot.utils import two_years_ago
 
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
-DEFAULT_START_DATE = datetime.now() - relativedelta(months=DEFAULT_MONTHS_HIST)
+DEFAULT_START_DATE = two_years_ago()
 
 
 async def add_ticker(args):

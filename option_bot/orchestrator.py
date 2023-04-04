@@ -20,8 +20,8 @@ from option_bot.db_manager import (
 )
 from option_bot.exceptions import (
     InvalidArgs,
-    ProfClientConnectionError,
     ProjBaseException,
+    ProjClientConnectionError,
     ProjClientResponseError,
     ProjIndexError,
     ProjTimeoutError,
@@ -40,7 +40,7 @@ CPUS = cpu_count() - 1
 
 planned_exceptions = (
     InvalidArgs,
-    ProfClientConnectionError,
+    ProjClientConnectionError,
     ProjBaseException,
     ProjClientResponseError,
     ProjIndexError,
@@ -57,8 +57,8 @@ async def add_tickers_to_universe(kwargs_list):
     ticker_ids = await lookup_multi_ticker_ids(tickers)
     if len(ticker_ids) != len(kwargs_list):
         raise InvalidArgs(
-            "uneven number of ticker inputs and retrieved ticker_ids",
-            func_args={"ticker_args": kwargs_list, "ticker_ids": ticker_ids},
+            f"uneven number of ticker inputs and retrieved \
+ticker_ids, ticker_args: {len(kwargs_list)}, ticker_ids: {len(ticker_ids)}"
         )
     args_list = [
         [
@@ -239,7 +239,7 @@ async def fetch_options_contracts(
             )
             batch_counter += 1
     except planned_exceptions as e:
-        log.error(e, exc_info=True)
+        log.warning(e, exc_info=True)
         log.warning(f"failed to fetch options contracts for {ticker}")
 
 
@@ -254,9 +254,10 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
             await update_options_prices(batch)
 
     except planned_exceptions as e:
-        log.error(e, exc_info=True)
+        log.warning(e, exc_info=True)
         log.warning(f"failed to fetch options prices for {o_ticker}, o_tikcer_id: {o_ticker_id}")
 
 
 if __name__ == "__main__":
-    asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=False))
+    results = asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=True))
+    pass

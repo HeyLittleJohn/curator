@@ -14,8 +14,8 @@ from aiohttp.client_exceptions import (
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import (
-    ProfClientConnectionError,
     ProjBaseException,
+    ProjClientConnectionError,
     ProjClientResponseError,
     ProjIndexError,
     ProjTimeoutError,
@@ -106,14 +106,14 @@ class PolygonPaginator(object):
             else:
                 raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
 
-        except (ClientConnectionError, ClientConnectorError, ProfClientConnectionError):
+        except (ClientConnectionError, ClientConnectorError, ProjClientConnectionError):
             if not retry:
                 log.info("sleeping for 15 sec")
                 await asyncio.sleep(15)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
-                raise ProfClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+                raise ProjClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
 
         except (TimeoutError, ProjTimeoutError):
             if not retry:
@@ -130,8 +130,7 @@ class PolygonPaginator(object):
             batch_size = round(60000 / record_size)  # postgres input limit is ~65000
             for i in range(0, len(self.clean_results), batch_size):
                 yield self.clean_results[i : i + batch_size]
-        except IndexError as e:
-            log.error(e, exc_info=True)
+        except IndexError:
             if hasattr(self, "ticker"):
                 t = self.ticker
             elif hasattr(self, "o_ticker"):
