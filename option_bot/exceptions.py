@@ -4,11 +4,6 @@ from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
 from aiomultiprocess.types import ProxyException
 from sentry_sdk import capture_exception
 
-from option_bot.proj_constants import log
-
-
-log.error()
-
 
 class ProjBaseException(Exception):
     def __init__(self, message: str | None = None):
@@ -57,7 +52,7 @@ class ProjTimeoutError(ProjBaseException, TimeoutError):
     """A custom TimeoutError that inherits from ProjBaseException and TimeoutError."""
 
 
-class ProfClientConnectionError(ProjBaseException, ClientConnectionError):
+class ProjClientConnectionError(ProjBaseException, ClientConnectionError):
     """A custom ClientConnectionError that inherits from ProjBaseException and ClientConnectionError."""
 
 

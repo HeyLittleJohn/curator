@@ -3,6 +3,7 @@ import inspect
 from datetime import datetime
 
 import numpy as np
+from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from option_bot.proj_constants import async_session_maker, log
@@ -13,6 +14,10 @@ _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a t
 
 def timestamp_to_datetime(timestamp: int, msec_units: bool = True) -> datetime:
     return datetime.fromtimestamp(timestamp / 1000) if msec_units else datetime.fromtimestamp(timestamp)
+
+
+def two_years_ago():
+    return datetime.now() - relativedelta(months=24)
 
 
 def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
