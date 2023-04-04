@@ -242,6 +242,9 @@ async def fetch_options_contracts(
         log.warning(e, exc_info=True)
         log.warning(f"failed to fetch options contracts for {ticker}")
 
+    except Exception as e:
+        log.error(e, exc_info=True)
+
 
 async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date: datetime, month_hist: int = 24):
     log.info(f"pulling options contract pricing for ticker: {o_ticker}")
@@ -256,6 +259,9 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
     except planned_exceptions as e:
         log.warning(e, exc_info=True)
         log.warning(f"failed to fetch options prices for {o_ticker}, o_tikcer_id: {o_ticker_id}")
+
+    except Exception as e:
+        log.error(e, exc_info=True)
 
 
 if __name__ == "__main__":
