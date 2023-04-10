@@ -80,12 +80,12 @@ class PolygonPaginator(object):
 
         await asyncio.sleep(1)  # trying to keep things under 100 requests per second
 
+        results = {"temp": "dict"}
         try:
             async with request(method="GET", url=url, params=payload) as response:
                 log.info(f"status code: {response.status}")
 
                 self.query_count += 1
-                results = {"temp": "dict"}
                 if response.status == 200:
                     results = await response.json()
                     self.query_time_log.append(
