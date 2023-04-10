@@ -67,18 +67,18 @@ class PolygonPaginator(object):
 
     async def query_all(self, url: str, payload: dict = {}, overload=False, retry=False):
         payload["apiKey"] = POLYGON_API_KEY
-        if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
-            await asyncio.sleep(self._api_sleep_time())
-            self.query_count = 0
-            self.query_time_log = []
+        # if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
+        #     await asyncio.sleep(self._api_sleep_time())
+        #     self.query_count = 0
+        #     self.query_time_log = []
         # elif self.query_count >= self.MAX_QUERY_PER_SECOND / 30:
         #     time.sleep(1)
         #     self.query_count = 0
         #     self.query_time_log = []
 
-        # time.sleep(0.3)  # trying to keep things under 100 requests per second. Not async
-
         log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
+
+        await asyncio.sleep(1)  # trying to keep things under 100 requests per second
 
         try:
             async with request(method="GET", url=url, params=payload) as response:
@@ -92,9 +92,7 @@ class PolygonPaginator(object):
                         {"request_id": results.get("request_id"), "query_timestamp": time.time()}
                     )
                     self.results.append(results)  # convert this to Yield
-                    next_url = results.get("next_url")
-                    if next_url:
-                        await self.query_all(next_url)
+
                 elif response.status == 429:
                     await self.query_all(url, payload, overload=True)
                 else:
@@ -102,14 +100,15 @@ class PolygonPaginator(object):
 
         except (ClientResponseError, ProjClientResponseError):
             if not retry:
+                await asyncio.sleep(15)
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
 
         except (ClientConnectionError, ClientConnectorError, ProjClientConnectionError):
             if not retry:
-                log.info("sleeping for 15 sec")
-                await asyncio.sleep(15)
+                log.info("sleeping for 45 sec")
+                await asyncio.sleep(45)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
@@ -117,12 +116,17 @@ class PolygonPaginator(object):
 
         except (TimeoutError, ProjTimeoutError):
             if not retry:
-                log.info("sleeping for 15 sec")
-                await asyncio.sleep(15)
+                log.info("sleeping for 45 sec")
+                await asyncio.sleep(45)
                 log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjTimeoutError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+
+        finally:
+            next_url = results.get("next_url")
+            if next_url:
+                await self.query_all(next_url)
 
     def make_clean_generator(self):
         try:

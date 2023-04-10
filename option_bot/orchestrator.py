@@ -35,7 +35,7 @@ from option_bot.polygon_utils import (
 from option_bot.proj_constants import log
 
 
-CPUS = cpu_count() - 1
+CPUS = cpu_count() - 2
 # CPUS -= 1  # so as to not jam the computer
 
 planned_exceptions = (
@@ -51,7 +51,7 @@ planned_exceptions = (
 async def add_tickers_to_universe(kwargs_list):
     tickers = [x["ticker"] for x in kwargs_list]
 
-    async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
+    async with Pool(processes=max(len(tickers), CPUS), exception_handler=capture_exception) as pool:
         await pool.map(fetch_stock_metadata, tickers)
 
     ticker_ids = await lookup_multi_ticker_ids(tickers)
@@ -105,7 +105,7 @@ async def import_all_tickers(args: Namespace):
     # async with Pool(
     #     processes=CPUS,
     #     exception_handler=capture_exception,
-    #     maxtasksperchild=10,
+    #     maxtasksperchild=64,
     #     childconcurrency=3,
     #     queuecount=CPUS,
     # ) as pool:
@@ -113,16 +113,20 @@ async def import_all_tickers(args: Namespace):
 
     log.info("queuing options contracts metadata")
     op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
-
-    log.info("fetching options contracts prices")
-    async with Pool(
-        processes=CPUS,
-        exception_handler=capture_exception,
-        maxtasksperchild=10,
-        childconcurrency=3,
-        queuecount=CPUS,
-    ) as pool:
-        await pool.starmap(fetch_options_prices, op_args)
+    batch_size = 5000
+    for i in range(0, len(op_args), batch_size):
+        batch_counter = 1
+        log.info(f"fetching options contracts prices. Batch:{batch_counter}")
+        async with Pool(
+            processes=CPUS,
+            # exception_handler=capture_exception,
+            maxtasksperchild=100,
+            childconcurrency=3,
+            queuecount=int(CPUS / 3),
+        ) as pool:
+            await pool.starmap(fetch_options_prices, op_args[i : i + batch_size])
+        log.info(f"finished with pool batch {batch_counter}")
+        batch_counter += 1
 
 
 async def import_tickers_and_contracts_process(
@@ -144,7 +148,7 @@ async def import_tickers_and_contracts_process(
     """
 
     await asyncio.gather(
-        # fetch_stock_prices(ticker=ticker, ticker_id=ticker_id, start_date=start_date, end_date=end_date),
+        fetch_stock_prices(ticker=ticker, ticker_id=ticker_id, start_date=start_date, end_date=end_date),
         fetch_options_contracts(ticker=ticker, ticker_id=ticker_id, months_hist=months_hist),
     )
 
@@ -235,15 +239,24 @@ async def fetch_options_contracts(
         for batch in options.clean_data_generator:
             await update_options_tickers(batch)
             log.info(
-                "options-tickers uploaded for ticker: {}".format(ticker if not all_ else f"all_batch:{batch_counter}")
+                "options-tickers uploaded for ticker: {0}, batch number: {1}".format(
+                    ticker if not all_ else "all_batch", batch_counter
+                )
             )
             batch_counter += 1
     except planned_exceptions as e:
-        log.warning(e, exc_info=True)
+        log.warning(e, exc_info=False)
         log.warning(f"failed to fetch options contracts for {ticker}")
 
     except Exception as e:
         log.error(e, exc_info=True)
+
+    finally:
+        log.info(
+            "finished options-tickers upload for ticker: {0}, batch number: {1}".format(
+                ticker if not all_ else "all_batch", batch_counter
+            )
+        )
 
 
 async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date: datetime, month_hist: int = 24):
@@ -252,16 +265,19 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
     try:
         o_prices = HistoricalOptionsPrices(o_ticker, o_ticker_id, expiration_date, month_hist)
         await o_prices.fetch()
-        log.info(f"uploading option batch prices for ticker: {o_ticker}")
+        log.info(f"uploading option prices for ticker: {o_ticker}")
         for batch in o_prices.clean_data_generator:
             await update_options_prices(batch)
 
     except planned_exceptions as e:
-        log.warning(e, exc_info=True)
-        log.warning(f"failed to fetch options prices for {o_ticker}, o_tikcer_id: {o_ticker_id}")
+        log.warning(e, exc_info=False)
+        log.warning(f"failed to fetch options prices for {o_ticker}, o_ticker_id: {o_ticker_id}")
 
     except Exception as e:
         log.error(e, exc_info=True)
+
+    finally:
+        log.info(f"finished uploading option prices for ticker: {o_ticker}, o_ticker_id: {o_ticker_id}")
 
 
 if __name__ == "__main__":
