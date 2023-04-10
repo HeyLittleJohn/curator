@@ -83,7 +83,7 @@ async def query_all_stock_tickers(session: AsyncSession) -> list[TickerModel]:
     """only returns tickers likely to have options contracts"""
     return (
         await session.execute(
-            select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["CS", "ADCR", "ETF"]))
+            select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["CS", "ADRC", "ETF"]))
         )
     ).all()
 

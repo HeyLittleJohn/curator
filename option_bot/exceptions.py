@@ -2,13 +2,14 @@ import sys
 
 from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
 from aiomultiprocess.types import ProxyException
-from sentry_sdk import capture_exception
+
+
+# from sentry_sdk import capture_exception
 
 
 class ProjBaseException(Exception):
     def __init__(self, message: str | None = None):
         super().__init__(message)
-        capture_exception(self)
 
     def __new__(cls, *args, **kwargs):
         new_cls = super().__new__(cls, *args, **kwargs)
