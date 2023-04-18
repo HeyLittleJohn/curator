@@ -1,11 +1,10 @@
 import asyncio
 import math
-import time
 from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
-from aiohttp import request
+from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
@@ -22,6 +21,9 @@ from option_bot.exceptions import (
 )
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
+
+
+# import time
 
 
 class Timespans(Enum):
@@ -47,7 +49,6 @@ class PolygonPaginator(object):
 
     MAX_QUERY_PER_SECOND = 99
     MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
-    polygon_api = "https://api.polygon.io"
 
     def __init__(self):  # , query_count: int = 0):
         self.query_count = 0  # = query_count
@@ -65,7 +66,7 @@ class PolygonPaginator(object):
             sleep_time = diff if diff < sleep_time else sleep_time
         return sleep_time
 
-    async def query_all(self, url: str, payload: dict = {}, overload=False, retry=False):
+    async def query_all(self, session: ClientSession, url: str, payload: dict = {}, overload=False, retry=False):
         payload["apiKey"] = POLYGON_API_KEY
         # if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
         #     await asyncio.sleep(self._api_sleep_time())
@@ -76,22 +77,22 @@ class PolygonPaginator(object):
         #     self.query_count = 0
         #     self.query_time_log = []
 
-        log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
+        # log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
 
         await asyncio.sleep(1)  # trying to keep things under 100 requests per second
 
         results = {"temp": "dict"}
         try:
-            async with request(method="GET", url=url, params=payload) as response:
-                log.info(f"status code: {response.status}")
+            async with session.request(method="GET", url=url, params=payload) as response:
+                # log.info(f"status code: {response.status}")
 
                 self.query_count += 1
                 if response.status == 200:
                     results = await response.json()
-                    self.query_time_log.append(
-                        {"request_id": results.get("request_id"), "query_timestamp": time.time()}
-                    )
-                    self.results.append(results)  # convert this to Yield
+                    # self.query_time_log.append(
+                    #     {"request_id": results.get("request_id"), "query_timestamp": time.time()}
+                    # )
+                    self.results.append(results)
 
                 elif response.status == 429:
                     await self.query_all(url, payload, overload=True)
@@ -109,7 +110,7 @@ class PolygonPaginator(object):
             if not retry:
                 log.info("sleeping for 45 sec")
                 await asyncio.sleep(45)
-                log.info("retrying connection and query")
+                # log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
@@ -118,7 +119,7 @@ class PolygonPaginator(object):
             if not retry:
                 log.info("sleeping for 45 sec")
                 await asyncio.sleep(45)
-                log.info("retrying connection and query")
+                # log.info("retrying connection and query")
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjTimeoutError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
@@ -141,7 +142,7 @@ class PolygonPaginator(object):
                 t = self.o_ticker
             raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
-    async def query_data(self):
+    async def query_data(self, session: ClientSession):
         """shell function to be overwritten by every inheriting class"""
         raise ProjBaseException("Function undefined in inherited class")
 
@@ -150,7 +151,12 @@ class PolygonPaginator(object):
         raise ProjBaseException("Function undefined in inherited class")
 
     async def fetch(self):
-        await self.query_data()
+        timeout = ClientTimeout(sock_read=15, sock_connect=60, total=75)
+        connector = TCPConnector(limit_per_host=1, use_dns_cache=True)
+        async with ClientSession(
+            base_url="https://api.polygon.io", timeout=timeout, connector=connector, trust_env=True
+        ) as session:
+            await self.query_data(session)
         self.clean_data()
         self.clean_data_generator = self.make_clean_generator()
 
@@ -167,12 +173,12 @@ class StockMetaData(PolygonPaginator):
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
-    async def query_data(self):
+    async def query_data(self, session: ClientSession):
         """"""
-        url = self.polygon_api + "/v3/reference/tickers"
+        url = "/v3/reference/tickers"
         if not self.all_:
             self.payload["ticker"] = self.ticker
-        await self.query_all(url=url, payload=self.payload)
+        await self.query_all(session, url=url, payload=self.payload)
 
     def clean_data(self):
         selected_keys = [
@@ -217,10 +223,7 @@ class HistoricalStockPrices(PolygonPaginator):
         super().__init__()
 
     async def query_data(self):
-        url = (
-            self.polygon_api
-            + f"/v2/aggs/ticker/{self.ticker}/range/{self.multiplier}/{self.timespan}/{self.start_date}/{self.end_date}"
-        )
+        url = f"/v2/aggs/ticker/{self.ticker}/range/{self.multiplier}/{self.timespan}/{self.start_date}/{self.end_date}"
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
         await self.query_all(url, payload)
 
@@ -284,12 +287,12 @@ class OptionsContracts(PolygonPaginator):
             counter += 1
         return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-    async def query_data(self):
-        url = self.polygon_api + "/v3/reference/options/contracts"
+    async def query_data(self, session: ClientSession):
+        url = "/v3/reference/options/contracts"
         payload = {"limit": 1000}
         if not self.all_:
             payload["underlying_ticker"] = self.ticker
-        args_list = [[url, dict(payload, **{"as_of": date})] for date in self.base_dates]
+        args_list = [[session, url, dict(payload, **{"as_of": date})] for date in self.base_dates]
         for args in args_list:
             await self.query_all(*args)
 
@@ -344,7 +347,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
 
-    async def query_data(self):
+    async def query_data(self, session: ClientSession):
         """api call to the aggs endpoint
 
         Parameters:
@@ -357,12 +360,11 @@ class HistoricalOptionsPrices(PolygonPaginator):
         """
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
         url = (
-            self.polygon_api
-            + f"/v2/aggs/ticker/{self.o_ticker}/range/{self.multiplier}/{self.timespan}/"
+            f"/v2/aggs/ticker/{self.o_ticker}/range/{self.multiplier}/{self.timespan}/"
             + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
             + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
         )
-        await self.query_all(url, payload)
+        await self.query_all(session, url, payload)
 
     def clean_data(self):
         results_hash = {}

@@ -113,20 +113,23 @@ async def import_all_tickers(args: Namespace):
 
     log.info("queuing options contracts metadata")
     op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
-    batch_size = 5000
+    batch_size = 2**8 - 1
+    batch_counter = 1
     for i in range(0, len(op_args), batch_size):
-        batch_counter = 1
         log.info(f"fetching options contracts prices. Batch:{batch_counter}")
-        async with Pool(
+        pool = Pool(
             processes=CPUS,
             # exception_handler=capture_exception,
             maxtasksperchild=100,
             childconcurrency=3,
             queuecount=int(CPUS / 3),
-        ) as pool:
+        )
+        try:
             await pool.starmap(fetch_options_prices, op_args[i : i + batch_size])
-        log.info(f"finished with pool batch {batch_counter}")
-        batch_counter += 1
+        finally:
+            pool.close()
+            log.info(f"finished with pool batch {batch_counter}")
+            batch_counter += 1
 
 
 async def import_tickers_and_contracts_process(
@@ -260,24 +263,26 @@ async def fetch_options_contracts(
 
 
 async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date: datetime, month_hist: int = 24):
-    log.info(f"pulling options contract pricing for ticker: {o_ticker}")
+    # log.info(f"pulling options contract pricing for ticker: {o_ticker}")
 
     try:
         o_prices = HistoricalOptionsPrices(o_ticker, o_ticker_id, expiration_date, month_hist)
         await o_prices.fetch()
-        log.info(f"uploading option prices for ticker: {o_ticker}")
+        #    log.info(f"uploading option prices for ticker: {o_ticker}")
         for batch in o_prices.clean_data_generator:
             await update_options_prices(batch)
 
-    except planned_exceptions as e:
-        log.warning(e, exc_info=False)
-        log.warning(f"failed to fetch options prices for {o_ticker}, o_ticker_id: {o_ticker_id}")
+    except planned_exceptions:  # as e:
+        pass
+    #    log.warning(e, exc_info=False)
+    #   log.warning(f"failed to fetch options prices for {o_ticker}, o_ticker_id: {o_ticker_id}")
 
     except Exception as e:
         log.error(e, exc_info=True)
 
     finally:
-        log.info(f"finished uploading option prices for ticker: {o_ticker}, o_ticker_id: {o_ticker_id}")
+        pass
+        # log.info(f"finished uploading option prices for ticker: {o_ticker}, o_ticker_id: {o_ticker_id}")
 
 
 if __name__ == "__main__":
