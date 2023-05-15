@@ -1,5 +1,6 @@
 import asyncio
 import math
+from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
 
@@ -36,7 +37,7 @@ class Timespans(Enum):
     year = "year"
 
 
-class PolygonPaginator(object):
+class PolygonPaginator(ABC):
     """API paginator interface for calls to the Polygon API. \
         It tracks queries made to the polygon API and calcs potential need for sleep
 
@@ -142,13 +143,17 @@ class PolygonPaginator(object):
                 t = self.o_ticker
             raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
+    @abstractmethod
     async def query_data(self, session: ClientSession):
-        """shell function to be overwritten by every inheriting class"""
-        raise ProjBaseException("Function undefined in inherited class")
+        """Requiring a query_data() function to be overwritten by every inheriting class"""
 
+    @abstractmethod
     def clean_data(self):
-        """shell function to be overwritten by every inheriting class"""
-        raise ProjBaseException("Function undefined in inherited class")
+        """Requiring a clean_data() function to be overwritten by every inheriting class"""
+
+    @abstractmethod
+    def generate_request_urls(self):
+        """Requiring a generate_request_urls() function to be overwritten by every inheriting class"""
 
     async def fetch(self):
         timeout = ClientTimeout(sock_read=15, sock_connect=60, total=75)
@@ -173,12 +178,14 @@ class StockMetaData(PolygonPaginator):
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
-    async def query_data(self, session: ClientSession):
-        """"""
+    def generate_request_urls(self):
         url = "/v3/reference/tickers"
         if not self.all_:
             self.payload["ticker"] = self.ticker
-        await self.query_all(session, url=url, payload=self.payload)
+        return url
+
+    async def query_data(self, session: ClientSession):
+        await self.query_all(session, url=self.generate_request_urls(), payload=self.payload)
 
     def clean_data(self):
         selected_keys = [

@@ -3,6 +3,7 @@ from argparse import Namespace
 from datetime import datetime
 from multiprocessing import cpu_count
 
+import uvloop
 from aiomultiprocess import Pool
 from sentry_sdk import capture_exception
 
@@ -51,7 +52,9 @@ planned_exceptions = (
 async def add_tickers_to_universe(kwargs_list):
     tickers = [x["ticker"] for x in kwargs_list]
 
-    async with Pool(processes=max(len(tickers), CPUS), exception_handler=capture_exception) as pool:
+    async with Pool(
+        processes=max(len(tickers), CPUS), exception_handler=capture_exception, loop_initializer=uvloop.new_event_loop
+    ) as pool:
         await pool.map(fetch_stock_metadata, tickers)
 
     ticker_ids = await lookup_multi_ticker_ids(tickers)
@@ -71,7 +74,9 @@ ticker_ids, ticker_args: {len(kwargs_list)}, ticker_ids: {len(ticker_ids)}"
         for i in range(len(kwargs_list))
     ]
 
-    async with Pool(processes=CPUS, exception_handler=capture_exception) as pool:
+    async with Pool(
+        processes=CPUS, exception_handler=capture_exception, loop_initializer=uvloop.new_event_loop
+    ) as pool:
         await pool.starmap(import_tickers_and_contracts_process, args_list)
 
     log.info("queuing options contracts metadata")
@@ -81,6 +86,7 @@ ticker_ids, ticker_args: {len(kwargs_list)}, ticker_ids: {len(ticker_ids)}"
     async with Pool(
         processes=CPUS,
         exception_handler=capture_exception,
+        loop_initializer=uvloop.new_event_loop,
         maxtasksperchild=10,
         queuecount=CPUS,  # childconcurrency=20
     ) as pool:
@@ -105,6 +111,7 @@ async def import_all_tickers(args: Namespace):
     # async with Pool(
     #     processes=CPUS,
     #     exception_handler=capture_exception,
+    #     loop_initializer=uvloop.new_event_loop,
     #     maxtasksperchild=64,
     #     childconcurrency=3,
     #     queuecount=CPUS,
@@ -120,6 +127,7 @@ async def import_all_tickers(args: Namespace):
         pool = Pool(
             processes=CPUS,
             # exception_handler=capture_exception,
+            loop_initializer=uvloop.new_event_loop,
             maxtasksperchild=100,
             childconcurrency=3,
             queuecount=int(CPUS / 3),
@@ -127,7 +135,7 @@ async def import_all_tickers(args: Namespace):
         try:
             await pool.starmap(fetch_options_prices, op_args[i : i + batch_size])
         finally:
-            pool.close()
+            pool.terminate()
             log.info(f"finished with pool batch {batch_counter}")
             batch_counter += 1
 
