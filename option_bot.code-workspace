@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../pyrh"
+		},
+		{
+			"path": "../aiomultiprocess"
 		}
 	],
 	"settings": {
