@@ -1,5 +1,4 @@
 import asyncio
-import math
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
@@ -13,8 +12,7 @@ from aiohttp.client_exceptions import (
 )
 from dateutil.relativedelta import relativedelta
 
-from option_bot.exceptions import (
-    ProjBaseException,
+from option_bot.exceptions import (  # ProjBaseException,
     ProjClientConnectionError,
     ProjClientResponseError,
     ProjIndexError,
@@ -22,9 +20,6 @@ from option_bot.exceptions import (
 )
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
-
-
-# import time
 
 
 class Timespans(Enum):
@@ -49,86 +44,65 @@ class PolygonPaginator(ABC):
     paginator_type = "Generic"
 
     MAX_QUERY_PER_SECOND = 99
-    MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
+    # MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
 
-    def __init__(self):  # , query_count: int = 0):
-        self.query_count = 0  # = query_count
-        self.query_time_log = []
-        self.results = []
+    def __init__(self):
         self.clean_results = []
         self.clean_data_generator = iter(())
 
     def _api_sleep_time(self) -> int:
-        sleep_time = 60
-        if len(self.query_time_log) > 2:
-            a = timestamp_to_datetime(self.query_time_log[0]["query_timestamp"])
-            b = timestamp_to_datetime(self.query_time_log[-1]["query_timestamp"])
-            diff = math.ceil((b - a).total_seconds())
-            sleep_time = diff if diff < sleep_time else sleep_time
-        return sleep_time
+        """Returns the time to sleep based if the endpoint returns a 429 error"""
+        return 60
 
-    async def query_all(self, session: ClientSession, url: str, payload: dict = {}, overload=False, retry=False):
+    async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple(int, dict):
+        """Execute the request and return the response status code and json response
+        Args:
+            session: aiohttp ClientSession
+            url: url to query
+            payload: dict of query params
+        Returns:
+            (status_code, json_response)
+                status_code: int of the response status code
+                json_response: dict of the json response
+        """
         payload["apiKey"] = POLYGON_API_KEY
-        # if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
-        #     await asyncio.sleep(self._api_sleep_time())
-        #     self.query_count = 0
-        #     self.query_time_log = []
-        # elif self.query_count >= self.MAX_QUERY_PER_SECOND / 30:
-        #     time.sleep(1)
-        #     self.query_count = 0
-        #     self.query_time_log = []
+        async with session.request(method="GET", url=url, params=payload) as response:
+            status_code = response.status
+            json_response = await response.json() if status_code == 200 else {}
+            return (status_code, json_response)
+
+    async def query_all(self, session: ClientSession, url: str, payload: dict = {}, retry=False) -> list[dict]:
+        """Query the API until all results have been returned
+        Args:
+            session: aiohttp ClientSession
+            url: url to query
+            payload: dict of query params
+            retry: bool to indicate if this is a retry attempt
+        Returns:
+            list of dicts of the json response
+        """
 
         # log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
 
-        await asyncio.sleep(1)  # trying to keep things under 100 requests per second
+        # await asyncio.sleep(1)  # trying to keep things under 100 requests per Good
+        results = []
 
-        results = {"temp": "dict"}
-        try:
-            async with session.request(method="GET", url=url, params=payload) as response:
-                # log.info(f"status code: {response.status}")
+        while True:
+            try:
+                status, response = await self._execute_request(session, url, payload)
+                if status == 200:
+                    results.append(response)
 
-                self.query_count += 1
-                if response.status == 200:
-                    results = await response.json()
-                    # self.query_time_log.append(
-                    #     {"request_id": results.get("request_id"), "query_timestamp": time.time()}
-                    # )
-                    self.results.append(results)
+                elif status == 429:
+                    await asyncio.sleep(self._api_sleep_time())
+                    status, response = await self._execute_request(session, url, payload)
 
-                elif response.status == 429:
-                    await self.query_all(url, payload, overload=True)
-                else:
-                    response.raise_for_status()
-
-        except (ClientResponseError, ProjClientResponseError):
-            if not retry:
-                await asyncio.sleep(15)
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
-
-        except (ClientConnectionError, ClientConnectorError, ProjClientConnectionError):
-            if not retry:
-                log.info("sleeping for 45 sec")
-                await asyncio.sleep(45)
-                # log.info("retrying connection and query")
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
-
-        except (TimeoutError, ProjTimeoutError):
-            if not retry:
-                log.info("sleeping for 45 sec")
-                await asyncio.sleep(45)
-                # log.info("retrying connection and query")
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjTimeoutError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
-
-        finally:
-            next_url = results.get("next_url")
-            if next_url:
-                await self.query_all(next_url)
+                # else:
+                #     response.raise_for_status()  # NOTE: will not have a response object. Move this to _execute_request()
+            finally:
+                next_url = results.get("next_url")
+                if next_url:
+                    await self.query_all(next_url)
 
     def make_clean_generator(self):
         try:
