@@ -12,12 +12,7 @@ from aiohttp.client_exceptions import (
 )
 from dateutil.relativedelta import relativedelta
 
-from option_bot.exceptions import (  # ProjBaseException,
-    ProjClientConnectionError,
-    ProjClientResponseError,
-    ProjIndexError,
-    ProjTimeoutError,
-)
+from option_bot.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
 
@@ -68,41 +63,76 @@ class PolygonPaginator(ABC):
         payload["apiKey"] = POLYGON_API_KEY
         async with session.request(method="GET", url=url, params=payload) as response:
             status_code = response.status
+            if status_code == 429:
+                raise ProjAPIOverload(f"API Overload, 429 error code: {url} {payload}")
+            elif status_code >= 400:
+                raise ProjAPIError(f"API Error, status code {status_code}: {url} {payload}")
             json_response = await response.json() if status_code == 200 else {}
-            return (status_code, json_response)
+            return status_code, json_response
 
-    async def query_all(self, session: ClientSession, url: str, payload: dict = {}, retry=False) -> list[dict]:
+    async def query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
         """Query the API until all results have been returned
         Args:
             session: aiohttp ClientSession
             url: url to query
             payload: dict of query params
-            retry: bool to indicate if this is a retry attempt
+
         Returns:
             list of dicts of the json response
         """
-
-        # log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
-
-        # await asyncio.sleep(1)  # trying to keep things under 100 requests per Good
         results = []
+        status = 0
+        retry = False
 
         while True:
             try:
                 status, response = await self._execute_request(session, url, payload)
+
+            except ProjAPIOverload as e:
+                log.exception(e)
+                status = 1
+
+            except ProjAPIError as e:
+                log.exception(e)
+                status = 2
+
+            except (ClientConnectionError, ClientConnectorError, ClientResponseError) as e:
+                log.exception(e, extra={"context": "Connection Lost! Going to sleep for 45 seconds..."})
+                status = 3
+
+            except Exception as e:
+                log.exception(e, extra={"context": "Unexpected Error"})
+                status = 4
+
+            finally:
                 if status == 200:
                     results.append(response)
+                    if response.get("next_url"):
+                        url = response["next_url"]
+                        payload = {}
+                        status = 0
+                        retry = False
+                    else:
+                        break
 
-                elif status == 429:
+                elif status == 1 and retry is False:
                     await asyncio.sleep(self._api_sleep_time())
-                    status, response = await self._execute_request(session, url, payload)
+                    retry = True
+                    status = 0
 
-                # else:
-                #     response.raise_for_status()  # NOTE: will not have a response object. Move this to _execute_request()
-            finally:
-                next_url = results.get("next_url")
-                if next_url:
-                    await self.query_all(next_url)
+                elif status == 2 and retry is False:
+                    retry = True
+                    status = 0
+
+                elif status == 3 and retry is False:
+                    await asyncio.sleep(45)
+                    retry = True
+                    status = 0
+
+                else:
+                    break
+
+        return results
 
     def make_clean_generator(self):
         try:

@@ -78,7 +78,8 @@ log_formatter = logging.Formatter(
     "%(levelname)s - "
     "%(processName)s:%(threadName)s - "
     "%(filename)s:%(funcName)s:%(lineno)d - "
-    "%(message)s"
+    "%(message)s -"
+    "%(context)s"
 )
 
 # Remove all existing log handlers
