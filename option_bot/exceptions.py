@@ -67,3 +67,11 @@ class ProjProxyException(ProjBaseException, ProxyException):
 
 class ProjAttributeError(ProjBaseException, AttributeError):
     """A custom AttributeError that inherits from ProjBaseException and AttributeError."""
+
+
+class ProjAPIOverload(ProjBaseException):
+    """An exception indicating a 429 response from the API"""
+
+
+class ProjAPIError(ProjBaseException):
+    """An exception indicating a 400 response from the API"""
