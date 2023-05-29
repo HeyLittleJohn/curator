@@ -157,15 +157,14 @@ class PolygonPaginator(ABC):
 
     @abstractmethod
     def generate_request_urls(self):
-        """Requiring a generate_request_urls() function to be overwritten by every inheriting class"""
+        """Requiring a generate_request_urls() function to be overwritten by every inheriting class
 
-    async def fetch(self):
-        timeout = ClientTimeout(sock_read=15, sock_connect=60, total=75)
-        connector = TCPConnector(limit_per_host=1, use_dns_cache=True)
-        async with ClientSession(
-            base_url="https://api.polygon.io", timeout=timeout, connector=connector, trust_env=True
-        ) as session:
-            await self.query_data(session)
+        Returns:
+            tik_ids: list of ticker ids that coincide with the urls
+            urls: list[str] of urls"""
+
+    async def fetch(self, session):
+        await self.query_data()
         self.clean_data()
         self.clean_data_generator = self.make_clean_generator()
 

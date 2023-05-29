@@ -63,6 +63,7 @@ async def query_options_tickers(
     # NOTE: may need to adjust to not pull all columns from table
     if batch and all_:
         raise InvalidArgs("Can't have query all_ and a batch")
+
     stmt = (
         select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date)
         .join(StockTickers)
