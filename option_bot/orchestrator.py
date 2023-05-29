@@ -144,16 +144,16 @@ async def import_all_tickers(args: Namespace):
         for x in ticker_lookup
     ]
 
-    # log.info("importing all stock prices and options contract metadata")
-    # async with Pool(
-    #     processes=CPUS,
-    #     exception_handler=capture_exception,
-    #     loop_initializer=uvloop.new_event_loop,
-    #     maxtasksperchild=64,
-    #     childconcurrency=3,
-    #     queuecount=CPUS,
-    # ) as pool:
-    #     await pool.starmap(import_tickers_and_contracts_process, args_list)
+    log.info("importing all stock prices and options contract metadata")
+    async with Pool(
+        processes=CPUS,
+        exception_handler=capture_exception,
+        loop_initializer=uvloop.new_event_loop,
+        maxtasksperchild=64,
+        childconcurrency=3,
+        queuecount=CPUS,
+    ) as pool:
+        await pool.starmap(import_tickers_and_contracts_process, args_list)
 
     log.info("queuing options contracts metadata")
     op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
