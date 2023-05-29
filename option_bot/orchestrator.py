@@ -32,12 +32,13 @@ from option_bot.polygon_utils import (
     HistoricalStockPrices,
     OptionsContracts,
     StockMetaData,
+    PolygonPaginator
 )
 from option_bot.proj_constants import log
 
 
-CPUS = cpu_count() - 2
-# CPUS -= 1  # so as to not jam the computer
+# CPUS = cpu_count() - 2
+CPUS = 24
 
 planned_exceptions = (
     InvalidArgs,
@@ -47,6 +48,31 @@ planned_exceptions = (
     ProjIndexError,
     ProjTimeoutError,
 )
+
+async def add_api_data_to_db(paginator: PolygonPaginator, ticker_ids: list = ["all_"]):
+    """This function will be used to add data to the db from the polygon api.
+    It is the base module co-routine for all our data pulls.
+    It generates the urls to be queried, creates and runs a process pool to perform the I/O queries. 
+    The results for each request are returned asyncronously and are handled by the main event loop which cleans and stores the data.
+    """
+    log.info("generating urls to be queried")
+    tik_ids, urls = paginator.generate_request_urls(ticker_ids)
+    payload = {}
+    args = [(urls[i], payload, tik_ids[i]) for i in range(len(urls))]
+
+    log.info("fetching data from polygon api")
+    async with Pool(
+        processes=CPUS,
+        exception_handler=capture_exception,
+        loop_initializer=uvloop.new_event_loop,
+        childconcurrency=int(100 / CPUS),
+        queuecount=int(CPUS / 3),
+        init_client_session=True,
+        session_base_url="https://api.polygon.io",
+    ) as pool:
+        async for result in pool.starmap(paginator.query_data, args):
+            if result is not None:
+                await paginator.clean_data(result)
 
 
 async def add_tickers_to_universe(kwargs_list):
@@ -120,24 +146,19 @@ async def import_all_tickers(args: Namespace):
 
     log.info("queuing options contracts metadata")
     op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
-    batch_size = 2**8 - 1
-    batch_counter = 1
-    for i in range(0, len(op_args), batch_size):
-        log.info(f"fetching options contracts prices. Batch:{batch_counter}")
-        pool = Pool(
-            processes=CPUS,
-            # exception_handler=capture_exception,
-            loop_initializer=uvloop.new_event_loop,
-            maxtasksperchild=100,
-            childconcurrency=3,
-            queuecount=int(CPUS / 3),
-        )
-        try:
-            await pool.starmap(fetch_options_prices, op_args[i : i + batch_size])
-        finally:
-            pool.terminate()
-            log.info(f"finished with pool batch {batch_counter}")
-            batch_counter += 1
+
+    log.info("fetching options contracts prices")
+    async with Pool(
+        processes=CPUS,
+        loop_initializer=uvloop.new_event_loop,
+        # maxtasksperchild=100,
+        childconcurrency=int(100 / CPUS),
+        queuecount=int(CPUS / 3),
+        init_client_session=True,
+        session_base_url="https://api.polygon.io",
+    ) as pool:
+        async for result in pool.starmap(fetch_options_prices, op_args):
+
 
 
 async def import_tickers_and_contracts_process(
