@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
+from aiohttp import ClientSession
 from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
