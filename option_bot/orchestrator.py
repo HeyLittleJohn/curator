@@ -1,13 +1,15 @@
 import asyncio
 from argparse import Namespace
 from datetime import datetime
-from multiprocessing import cpu_count
+
+# from multiprocessing import cpu_count
+from typing import Awaitable
 
 import uvloop
 from aiomultiprocess import Pool
 from sentry_sdk import capture_exception
 
-from option_bot.db_manager import (
+from option_bot.db_tools.queries import (
     delete_stock_ticker,
     lookup_multi_ticker_ids,
     lookup_ticker_id,
@@ -19,6 +21,7 @@ from option_bot.db_manager import (
     update_stock_metadata,
     update_stock_prices,
 )
+from option_bot.db_tools.uploader import Uploader
 from option_bot.exceptions import (
     InvalidArgs,
     ProjBaseException,
@@ -31,8 +34,8 @@ from option_bot.polygon_utils import (
     HistoricalOptionsPrices,
     HistoricalStockPrices,
     OptionsContracts,
+    PolygonPaginator,
     StockMetaData,
-    PolygonPaginator
 )
 from option_bot.proj_constants import log
 
@@ -49,16 +52,21 @@ planned_exceptions = (
     ProjTimeoutError,
 )
 
-async def add_api_data_to_db(paginator: PolygonPaginator, ticker_ids: list = ["all_"]):
+
+async def add_api_data_to_db(
+    paginator: PolygonPaginator, upload_func: Awaitable, record_size: int, ticker_ids: list = ["all_"]
+):
     """This function will be used to add data to the db from the polygon api.
     It is the base module co-routine for all our data pulls.
-    It generates the urls to be queried, creates and runs a process pool to perform the I/O queries. 
-    The results for each request are returned asyncronously and are handled by the main event loop which cleans and stores the data.
+    It generates the urls to be queried, creates and runs a process pool to perform the I/O queries.
+    The results for each request are returned via PoolResults generator.
+    They are handled by the main event loop which cleans and stores the data.
     """
     log.info("generating urls to be queried")
     tik_ids, urls = paginator.generate_request_urls(ticker_ids)
     payload = {}
     args = [(urls[i], payload, tik_ids[i]) for i in range(len(urls))]
+    uploader = Uploader(upload_func, expected_records=len(args), record_size=record_size)
 
     log.info("fetching data from polygon api")
     async with Pool(
@@ -72,7 +80,10 @@ async def add_api_data_to_db(paginator: PolygonPaginator, ticker_ids: list = ["a
     ) as pool:
         async for result in pool.starmap(paginator.query_data, args):
             if result is not None:
-                await paginator.clean_data(result)
+                clean_data = paginator.clean_data(result)
+                await uploader.process_clean_data(clean_data)
+            else:
+                uploader.update_expected_records()
 
 
 async def add_tickers_to_universe(kwargs_list):
@@ -158,7 +169,7 @@ async def import_all_tickers(args: Namespace):
         session_base_url="https://api.polygon.io",
     ) as pool:
         async for result in pool.starmap(fetch_options_prices, op_args):
-
+            pass
 
 
 async def import_tickers_and_contracts_process(
