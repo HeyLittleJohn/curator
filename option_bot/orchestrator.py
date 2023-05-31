@@ -37,7 +37,7 @@ from option_bot.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
-from option_bot.proj_constants import log
+from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS
 
 
 # CPUS = cpu_count() - 2
@@ -52,9 +52,30 @@ planned_exceptions = (
     ProjTimeoutError,
 )
 
+pool_default_kwargs = {
+    "processes": CPUS,
+    "exception_handler": capture_exception,
+    "loop_initializer": uvloop.new_event_loop,
+    "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
+    "queuecount": int(CPUS / 3),
+    "init_client_session": True,
+    "session_base_url": "https://api.polygon.io",
+}
 
-async def add_api_data_to_db(
-    paginator: PolygonPaginator, upload_func: Awaitable, record_size: int, ticker_ids: list = ["all_"]
+
+def pool_kwarg_config(kwargs: dict) -> dict:
+    """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
+    pool_kwargs = pool_default_kwargs.copy()
+    pool_kwargs.update(kwargs)
+    return pool_kwargs
+
+
+async def api_pool_uploader(
+    paginator: PolygonPaginator,
+    upload_func: Awaitable,
+    record_size: int,
+    ticker_ids: list = ["all_"],
+    pool_kwargs: dict = {},
 ):
     """This function will be used to add data to the db from the polygon api.
     It is the base module co-routine for all our data pulls.
@@ -69,15 +90,9 @@ async def add_api_data_to_db(
     uploader = Uploader(upload_func, expected_records=len(args), record_size=record_size)
 
     log.info("fetching data from polygon api")
-    async with Pool(
-        processes=CPUS,
-        exception_handler=capture_exception,
-        loop_initializer=uvloop.new_event_loop,
-        childconcurrency=int(100 / CPUS),
-        queuecount=int(CPUS / 3),
-        init_client_session=True,
-        session_base_url="https://api.polygon.io",
-    ) as pool:
+
+    pool_kwargs = pool_kwarg_config(pool_kwargs)
+    async with Pool(**pool_kwargs) as pool:
         async for result in pool.starmap(paginator.query_data, args):
             if result is not None:
                 clean_data = paginator.clean_data(result)

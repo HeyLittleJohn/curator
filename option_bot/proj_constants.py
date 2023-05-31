@@ -41,6 +41,11 @@ def db_uri_maker() -> str:
     return database_uri
 
 
+# total number of requests the API can handle at once. 100/sec rate limit
+MAX_CONCURRENT_REQUESTS = 100
+# Max number of requests per minute for the free API tier: 5
+MAX_QUERY_PER_MINUTE = 4
+
 POSTGRES_DATABASE_URL = db_uri_maker()
 
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
