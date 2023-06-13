@@ -68,9 +68,9 @@ class PolygonPaginator(ABC):
             elif status_code >= 400:
                 raise ProjAPIError(f"API Error, status code {status_code}: {url} {payload}")
             json_response = await response.json() if status_code == 200 else {}
-            return status_code, json_response
+            return (status_code, json_response)
 
-    async def query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
+    async def _query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
         """Query the API until all results have been returned
         Args:
             session: aiohttp ClientSession
@@ -134,6 +134,14 @@ class PolygonPaginator(ABC):
 
         return results
 
+    async def query_data(self, session: ClientSession, url: str, payload: dict, ticker_id: str):
+        """query_data() is an api to call the _query_all() function.
+
+        Overwrite this to customize the way to insert the ticker_id into the query results
+        """
+        return await self._query_all(session, url, payload)
+
+    # deprecated
     def make_clean_generator(self):
         try:
             record_size = len(self.clean_results[0])
@@ -148,21 +156,17 @@ class PolygonPaginator(ABC):
             raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
     @abstractmethod
-    async def query_data(self, session: ClientSession):
-        """Requiring a query_data() function to be overwritten by every inheriting class"""
-
-    @abstractmethod
     def clean_data(self):
         """Requiring a clean_data() function to be overwritten by every inheriting class"""
 
     @abstractmethod
-    def generate_request_urls(self):
-        """Requiring a generate_request_urls() function to be overwritten by every inheriting class
+    def generate_request_args(self):
+        """Requiring a generate_request_args() function to be overwritten by every inheriting class
 
         Returns:
-            tik_ids: list of ticker ids that coincide with the urls
-            urls: list[str] of urls"""
+            url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
 
+    # deprecated
     async def fetch(self, session):
         await self.query_data()
         self.clean_data()
@@ -175,22 +179,26 @@ class StockMetaData(PolygonPaginator):
 
     paginator_type = "StockMetaData"
 
-    def __init__(self, ticker: str, all_: bool):
-        self.ticker = ticker
+    def __init__(self, tickers: list[str], all_: bool):
+        self.tickers = tickers
         self.all_ = all_
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
-    def generate_request_urls(self):
-        url = "/v3/reference/tickers"
+    def generate_request_args(self):
+        """Generate the urls to query the Polygon API.
+
+        Returns:
+        urls: list(dict), each dict contains the url and the payload for the request"""
+        url_base = "/v3/reference/tickers"
         if not self.all_:
-            self.payload["ticker"] = self.ticker
-        return url
+            urls = [{"url": url_base, "payload": dict(self.payload, **{"ticker": ticker})} for ticker in self.tickers]
+        else:
+            urls = [{"url": url_base, "payload": self.payload}]
+        return urls
 
-    async def query_data(self, session: ClientSession):
-        await self.query_all(session, url=self.generate_request_urls(), payload=self.payload)
-
-    def clean_data(self):
+    def clean_data(self, results: list[dict]):
+        clean_results = []
         selected_keys = [
             "ticker",
             "name",
@@ -202,10 +210,11 @@ class StockMetaData(PolygonPaginator):
             "currency_name",
             "cik",
         ]
-        for result_list in self.results:
+        for result_list in results:
             for ticker in result_list["results"]:
                 t = {x: ticker.get(x) for x in selected_keys}
-                self.clean_results.append(t)
+                clean_results.append(t)
+        return clean_results
 
 
 class HistoricalStockPrices(PolygonPaginator):

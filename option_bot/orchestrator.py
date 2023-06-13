@@ -74,7 +74,6 @@ async def api_pool_uploader(
     paginator: PolygonPaginator,
     upload_func: Awaitable,
     record_size: int,
-    ticker_ids: list = ["all_"],
     pool_kwargs: dict = {},
 ):
     """This function will be used to add data to the db from the polygon api.
@@ -82,18 +81,22 @@ async def api_pool_uploader(
     It generates the urls to be queried, creates and runs a process pool to perform the I/O queries.
     The results for each request are returned via PoolResults generator.
     They are handled by the main event loop which cleans and stores the data.
+
+    Args:
+        paginator: PolygonPaginator object, specific to the endpoint being queried
+        upload_func: function to upload the data to the db, matching the endpoint/data type being queried
+        record_size: number of fields per record, used to estimate the batch size
+
     """
     log.info("generating urls to be queried")
-    tik_ids, urls = paginator.generate_request_urls(ticker_ids)
-    payload = {}
-    args = [(urls[i], payload, tik_ids[i]) for i in range(len(urls))]
-    uploader = Uploader(upload_func, expected_records=len(args), record_size=record_size)
+    url_args = paginator.generate_request_args()
+    uploader = Uploader(upload_func, expected_args=len(url_args), record_size=record_size)
 
     log.info("fetching data from polygon api")
 
     pool_kwargs = pool_kwarg_config(pool_kwargs)
     async with Pool(**pool_kwargs) as pool:
-        async for result in pool.starmap(paginator.query_data, args):
+        async for result in pool.starmap(paginator.query_data, url_args):
             if result is not None:
                 clean_data = paginator.clean_data(result)
                 await uploader.process_clean_data(clean_data)
@@ -248,18 +251,14 @@ async def import_all_ticker_metadata():
     return ticker_lookup
 
 
-async def fetch_stock_metadata(ticker: str = "", all_: bool = False):
+async def fetch_stock_metadata(tickers: list[str], all_: bool = True):
     if all_:
         log.info("pulling ticker metadata for all tickers")
     else:
-        log.info(f"pulling ticker metadata for ticker: {ticker}")
-    meta = StockMetaData(ticker, all_)
-    await meta.fetch()
-    batch_counter = 0
-    for batch in meta.clean_data_generator:
-        await update_stock_metadata(batch)
-        log.info("ticker metadata uploaded for ticker: {}".format(ticker if not all_ else f"all_batch:{batch_counter}"))
-        batch_counter += 1
+        log.info(f"pulling ticker metadata for tickers: {tickers}")
+    meta = StockMetaData(tickers, all_)
+    pool_kwargs = {"processes": 1, "childconcurrency": 1, "queuecount": 1}
+    await api_pool_uploader(meta, update_stock_metadata, record_size=14, pool_kwargs=pool_kwargs)
 
 
 async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, ticker_id: int | None = None):
@@ -341,5 +340,7 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
 
 
 if __name__ == "__main__":
-    results = asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=True))
-    pass
+    # results = asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=True))
+    # pass
+    asyncio.run(fetch_stock_metadata(["SPY", "HOOD", "IVV"], all_=True))
+    # should ignore the tickers and pull all
