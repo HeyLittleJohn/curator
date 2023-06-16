@@ -49,7 +49,7 @@ class PolygonPaginator(ABC):
         """Returns the time to sleep based if the endpoint returns a 429 error"""
         return 60
 
-    async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple(int, dict):
+    async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
         Args:
             session: aiohttp ClientSession
@@ -134,7 +134,7 @@ class PolygonPaginator(ABC):
 
         return results
 
-    async def query_data(self, session: ClientSession, url: str, payload: dict, ticker_id: str):
+    async def query_data(self, url: str, payload: dict, ticker_id: str, session: ClientSession = None):
         """query_data() is an api to call the _query_all() function.
 
         Overwrite this to customize the way to insert the ticker_id into the query results
@@ -192,9 +192,9 @@ class StockMetaData(PolygonPaginator):
         urls: list(dict), each dict contains the url and the payload for the request"""
         url_base = "/v3/reference/tickers"
         if not self.all_:
-            urls = [{"url": url_base, "payload": dict(self.payload, **{"ticker": ticker})} for ticker in self.tickers]
+            urls = [(url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers]
         else:
-            urls = [{"url": url_base, "payload": self.payload}]
+            urls = [(url_base, self.payload, "")]
         return urls
 
     def clean_data(self, results: list[dict]):

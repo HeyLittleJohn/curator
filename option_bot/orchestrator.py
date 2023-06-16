@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Awaitable
 
 import uvloop
-from aiomultiprocess import Pool
+from aiomultiprocess import Pool  # , set_start_method
 from sentry_sdk import capture_exception
 
 from option_bot.db_tools.queries import (
@@ -39,6 +39,8 @@ from option_bot.polygon_utils import (
 )
 from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS
 
+
+# set_start_method("fork")
 
 # CPUS = cpu_count() - 2
 CPUS = 24

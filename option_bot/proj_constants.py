@@ -16,7 +16,7 @@ sentry_sdk.init(
 )
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
-DEBUG = True
+DEBUG = False
 
 
 # NOTE: use this function if pass variables to env via docker .env file. Otherwise use .pgpass
@@ -83,9 +83,23 @@ log_formatter = logging.Formatter(
     "%(levelname)s - "
     "%(processName)s:%(threadName)s - "
     "%(filename)s:%(funcName)s:%(lineno)d - "
-    "%(message)s -"
+    "%(message)s - "
     "%(context)s"
 )
+
+
+class ContextFilter(logging.Filter):
+    """This is a filter which injects contextual information into the log."""
+
+    def filter(self, record):
+        if not hasattr(record, "context"):
+            record.context = ""
+        return True
+
+
+# Add filter to give default context value of ""
+context_filter = ContextFilter()
+log.addFilter(context_filter)
 
 # Remove all existing log handlers
 for handler in root_logger.handlers:
