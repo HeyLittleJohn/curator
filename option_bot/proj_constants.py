@@ -48,6 +48,7 @@ MAX_QUERY_PER_MINUTE = 4
 
 POSTGRES_DATABASE_URL = db_uri_maker()
 
+POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 RH_USERNAME = os.getenv("RH_USERNAME")
 RH_PASSWORD = os.getenv("RH_PASSWORD")

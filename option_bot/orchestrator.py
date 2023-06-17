@@ -37,7 +37,7 @@ from option_bot.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
-from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS
+from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE_URL
 
 
 # set_start_method("fork")
@@ -61,7 +61,7 @@ pool_default_kwargs = {
     "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
     "queuecount": int(CPUS / 3),
     "init_client_session": True,
-    "session_base_url": "https://api.polygon.io",
+    "session_base_url": POLYGON_BASE_URL,
 }
 
 
@@ -92,6 +92,7 @@ async def api_pool_uploader(
     """
     log.info("generating urls to be queried")
     url_args = paginator.generate_request_args()
+    result_ix = -1  # so the first result is ix = 0
     uploader = Uploader(upload_func, expected_args=len(url_args), record_size=record_size)
 
     log.info("fetching data from polygon api")
@@ -99,11 +100,15 @@ async def api_pool_uploader(
     pool_kwargs = pool_kwarg_config(pool_kwargs)
     async with Pool(**pool_kwargs) as pool:
         async for result in pool.starmap(paginator.query_data, url_args):
+            result_ix += 1
             if result is not None:
                 clean_data = paginator.clean_data(result)
-                await uploader.process_clean_data(clean_data)
+                await uploader.process_clean_data(paginator.make_clean_generator(clean_data))
             else:
                 uploader.update_expected_records()
+                log.warning(
+                    f"no {paginator.paginator_type} results for arg {url_args[result_ix]}"
+                )  # depends on results returned in order
 
 
 async def add_tickers_to_universe(kwargs_list):
