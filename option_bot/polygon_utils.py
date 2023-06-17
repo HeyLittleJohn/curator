@@ -13,7 +13,7 @@ from aiohttp.client_exceptions import (
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
-from option_bot.proj_constants import log, POLYGON_API_KEY
+from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
 
 
@@ -48,6 +48,10 @@ class PolygonPaginator(ABC):
     def _api_sleep_time(self) -> int:
         """Returns the time to sleep based if the endpoint returns a 429 error"""
         return 60
+
+    def _clean_url(self, url: str) -> str:
+        """Clean the url to remove the base url"""
+        return url.replace(POLYGON_BASE_URL, "")
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
@@ -108,7 +112,7 @@ class PolygonPaginator(ABC):
                 if status == 200:
                     results.append(response)
                     if response.get("next_url"):
-                        url = response["next_url"]
+                        url = self._clean_url(response["next_url"])
                         payload = {}
                         status = 0
                         retry = False
@@ -142,12 +146,13 @@ class PolygonPaginator(ABC):
         return await self._query_all(session, url, payload)
 
     # deprecated
-    def make_clean_generator(self):
+    def make_clean_generator(self, clean_results: list[dict]):
         try:
-            record_size = len(self.clean_results[0])
-            batch_size = round(60000 / record_size)  # postgres input limit is ~65000
-            for i in range(0, len(self.clean_results), batch_size):
-                yield self.clean_results[i : i + batch_size]
+            record_size = len(clean_results[0])
+            batch_size = round(62000 / record_size)  # postgres input limit is ~65000
+            for i in range(0, len(clean_results), batch_size):
+                yield clean_results[i : i + batch_size]
+
         except IndexError:
             if hasattr(self, "ticker"):
                 t = self.ticker
