@@ -105,7 +105,7 @@ class PolygonPaginator(ABC):
                 status = 3
 
             except Exception as e:
-                log.exception(e, extra={"context": "Unexpected Error"})
+                log.exception(e, extra={"context": "Unexpected Error while querying the API"})
                 status = 4
 
             finally:
@@ -138,7 +138,7 @@ class PolygonPaginator(ABC):
 
         return results
 
-    async def query_data(self, url: str, payload: dict, ticker_id: str, session: ClientSession = None):
+    async def query_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
         """query_data() is an api to call the _query_all() function.
 
         Overwrite this to customize the way to insert the ticker_id into the query results
@@ -280,19 +280,15 @@ class OptionsContracts(PolygonPaginator):
 
     def __init__(
         self,
-        ticker: str,
-        ticker_id: int,
+        tickers: list[str],
+        ticker_id_lookup: dict[str, int],  # ticker str is key, id is value
         months_hist: int = 24,
-        all_: bool = False,
-        ticker_id_lookup: dict | None = None,
     ):
         super().__init__()
-        self.ticker = ticker
-        self.ticker_id = ticker_id
+        self.tickers = tickers
+        self.ticker_id_lookup = ticker_id_lookup
         self.months_hist = months_hist
         self.base_dates = self._determine_base_dates()
-        self.all_ = all_
-        self.ticker_id_lookup = ticker_id_lookup
 
     def _determine_base_dates(self) -> list[datetime]:
         year_month_array = []
@@ -311,16 +307,21 @@ class OptionsContracts(PolygonPaginator):
             counter += 1
         return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-    async def query_data(self, session: ClientSession):
-        url = "/v3/reference/options/contracts"
-        payload = {"limit": 1000}
-        if not self.all_:
-            payload["underlying_ticker"] = self.ticker
-        args_list = [[session, url, dict(payload, **{"as_of": date})] for date in self.base_dates]
-        for args in args_list:
-            await self.query_all(*args)
+    def generate_request_args(self):
+        """Generate the urls to query the options contracts endpoint.
 
-    def clean_data(self):
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
+        url_base = "/v3/reference/options/contracts"
+        payload = {"limit": 1000}
+        return [
+            (url_base, dict(payload, **{"underlying_ticker": ticker, "as_of": date}), ticker)
+            for ticker in self.tickers
+            for date in self.base_dates
+        ]
+
+    def clean_data(self, results: list[dict]):
+        clean_results = []
         key_mapping = {
             "ticker": "options_ticker",
             "expiration_date": "expiration_date",
@@ -331,15 +332,14 @@ class OptionsContracts(PolygonPaginator):
             "exercise_style": "exercise_style",
             "cfi": "cfi",
         }
-        for page in self.results:
+        for page in results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = (
-                    self.ticker_id_lookup[record.get("underlying_ticker")] if self.all_ else self.ticker_id
-                )
-                self.clean_results.append(t)
-        self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
+                t["underlying_ticker_id"] = self.ticker_id_lookup[record.get("underlying_ticker")]
+                clean_results.append(t)
+        clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
+        return clean_results
 
 
 class HistoricalOptionsPrices(PolygonPaginator):

@@ -1,8 +1,7 @@
 import asyncio
 from argparse import Namespace
 from datetime import datetime
-
-# from multiprocessing import cpu_count
+from multiprocessing import cpu_count
 from typing import Awaitable
 
 import uvloop
@@ -42,8 +41,8 @@ from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE
 
 # set_start_method("fork")
 
-# CPUS = cpu_count() - 2
-CPUS = 24
+CPUS = cpu_count() - 2
+
 
 planned_exceptions = (
     InvalidArgs,
@@ -102,8 +101,9 @@ async def api_pool_uploader(
         async for result in pool.starmap(paginator.query_data, url_args):
             result_ix += 1
             if result is not None:
+                log.info(f"Processing {paginator.paginator_type} results for arg {url_args[result_ix]}")
                 clean_data = paginator.clean_data(result)
-                await uploader.process_clean_data(paginator.make_clean_generator(clean_data))
+                await uploader.process_clean_data(clean_data)
             else:
                 uploader.update_expected_records()
                 log.warning(
@@ -282,45 +282,38 @@ async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, ticker
 
 
 async def test_query():
-    results = await query_options_tickers(["SPY"])
+    results = (await query_options_tickers(["SPY"]),)
     return results  # 9912 is SPY id
 
 
 async def fetch_options_contracts(
-    ticker: str,
-    months_hist: int = 24,
-    all_=False,
-    ticker_id: int | None = None,
+    tickers: list[str] = None,
     ticker_id_lookup: dict | None = None,
+    months_hist: int = 24,
 ):
     # NOTE: if refreshing, just pull the current month, months_hist = 1
-    try:
-        if not all_ and not ticker_id:
-            ticker_id = await lookup_ticker_id(ticker, stock=True)
-        options = OptionsContracts(ticker, ticker_id, months_hist, all_, ticker_id_lookup)
-        await options.fetch()
-        batch_counter = 0
-        for batch in options.clean_data_generator:
-            await update_options_tickers(batch)
-            log.info(
-                "options-tickers uploaded for ticker: {0}, batch number: {1}".format(
-                    ticker if not all_ else "all_batch", batch_counter
-                )
-            )
-            batch_counter += 1
-    except planned_exceptions as e:
-        log.warning(e, exc_info=False)
-        log.warning(f"failed to fetch options contracts for {ticker}")
+    if not tickers and not ticker_id_lookup:
+        raise InvalidArgs("Must provide either tickers or ticker_id_lookup")
+    elif not tickers:
+        tickers = list(ticker_id_lookup.keys())
+    elif not ticker_id_lookup:
+        tickers_w_ids = await lookup_multi_ticker_ids(tickers, stock=True)
+        ticker_id_lookup = {x[0]: x[1] for x in tickers_w_ids}
+    options = OptionsContracts(tickers, ticker_id_lookup, months_hist)
+    await api_pool_uploader(options, update_options_tickers, record_size=10)
+    # except planned_exceptions as e:
+    #     log.warning(e, exc_info=False)
+    #     log.warning(f"failed to fetch options contracts for {ticker}")
 
-    except Exception as e:
-        log.error(e, exc_info=True)
+    # except Exception as e:
+    #     log.error(e, exc_info=True)
 
-    finally:
-        log.info(
-            "finished options-tickers upload for ticker: {0}, batch number: {1}".format(
-                ticker if not all_ else "all_batch", batch_counter
-            )
-        )
+    # finally:
+    #     log.info(
+    #         "finished options-tickers upload for ticker: {0}, batch number: {1}".format(
+    #             ticker if not all_ else "all_batch", batch_counter
+    #         )
+    #     )
 
 
 async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date: datetime, month_hist: int = 24):
@@ -349,5 +342,5 @@ async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date:
 if __name__ == "__main__":
     # results = asyncio.run(prep_options_prices_args(["SPY", "HOOD", "IVV"], all_=True))
     # pass
-    asyncio.run(fetch_stock_metadata(["SPY", "HOOD", "IVV"], all_=True))
+    asyncio.run(fetch_options_contracts(["SPY", "HOOD", "IVV"]))
     # should ignore the tickers and pull all

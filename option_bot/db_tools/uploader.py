@@ -11,7 +11,7 @@ class Uploader:
         self.upload_func = upload_func
         self.expected_args = expected_args
         self.arg_counter = 0
-        self.batch_counter = 0
+        self.batch_counter = 1
         self.batch_size = self.batch_max // self.record_size
 
     async def process_clean_data(self, clean_data: list[dict]):
@@ -20,10 +20,12 @@ class Uploader:
         self.clean_data.extend(clean_data)
         if self.arg_counter == 0:
             self._update_record_size(clean_data)
-        self.arg_counter += 1
-        for batch in self._make_batch_generator():
-            log.info(f"uploading batch {self.batch_counter} with {self.upload_func.__qualname__}")
-            await self.upload_func(batch)
+        self.arg_counter += 1  # index of 1 since matching len of url_args
+        if len(self.clean_data) >= self.batch_size or self.arg_counter == self.expected_args:
+            for batch in self._make_batch_generator():
+                log.info(f"uploading batch {self.batch_counter} with {self.upload_func.__qualname__}")
+                await self.upload_func(batch)
+                self.batch_counter += 1
 
     def update_expected_args(self):
         """decrease the expected number of pool args if the query returns no data"""
@@ -36,14 +38,16 @@ class Uploader:
         self.record_size = len(clean_data[0].keys())
         self.batch_size = self.batch_max // self.record_size
 
-    def _make_batch_generator(self, clean_results: list[dict]):
+    def _make_batch_generator(self):
+        """generator that batches self.clean_data into batches of size self.batch_size"""
         try:
-            for i in range(0, len(clean_results), self.batch_size):
-                yield clean_results[i : i + self.batch_size]
+            for i in range(0, len(self.clean_data), self.batch_size):
+                yield self.clean_data[i : i + self.batch_size]
 
-        except IndexError:
-            if hasattr(self, "ticker"):
-                t = self.ticker
-            elif hasattr(self, "o_ticker"):
-                t = self.o_ticker
-            raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
+        except Exception as e:
+            log.exception(e)
+            raise e
+
+        finally:
+            self.clean_data = []  # return to empty list after all data has been uploaded
+            self.batch_counter = 1
