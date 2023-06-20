@@ -4,8 +4,9 @@ from option_bot.proj_constants import log
 
 
 class Uploader:
-    def __init__(self, upload_func: Awaitable, expected_args: int, record_size: int):
+    def __init__(self, upload_func: Awaitable, expected_args: int, record_size: int):  # , upload_pk_name: str):
         self.clean_data = []
+        # self.upload_pk_name = upload_pk_name # ticker, whatever field is constrained of duplicates
         self.batch_max = 62000
         self.record_size = record_size  # number of fields per record
         self.upload_func = upload_func
@@ -51,3 +52,9 @@ class Uploader:
         finally:
             self.clean_data = []  # return to empty list after all data has been uploaded
             self.batch_counter = 1
+
+    def _ensure_no_duplicates(self):
+        """ensures there are no duplicate constrained values in upload data"""
+        pass
+        # Note: you may not need this. Cleaning could remain polygon_utils file
+        # or this could be abstracted to dedupe all the data types

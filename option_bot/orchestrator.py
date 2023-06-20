@@ -71,17 +71,21 @@ def pool_kwarg_config(kwargs: dict) -> dict:
     return pool_kwargs
 
 
-async def api_pool_uploader(
+async def etl_pool_uploader(upload_func: Awaitable, record_size: int, pool_kwargs: dict = {}):
+    """This function will create a process pool to concurrently take the json files downloaded from the API and upload them to the db"""
+    pass
+
+
+async def api_pool_downloader(
     paginator: PolygonPaginator,
     upload_func: Awaitable,
     record_size: int,
     pool_kwargs: dict = {},
 ):
-    """This function will be used to add data to the db from the polygon api.
+    """This function creates a process pool to download data from the polygon api and store it in json files.
     It is the base module co-routine for all our data pulls.
     It generates the urls to be queried, creates and runs a process pool to perform the I/O queries.
     The results for each request are returned via PoolResults generator.
-    They are handled by the main event loop which cleans and stores the data.
 
     Args:
         paginator: PolygonPaginator object, specific to the endpoint being queried
