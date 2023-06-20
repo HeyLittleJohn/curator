@@ -1,6 +1,7 @@
 import functools
 import inspect
 import json
+import os
 from datetime import datetime
 
 import numpy as np
@@ -99,7 +100,16 @@ def Session(func):
     return wrapper_events
 
 
-def write_api_data_to_file(data: list[dict], file_path: str):
+def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
     """Write api data to a json file"""
-    with open(file_path, "w") as f:
+    os.makedirs(file_path, exist_ok=True)
+    with open(file_path + file_name, "w") as f:
         json.dump(data, f)
+    log.info(f"Data written to {file_path + file_name}")
+
+
+def read_api_data_from_file(file_path: str, file_name: str) -> list[dict]:
+    """Read api data from a json file"""
+    with open(file_path + file_name, "r") as f:
+        data = json.load(f)
+    return data
