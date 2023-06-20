@@ -14,7 +14,12 @@ from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
 from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL
-from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
+from option_bot.utils import (
+    first_weekday_of_month,
+    timestamp_now,
+    timestamp_to_datetime,
+    write_api_data_to_file,
+)
 
 
 class Timespans(Enum):
@@ -52,6 +57,16 @@ class PolygonPaginator(ABC):
     def _clean_url(self, url: str) -> str:
         """Clean the url to remove the base url"""
         return url.replace(POLYGON_BASE_URL, "")
+
+    def _download_path(self, ticker: str, file_name: str) -> str:
+        """Returns the path and filename where API data will be downloaded
+        Args:
+            ticker: str of the ticker to be downloaded
+            file_name: identifying name including timestamp, option_ticker, etc
+        Returns:
+            str of the download path,
+            str of the file name"""
+        return f"data/{self.paginator_type}/{ticker}/", f"{file_name}.json"
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
@@ -138,12 +153,17 @@ class PolygonPaginator(ABC):
 
         return results
 
-    async def query_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
+    async def download_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
         """query_data() is an api to call the _query_all() function.
+        Downloaded data is then saved to json.
 
         Overwrite this to customize the way to insert the ticker_id into the query results
         """
-        return await self._query_all(session, url, payload)
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(results, *self._download_path(ticker, str(timestamp_now())))
 
     # deprecated
     def make_clean_generator(self, clean_results: list[dict]):
@@ -319,6 +339,18 @@ class OptionsContracts(PolygonPaginator):
             for ticker in self.tickers
             for date in self.base_dates
         ]
+
+    async def download_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
+        """Overwriting inherited download_data().
+        This special case will add a specific identified to json filename from the payload dict.
+        """
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(
+            results, *self._download_path(ticker + "-" + str(payload["as_of"]), str(timestamp_now()))
+        )  # NOTE: this creates a folder for each "as_of" date
 
     def clean_data(self, results: list[dict]):
         clean_results = []
