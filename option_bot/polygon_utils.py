@@ -381,8 +381,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        o_ticker: str,
-        o_ticker_id: int,
+        o_ticker_lookup: dict[str, tuple],  # OptionTicker named tuple
         expiration_date: datetime,
         month_hist: int = 24,
         multiplier: int = 1,
@@ -390,8 +389,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         adjusted: bool = True,
     ):
         super().__init__()
-        self.o_ticker = o_ticker
-        self.o_ticker_id = o_ticker_id
+        self.o_ticker_lookup = o_ticker_lookup
         self.expiration_date = expiration_date  # datetime.date
         self.timespan = timespan.value
         self.multiplier = multiplier
@@ -403,7 +401,19 @@ class HistoricalOptionsPrices(PolygonPaginator):
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
 
-    async def query_data(self, session: ClientSession):
+    def _construct_url(self, o_ticker: str) -> str:
+        """function to construct the url for the options prices endpoint"""
+        return (
+            f"/v2/aggs/ticker/{o_ticker}/range/{self.multiplier}/{self.timespan}/"
+            + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
+            + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
+        )
+
+    def generate_request_args(self):
+        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
+        return [(self._construct_url(o_ticker), payload, o_ticker) for o_ticker in self.o_ticker_lookup.keys()]
+
+    async def download_data(self, session: ClientSession):
         """api call to the aggs endpoint
 
         Parameters:
@@ -414,12 +424,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
             multiplier (int) : multiples of the timespan that should be included in the call. Defaults to 1
 
         """
-        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-        url = (
-            f"/v2/aggs/ticker/{self.o_ticker}/range/{self.multiplier}/{self.timespan}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
-        )
+
         await self.query_all(session, url, payload)
 
     def clean_data(self):
