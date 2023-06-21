@@ -1,5 +1,6 @@
 import asyncio
 from argparse import Namespace
+from collections import namedtuple
 from datetime import datetime
 from multiprocessing import cpu_count
 from typing import Awaitable
@@ -53,6 +54,8 @@ planned_exceptions = (
     ProjIndexError,
     ProjTimeoutError,
 )
+
+OptionTicker = namedtuple("OptionTicker", ["o_ticker", "id", "expiration_date", "underlying_ticker"])
 
 pool_default_kwargs = {
     "processes": CPUS,
@@ -125,11 +128,6 @@ async def api_pool_downloader(
 async def add_tickers_to_universe(kwargs_list):
     tickers = [x["ticker"] for x in kwargs_list]
 
-    async with Pool(
-        processes=max(len(tickers), CPUS), exception_handler=capture_exception, loop_initializer=uvloop.new_event_loop
-    ) as pool:
-        await pool.map(fetch_stock_metadata, tickers)
-
     ticker_ids = await lookup_multi_ticker_ids(tickers)
     if len(ticker_ids) != len(kwargs_list):
         raise InvalidArgs(
@@ -147,65 +145,26 @@ ticker_ids, ticker_args: {len(kwargs_list)}, ticker_ids: {len(ticker_ids)}"
         for i in range(len(kwargs_list))
     ]
 
-    async with Pool(
-        processes=CPUS, exception_handler=capture_exception, loop_initializer=uvloop.new_event_loop
-    ) as pool:
-        await pool.starmap(import_tickers_and_contracts_process, args_list)
-
-    log.info("queuing options contracts metadata")
-    op_args = await prep_options_prices_args(tickers=[x[0] for x in args_list])
-
-    log.info("fetching options contracts prices")
-    async with Pool(
-        processes=CPUS,
-        exception_handler=capture_exception,
-        loop_initializer=uvloop.new_event_loop,
-        maxtasksperchild=10,
-        queuecount=CPUS,  # childconcurrency=20
-    ) as pool:
-        await pool.starmap(fetch_options_prices, op_args)
-
 
 async def import_all_tickers(args: Namespace):
     log.info("fetching all stock ticker metadata")
-    ticker_lookup = await import_all_ticker_metadata()
-    args_list = [
-        (
-            list(x.keys())[0],  # "ticker":
-            list(x.values())[0],  # "ticker_id":
-            args.startdate,  # "start_date":
-            args.enddate,  # "end_date":
-            args.monthhist,  # "months_hist":
-        )
-        for x in ticker_lookup
-    ]
+    # ticker_lookup = await import_all_ticker_metadata()
+    # args_list = [
+    #     (
+    #         list(x.keys())[0],  # "ticker":
+    #         list(x.values())[0],  # "ticker_id":
+    #         args.startdate,  # "start_date":
+    #         args.enddate,  # "end_date":
+    #         args.monthhist,  # "months_hist":
+    #     )
+    #     for x in ticker_lookup
+    # ]
 
     log.info("importing all stock prices and options contract metadata")
-    async with Pool(
-        processes=CPUS,
-        exception_handler=capture_exception,
-        loop_initializer=uvloop.new_event_loop,
-        maxtasksperchild=64,
-        childconcurrency=3,
-        queuecount=CPUS,
-    ) as pool:
-        await pool.starmap(import_tickers_and_contracts_process, args_list)
-
-    log.info("queuing options contracts metadata")
-    op_args = await prep_options_prices_args(tickers=["all_"], all_=True)
+    pass
 
     log.info("fetching options contracts prices")
-    async with Pool(
-        processes=CPUS,
-        loop_initializer=uvloop.new_event_loop,
-        # maxtasksperchild=100,
-        childconcurrency=int(100 / CPUS),
-        queuecount=int(CPUS / 3),
-        init_client_session=True,
-        session_base_url="https://api.polygon.io",
-    ) as pool:
-        async for result in pool.starmap(fetch_options_prices, op_args):
-            pass
+    pass
 
 
 async def import_tickers_and_contracts_process(
@@ -232,19 +191,6 @@ async def import_tickers_and_contracts_process(
     )
 
 
-async def prep_options_prices_args(tickers: list[str], all_=False):
-    """Function to prepare the list of list_args to be used as input to the fetch_options_prices function
-    Inputs:
-        ticker_args: list of tickers:str
-    """
-    if all_:
-        o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
-    else:
-        o_tickers = await query_options_tickers(stock_tickers=tickers)
-
-    return o_tickers
-
-
 async def remove_tickers_from_universe(tickers: list[str]):
     for ticker in tickers:
         log.info(f"deleting ticker {ticker}")
@@ -253,6 +199,7 @@ async def remove_tickers_from_universe(tickers: list[str]):
 
 
 async def import_all_ticker_metadata():
+    # TODO: rename this, and all "fetch_xyz" functions to be more clear about their modular purpose
     """
     This function fetches all stock ticker metadata from polygon.
     It then loads to postgres, and returns a list of rows with each ticker's ticker_id
@@ -293,7 +240,7 @@ async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, ticker
 
 
 async def test_query():
-    results = (await query_options_tickers(["SPY"]),)
+    results = (await query_options_tickers(["SPY"], all_=True),)
     return results  # 9912 is SPY id
 
 
@@ -314,33 +261,36 @@ async def fetch_options_contracts(
     await api_pool_downloader(options)
 
 
-async def fetch_options_prices(o_ticker: str, o_ticker_id: int, expiration_date: datetime, month_hist: int = 24):
-    # log.info(f"pulling options contract pricing for ticker: {o_ticker}")
+async def fetch_options_prices(tickers: list[str], expiration_date: datetime, month_hist: int = 24, all_: bool = True):
+    o_ticker_lookup = await generate_o_ticker_lookup(tickers, all_=all_)
+    op_prices = HistoricalOptionsPrices(o_ticker_lookup, expiration_date, month_hist)
+    await api_pool_downloader(op_prices)
 
-    try:
-        o_prices = HistoricalOptionsPrices(o_ticker, o_ticker_id, expiration_date, month_hist)
-        await o_prices.fetch()
-        #    log.info(f"uploading option prices for ticker: {o_ticker}")
-        for batch in o_prices.clean_data_generator:
-            await update_options_prices(batch)
 
-    except planned_exceptions:  # as e:
-        pass
-    #    log.warning(e, exc_info=False)
-    #   log.warning(f"failed to fetch options prices for {o_ticker}, o_ticker_id: {o_ticker_id}")
+async def generate_o_ticker_lookup(tickers: list[str], all_=False) -> dict[str, OptionTicker]:
+    """Function to prepare a lookup of o_tickers to o_ticker info based on a list of underlying stock tickers
+    Args:
+        tickers: list of stock tickers
+        all_: bool (default=False) indicating whether to retrieve all o_tickers
 
-    except Exception as e:
-        log.error(e, exc_info=True)
-
-    finally:
-        pass
-        # log.info(f"finished uploading option prices for ticker: {o_ticker}, o_ticker_id: {o_ticker_id}")
+    Returns:
+        o_ticker_lookup: dict[str, OptionTicker]
+        A dict of o_tickers to OptionTicker tuple objects
+    """
+    if all_:
+        o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
+    else:
+        o_tickers = await query_options_tickers(stock_tickers=tickers)
+    o_ticker_lookup = {x[0]: OptionTicker(*x) for x in o_tickers}
+    return o_ticker_lookup
 
 
 async def main():
-    ticker_lookup = await import_all_ticker_metadata()
-    ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
-    await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
+    # ticker_lookup = await import_all_ticker_metadata()
+    # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
+    # await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
+    results = await generate_o_ticker_lookup(["SPY"], all_=True)
+    print(results[0])
 
 
 if __name__ == "__main__":
