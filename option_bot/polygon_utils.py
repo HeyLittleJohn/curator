@@ -4,7 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
+from aiohttp import ClientSession, ClientTimeout, request, TCPConnector
 from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
@@ -13,11 +13,11 @@ from aiohttp.client_exceptions import (
 from dateutil.relativedelta import relativedelta
 
 from option_bot.exceptions import (
+    APIOverload,
     ProjBaseException,
     ProjClientConnectionError,
     ProjClientResponseError,
     ProjIndexError,
-    ProjTimeoutError,
 )
 from option_bot.proj_constants import log, POLYGON_API_KEY
 from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
@@ -66,47 +66,34 @@ class PolygonPaginator(object):
             sleep_time = diff if diff < sleep_time else sleep_time
         return sleep_time
 
-    async def query_all(self, session: ClientSession, url: str, payload: dict = {}, overload=False, retry=False):
+    async def query_all(self, url: str, payload: dict = {}, retry=False):
         payload["apiKey"] = POLYGON_API_KEY
-        # if (self.query_count >= self.MAX_QUERY_PER_MINUTE) or overload:
-        #     await asyncio.sleep(self._api_sleep_time())
-        #     self.query_count = 0
-        #     self.query_time_log = []
-        # elif self.query_count >= self.MAX_QUERY_PER_SECOND / 30:
-        #     time.sleep(1)
-        #     self.query_count = 0
-        #     self.query_time_log = []
-
-        # log.info(f"{url} {payload} overload:{overload}, retry attempt: {retry}")
 
         await asyncio.sleep(1)  # trying to keep things under 100 requests per second
 
         results = {"temp": "dict"}
+        overload = False
         try:
-            async with session.request(method="GET", url=url, params=payload) as response:
+            async with request(method="GET", url=url, params=payload) as response:
                 # log.info(f"status code: {response.status}")
-
-                self.query_count += 1
-                if response.status == 200:
+                status = response.status
+                if status == 200:
                     results = await response.json()
-                    # self.query_time_log.append(
-                    #     {"request_id": results.get("request_id"), "query_timestamp": time.time()}
-                    # )
-                    self.results.append(results)
 
-                elif response.status == 429:
-                    await self.query_all(url, payload, overload=True)
+                if status == 429:
+                    raise APIOverload
+
                 else:
                     response.raise_for_status()
 
-        except (ClientResponseError, ProjClientResponseError):
+        except ClientResponseError:
             if not retry:
                 await asyncio.sleep(15)
                 await self.query_all(url, payload, retry=True)
             else:
                 raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
 
-        except (ClientConnectionError, ClientConnectorError, ProjClientConnectionError):
+        except (ClientConnectionError, ClientConnectorError, TimeoutError):
             if not retry:
                 log.info("sleeping for 45 sec")
                 await asyncio.sleep(45)
@@ -115,14 +102,9 @@ class PolygonPaginator(object):
             else:
                 raise ProjClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
 
-        except (TimeoutError, ProjTimeoutError):
-            if not retry:
-                log.info("sleeping for 45 sec")
-                await asyncio.sleep(45)
-                # log.info("retrying connection and query")
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjTimeoutError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+        except APIOverload:
+            asyncio.sleep(60)
+            results = await self.query_all
 
         finally:
             next_url = results.get("next_url")
