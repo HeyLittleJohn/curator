@@ -2,6 +2,7 @@ import asyncio
 from argparse import Namespace
 from collections import namedtuple
 from datetime import datetime
+from itertools import islice
 from multiprocessing import cpu_count
 from typing import Awaitable
 
@@ -61,7 +62,7 @@ pool_default_kwargs = {
     "processes": CPUS,
     "exception_handler": capture_exception,
     "loop_initializer": uvloop.new_event_loop,
-    "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
+    "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS * 2),
     "queuecount": int(CPUS / 3),
     "init_client_session": True,
     "session_base_url": POLYGON_BASE_URL,
@@ -261,10 +262,25 @@ async def fetch_options_contracts(
     await api_pool_downloader(options)
 
 
-async def fetch_options_prices(tickers: list[str], expiration_date: datetime, month_hist: int = 24, all_: bool = True):
-    o_ticker_lookup = await generate_o_ticker_lookup(tickers, all_=all_)
-    op_prices = HistoricalOptionsPrices(o_ticker_lookup, expiration_date, month_hist)
-    await api_pool_downloader(op_prices)
+async def fetch_options_prices(tickers: list[str], month_hist: int = 24, all_: bool = True):
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+    batch_counter = 0
+    pool_kwargs = {
+        "processes": 32,
+        "childconcurrency": 1000,
+        "queuecount": 32,
+    }
+    for batch in chunks(o_tickers, size=250000):
+        log.info(f"fetching options prices batch {batch_counter}")
+        op_prices = HistoricalOptionsPrices(batch, month_hist)
+        await api_pool_downloader(op_prices, pool_kwargs)
+        log.info(f"finished downloading options prices for batch {batch_counter}")
+        batch_counter += 1
+
+
+def chunks(data, size=250000):
+    for i in range(0, len(data), size):
+        yield data[i : i + size]
 
 
 async def generate_o_ticker_lookup(tickers: list[str], all_=False) -> dict[str, OptionTicker]:
@@ -281,15 +297,14 @@ async def generate_o_ticker_lookup(tickers: list[str], all_=False) -> dict[str, 
         o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
     else:
         o_tickers = await query_options_tickers(stock_tickers=tickers)
-    o_ticker_lookup = {x[0]: OptionTicker(*x) for x in o_tickers}
-    return o_ticker_lookup
+    return [OptionTicker(*x) for x in o_tickers]
 
 
 async def main():
     # ticker_lookup = await import_all_ticker_metadata()
     # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
     # await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
-    results = await generate_o_ticker_lookup(["SPY"], all_=True)
+    results = await fetch_options_prices(["SPY"], all_=True)
     print(results[0])
 
 

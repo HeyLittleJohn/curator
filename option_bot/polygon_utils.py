@@ -58,15 +58,16 @@ class PolygonPaginator(ABC):
         """Clean the url to remove the base url"""
         return url.replace(POLYGON_BASE_URL, "")
 
-    def _download_path(self, ticker: str, file_name: str) -> str:
+    def _download_path(self, path: str, file_name: str) -> str:
         """Returns the path and filename where API data will be downloaded
         Args:
-            ticker: str of the ticker to be downloaded
+            path: str of the path where file should be downloaded.
+                Ought to include the ticker in the path
             file_name: identifying name including timestamp, option_ticker, etc
         Returns:
             str of the download path,
             str of the file name"""
-        return f"data/{self.paginator_type}/{ticker}/", f"{file_name}.json"
+        return f"data/{self.paginator_type}/{path}/", f"{file_name}.json"
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
@@ -327,7 +328,7 @@ class OptionsContracts(PolygonPaginator):
             counter += 1
         return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-    def generate_request_args(self):
+    def generate_request_args(self) -> list[tuple[str, dict, str]]:
         """Generate the urls to query the options contracts endpoint.
 
         Returns:
@@ -343,13 +344,16 @@ class OptionsContracts(PolygonPaginator):
     async def download_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
         """Overwriting inherited download_data().
         This special case will add a specific identified to json filename from the payload dict.
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
         """
         log.info(f"Downloading data for {ticker}")
         log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
         log.info(f"Writing data for {ticker} to file")
         write_api_data_to_file(
-            results, *self._download_path(ticker + "-" + str(payload["as_of"]), str(timestamp_now()))
+            results, *self._download_path(ticker + "/contracts/" + str(payload["as_of"]), str(timestamp_now()))
         )  # NOTE: this creates a folder for each "as_of" date
 
     def clean_data(self, results: list[dict]):
@@ -381,16 +385,14 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        o_ticker_lookup: dict[str, tuple],  # OptionTicker named tuple
-        expiration_date: datetime,
+        o_tickers: list[tuple[str, str, datetime, str]],
         month_hist: int = 24,
         multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
         super().__init__()
-        self.o_ticker_lookup = o_ticker_lookup
-        self.expiration_date = expiration_date  # datetime.date
+        self.o_tickers = o_tickers
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
@@ -401,31 +403,53 @@ class HistoricalOptionsPrices(PolygonPaginator):
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
 
-    def _construct_url(self, o_ticker: str) -> str:
+    def _construct_url(self, o_ticker: str, expiration_date: datetime) -> str:
         """function to construct the url for the options prices endpoint"""
-        return (
-            f"/v2/aggs/ticker/{o_ticker}/range/{self.multiplier}/{self.timespan}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
+        return f"/v2/aggs/ticker/{o_ticker}/range/{self.multiplier}/{self.timespan}/" + "{0}/{1}".format(
+            *self._determine_start_end_dates(expiration_date)
         )
 
-    def generate_request_args(self):
+    def _clean_o_ticker(self, o_ticker: str) -> str:
+        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
+        return o_ticker.split(":")[1]
+
+    def generate_request_args(self) -> list[tuple[str, dict, str, str, str]]:
+        """Generate the urls to query the options prices endpoint.
+
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker, underlying ticker, clean ticker) for each request"""
         payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-        return [(self._construct_url(o_ticker), payload, o_ticker) for o_ticker in self.o_ticker_lookup.keys()]
+        return [
+            (
+                self._construct_url(o_ticker.o_ticker, o_ticker.expiration_date),
+                payload,
+                o_ticker.o_ticker,
+                o_ticker.underlying_ticker,
+                self._clean_o_ticker(o_ticker.o_ticker),
+            )
+            for o_ticker in self.o_tickers
+        ]
 
-    async def download_data(self, session: ClientSession):
-        """api call to the aggs endpoint
+    async def download_data(
+        self, url: str, payload: dict, ticker: str, under_ticker: str, clean_ticker: str, session: ClientSession = None
+    ):
+        """Overwriting inherited download_data().
+        This special case will add a specific identified to json filename from the payload dict.
 
-        Parameters:
-            start_date (datetime): beginning of date range for historical query (date inclusive)
-            end_date (datetime): ending of date range for historical query (date inclusive)
-            timespan (str) : the default value is set to "day". \
-                Options are ["minute", "hour", "day", "week", "month", "quarter", "year"]
-            multiplier (int) : multiples of the timespan that should be included in the call. Defaults to 1
-
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
         """
-
-        await self.query_all(session, url, payload)
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                under_ticker + "/" + clean_ticker,
+                str(timestamp_now()),
+            ),
+        )
 
     def clean_data(self):
         results_hash = {}
