@@ -33,6 +33,10 @@ class InvalidArgs(ProjBaseException):
     """Exception when incorrect args are passed to the CLI"""
 
 
+class APIOverload(ProjBaseException):
+    """Error indicating a need to wait 1 min before making more API requests"""
+
+
 class ProjTypeError(ProjBaseException, TypeError):
     """TypeError with ProjBaseException"""
 
