@@ -68,7 +68,7 @@ async def query_options_tickers(
     stmt = (
         select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date, StockTickers.ticker)
         .join(StockTickers)
-        .where(StockTickers.type.in_(["ADRC", "EFT", "CS"]))
+        .where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
         .where(OptionsTickers.expiration_date > two_years_ago())
     )
     if not all_:
