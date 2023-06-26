@@ -62,8 +62,8 @@ pool_default_kwargs = {
     "processes": CPUS,
     "exception_handler": capture_exception,
     "loop_initializer": uvloop.new_event_loop,
-    "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS * 2),
-    "queuecount": int(CPUS / 3),
+    "childconcurrency": int(MAX_CONCURRENT_REQUESTS * 4 / CPUS),
+    "queuecount": CPUS,
     "init_client_session": True,
     "session_base_url": POLYGON_BASE_URL,
 }
@@ -103,6 +103,7 @@ async def etl_pool_uploader(
 
 async def api_pool_downloader(
     paginator: PolygonPaginator,
+    args_data: list = None,
     pool_kwargs: dict = {},
 ):
     """This function creates a process pool to download data from the polygon api and store it in json files.
@@ -116,7 +117,7 @@ async def api_pool_downloader(
 
     """
     log.info("generating urls to be queried")
-    url_args = paginator.generate_request_args()
+    url_args = paginator.generate_request_args(args_data)
 
     log.info("fetching data from polygon api")
     pool_kwargs = pool_kwarg_config(pool_kwargs)
@@ -264,18 +265,17 @@ async def fetch_options_contracts(
 
 async def fetch_options_prices(tickers: list[str], month_hist: int = 24, all_: bool = True):
     o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
-    batch_counter = 0
+    # batch_counter = 0
     pool_kwargs = {
-        "processes": 32,
-        "childconcurrency": 1000,
-        "queuecount": 32,
+        "childconcurrency": 500,
     }
-    for batch in chunks(o_tickers, size=250000):
-        log.info(f"fetching options prices batch {batch_counter}")
-        op_prices = HistoricalOptionsPrices(batch, month_hist)
-        await api_pool_downloader(op_prices, pool_kwargs)
-        log.info(f"finished downloading options prices for batch {batch_counter}")
-        batch_counter += 1
+    # batches = chunks(o_tickers, size=250000)
+    # for batch in batches:
+    # log.info(f"fetching options prices batch {batch_counter}")
+    op_prices = HistoricalOptionsPrices(month_hist=month_hist)
+    await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
+    # log.info(f"finished downloading options prices for batch {batch_counter}")
+    # batch_counter += 1
 
 
 def chunks(data, size=250000):
@@ -304,8 +304,7 @@ async def main():
     # ticker_lookup = await import_all_ticker_metadata()
     # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
     # await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
-    results = await fetch_options_prices(["SPY"], all_=True)
-    print(results[0])
+    await fetch_options_prices(["SPY"], all_=True)
 
 
 if __name__ == "__main__":

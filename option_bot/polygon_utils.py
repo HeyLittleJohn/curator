@@ -109,7 +109,7 @@ class PolygonPaginator(ABC):
                 status, response = await self._execute_request(session, url, payload)
 
             except ProjAPIOverload as e:
-                log.exception(e)
+                log.exception(e, extra={"context": "Going to sleep for 60 seconds..."} if not retry else {})
                 status = 1
 
             except ProjAPIError as e:
@@ -186,8 +186,11 @@ class PolygonPaginator(ABC):
         """Requiring a clean_data() function to be overwritten by every inheriting class"""
 
     @abstractmethod
-    def generate_request_args(self):
+    def generate_request_args(self, args_data):
         """Requiring a generate_request_args() function to be overwritten by every inheriting class
+
+        Args:
+            args_data: this function requires an iterable passed with the inputs used to generate url_args
 
         Returns:
             url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
@@ -328,8 +331,11 @@ class OptionsContracts(PolygonPaginator):
             counter += 1
         return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-    def generate_request_args(self) -> list[tuple[str, dict, str]]:
+    def generate_request_args(self, args_data: list[str]) -> list[tuple[str, dict, str]]:
         """Generate the urls to query the options contracts endpoint.
+
+        Args:
+            args_data: list of tickers
 
         Returns:
             url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
@@ -337,7 +343,7 @@ class OptionsContracts(PolygonPaginator):
         payload = {"limit": 1000}
         return [
             (url_base, dict(payload, **{"underlying_ticker": ticker, "as_of": date}), ticker)
-            for ticker in self.tickers
+            for ticker in args_data
             for date in self.base_dates
         ]
 
@@ -385,14 +391,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        o_tickers: list[tuple[str, str, datetime, str]],
         month_hist: int = 24,
         multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
         super().__init__()
-        self.o_tickers = o_tickers
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
@@ -413,8 +417,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
         """Clean the options ticker to remove the prefix to make it compatible as a file name"""
         return o_ticker.split(":")[1]
 
-    def generate_request_args(self) -> list[tuple[str, dict, str, str, str]]:
+    def generate_request_args(
+        self, args_data: list[tuple[str, str, datetime, str]]
+    ) -> list[tuple[str, dict, str, str, str]]:
         """Generate the urls to query the options prices endpoint.
+
+        Args:
+            args_data: list of named tuples. OptionTicker(options_ticker, id, expiration_date, underlying_ticker)
 
         Returns:
             url_args: list(tuple) of the (url, payload, and ticker, underlying ticker, clean ticker) for each request"""
@@ -427,7 +436,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
                 o_ticker.underlying_ticker,
                 self._clean_o_ticker(o_ticker.o_ticker),
             )
-            for o_ticker in self.o_tickers
+            for o_ticker in args_data
         ]
 
     async def download_data(
