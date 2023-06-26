@@ -1,5 +1,7 @@
 import functools
 import inspect
+import json
+import os
 from datetime import datetime
 
 import numpy as np
@@ -25,6 +27,11 @@ def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
         year_month_array = year_month_array.astype(np.datetime64)
     return np.busday_offset(year_month_array, 0, roll="modifiedpreceding", weekmask=[1, 1, 1, 1, 1, 0, 0])
     # NOTE: may need to add info for market holidays
+
+
+def timestamp_now(msec_units: bool = True):
+    """returns a timestamp in milliseconds"""
+    return int(datetime.now().timestamp() * 1000) if msec_units else int(datetime.now().timestamp())
 
 
 def Session(func):
@@ -91,3 +98,18 @@ def Session(func):
             raise
 
     return wrapper_events
+
+
+def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
+    """Write api data to a json file"""
+    os.makedirs(file_path, exist_ok=True)
+    with open(file_path + file_name, "w") as f:
+        json.dump(data, f)
+    log.info(f"Data written to {file_path + file_name}")
+
+
+def read_api_data_from_file(file_path: str, file_name: str) -> list[dict]:
+    """Read api data from a json file"""
+    with open(file_path + file_name, "r") as f:
+        data = json.load(f)
+    return data
