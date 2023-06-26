@@ -267,7 +267,7 @@ async def fetch_options_prices(tickers: list[str], month_hist: int = 24, all_: b
     o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
     # batch_counter = 0
     pool_kwargs = {
-        "childconcurrency": 500,
+        "childconcurrency": 450,
     }
     # batches = chunks(o_tickers, size=250000)
     # for batch in batches:
