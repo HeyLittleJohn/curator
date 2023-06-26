@@ -16,7 +16,7 @@ sentry_sdk.init(
 )
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
-DEBUG = True
+DEBUG = False
 
 
 # NOTE: use this function if pass variables to env via docker .env file. Otherwise use .pgpass
@@ -41,8 +41,14 @@ def db_uri_maker() -> str:
     return database_uri
 
 
+# total number of requests the API can handle at once. 100/sec rate limit
+MAX_CONCURRENT_REQUESTS = 100
+# Max number of requests per minute for the free API tier: 5
+MAX_QUERY_PER_MINUTE = 4
+
 POSTGRES_DATABASE_URL = db_uri_maker()
 
+POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 RH_USERNAME = os.getenv("RH_USERNAME")
 RH_PASSWORD = os.getenv("RH_PASSWORD")
@@ -78,8 +84,23 @@ log_formatter = logging.Formatter(
     "%(levelname)s - "
     "%(processName)s:%(threadName)s - "
     "%(filename)s:%(funcName)s:%(lineno)d - "
-    "%(message)s"
+    "%(message)s - "
+    "%(context)s"
 )
+
+
+class ContextFilter(logging.Filter):
+    """This is a filter which injects contextual information into the log."""
+
+    def filter(self, record):
+        if not hasattr(record, "context"):
+            record.context = ""
+        return True
+
+
+# Add filter to give default context value of ""
+context_filter = ContextFilter()
+log.addFilter(context_filter)
 
 # Remove all existing log handlers
 for handler in root_logger.handlers:

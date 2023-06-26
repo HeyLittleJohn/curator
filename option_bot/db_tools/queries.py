@@ -30,7 +30,7 @@ async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool =
         The pk_id of the ticker on either the StockTickers or OptionsTickers tables"""
     table = StockTickers if stock else OptionsTickers
     column = StockTickers.ticker if stock else OptionsTickers.options_ticker
-    return (await session.execute(select(table.id).where(column == ticker_str))).scalars().one()
+    return (await session.execute(select(table.id, column).where(column == ticker_str))).scalars().one()
 
 
 @Session
@@ -45,11 +45,12 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
         An indicator of whether this is a stock (default) or option ticker being looked up
 
     Returns:
+        ticker: str
         ticker_ids: tuple(int)
         The pk_id of the ticker on either the StockTickers or OptionsTickers tables"""
     table = StockTickers if stock else OptionsTickers
     column = StockTickers.ticker if stock else OptionsTickers.options_ticker
-    return (await session.execute(select(table.id).where(column.in_(ticker_list)))).scalars().all()
+    return (await session.execute(select(column, table.id).where(column.in_(ticker_list)))).all()
 
 
 @Session
@@ -63,10 +64,11 @@ async def query_options_tickers(
     # NOTE: may need to adjust to not pull all columns from table
     if batch and all_:
         raise InvalidArgs("Can't have query all_ and a batch")
+
     stmt = (
-        select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date)
+        select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date, StockTickers.ticker)
         .join(StockTickers)
-        .where(StockTickers.type.in_(["ADRC", "EFT", "CS"]))
+        .where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
         .where(OptionsTickers.expiration_date > two_years_ago())
     )
     if not all_:

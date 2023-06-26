@@ -1,10 +1,10 @@
 import asyncio
-import math
+from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
-from aiohttp import ClientSession, ClientTimeout, request, TCPConnector
+from aiohttp import ClientSession
 from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
@@ -12,18 +12,14 @@ from aiohttp.client_exceptions import (
 )
 from dateutil.relativedelta import relativedelta
 
-from option_bot.exceptions import (
-    APIOverload,
-    ProjBaseException,
-    ProjClientConnectionError,
-    ProjClientResponseError,
-    ProjIndexError,
+from option_bot.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
+from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL
+from option_bot.utils import (
+    first_weekday_of_month,
+    timestamp_now,
+    timestamp_to_datetime,
+    write_api_data_to_file,
 )
-from option_bot.proj_constants import log, POLYGON_API_KEY
-from option_bot.utils import first_weekday_of_month, timestamp_to_datetime
-
-
-# import time
 
 
 class Timespans(Enum):
@@ -36,7 +32,7 @@ class Timespans(Enum):
     year = "year"
 
 
-class PolygonPaginator(object):
+class PolygonPaginator(ABC):
     """API paginator interface for calls to the Polygon API. \
         It tracks queries made to the polygon API and calcs potential need for sleep
 
@@ -48,75 +44,136 @@ class PolygonPaginator(object):
     paginator_type = "Generic"
 
     MAX_QUERY_PER_SECOND = 99
-    MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
+    # MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
 
-    def __init__(self):  # , query_count: int = 0):
-        self.query_count = 0  # = query_count
-        self.query_time_log = []
-        self.results = []
+    def __init__(self):
         self.clean_results = []
         self.clean_data_generator = iter(())
 
     def _api_sleep_time(self) -> int:
-        sleep_time = 60
-        if len(self.query_time_log) > 2:
-            a = timestamp_to_datetime(self.query_time_log[0]["query_timestamp"])
-            b = timestamp_to_datetime(self.query_time_log[-1]["query_timestamp"])
-            diff = math.ceil((b - a).total_seconds())
-            sleep_time = diff if diff < sleep_time else sleep_time
-        return sleep_time
+        """Returns the time to sleep based if the endpoint returns a 429 error"""
+        return 60
 
-    async def query_all(self, url: str, payload: dict = {}, retry=False):
+    def _clean_url(self, url: str) -> str:
+        """Clean the url to remove the base url"""
+        return url.replace(POLYGON_BASE_URL, "")
+
+    def _download_path(self, path: str, file_name: str) -> str:
+        """Returns the path and filename where API data will be downloaded
+        Args:
+            path: str of the path where file should be downloaded.
+                Ought to include the ticker in the path
+            file_name: identifying name including timestamp, option_ticker, etc
+        Returns:
+            str of the download path,
+            str of the file name"""
+        return f"data/{self.paginator_type}/{path}/", f"{file_name}.json"
+
+    async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
+        """Execute the request and return the response status code and json response
+        Args:
+            session: aiohttp ClientSession
+            url: url to query
+            payload: dict of query params
+        Returns:
+            (status_code, json_response)
+                status_code: int of the response status code
+                json_response: dict of the json response
+        """
         payload["apiKey"] = POLYGON_API_KEY
+        async with session.request(method="GET", url=url, params=payload) as response:
+            status_code = response.status
+            if status_code == 429:
+                raise ProjAPIOverload(f"API Overload, 429 error code: {url} {payload}")
+            elif status_code >= 400:
+                raise ProjAPIError(f"API Error, status code {status_code}: {url} {payload}")
+            json_response = await response.json() if status_code == 200 else {}
+            return (status_code, json_response)
 
-        await asyncio.sleep(1)  # trying to keep things under 100 requests per second
+    async def _query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
+        """Query the API until all results have been returned
+        Args:
+            session: aiohttp ClientSession
+            url: url to query
+            payload: dict of query params
 
-        results = {"temp": "dict"}
-        overload = False
-        try:
-            async with request(method="GET", url=url, params=payload) as response:
-                # log.info(f"status code: {response.status}")
-                status = response.status
+        Returns:
+            list of dicts of the json response
+        """
+        results = []
+        status = 0
+        retry = False
+
+        while True:
+            try:
+                status, response = await self._execute_request(session, url, payload)
+
+            except ProjAPIOverload as e:
+                log.exception(e, extra={"context": "Going to sleep for 60 seconds..."} if not retry else {})
+                status = 1
+
+            except ProjAPIError as e:
+                log.exception(e)
+                status = 2
+
+            except (ClientConnectionError, ClientConnectorError, ClientResponseError) as e:
+                log.exception(e, extra={"context": "Connection Lost! Going to sleep for 45 seconds..."})
+                status = 3
+
+            except Exception as e:
+                log.exception(e, extra={"context": "Unexpected Error while querying the API"})
+                status = 4
+
+            finally:
                 if status == 200:
-                    results = await response.json()
+                    results.append(response)
+                    if response.get("next_url"):
+                        url = self._clean_url(response["next_url"])
+                        payload = {}
+                        status = 0
+                        retry = False
+                    else:
+                        break
 
-                if status == 429:
-                    raise APIOverload
+                elif status == 1 and retry is False:
+                    await asyncio.sleep(self._api_sleep_time())
+                    retry = True
+                    status = 0
+
+                elif status == 2 and retry is False:
+                    retry = True
+                    status = 0
+
+                elif status == 3 and retry is False:
+                    await asyncio.sleep(45)
+                    retry = True
+                    status = 0
 
                 else:
-                    response.raise_for_status()
+                    break
 
-        except ClientResponseError:
-            if not retry:
-                await asyncio.sleep(15)
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjClientResponseError(f"failed retry, args:{url}, {payload}, {retry}")
+        return results
 
-        except (ClientConnectionError, ClientConnectorError, TimeoutError):
-            if not retry:
-                log.info("sleeping for 45 sec")
-                await asyncio.sleep(45)
-                # log.info("retrying connection and query")
-                await self.query_all(url, payload, retry=True)
-            else:
-                raise ProjClientConnectionError(f"failed to reconnect on retry. args: {url}, {payload}, {retry}")
+    async def download_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
+        """query_data() is an api to call the _query_all() function.
+        Downloaded data is then saved to json.
 
-        except APIOverload:
-            asyncio.sleep(60)
-            results = await self.query_all
+        Overwrite this to customize the way to insert the ticker_id into the query results
+        """
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(results, *self._download_path(ticker, str(timestamp_now())))
 
-        finally:
-            next_url = results.get("next_url")
-            if next_url:
-                await self.query_all(next_url)
-
-    def make_clean_generator(self):
+    # deprecated
+    def make_clean_generator(self, clean_results: list[dict]):
         try:
-            record_size = len(self.clean_results[0])
-            batch_size = round(60000 / record_size)  # postgres input limit is ~65000
-            for i in range(0, len(self.clean_results), batch_size):
-                yield self.clean_results[i : i + batch_size]
+            record_size = len(clean_results[0])
+            batch_size = round(62000 / record_size)  # postgres input limit is ~65000
+            for i in range(0, len(clean_results), batch_size):
+                yield clean_results[i : i + batch_size]
+
         except IndexError:
             if hasattr(self, "ticker"):
                 t = self.ticker
@@ -124,21 +181,23 @@ class PolygonPaginator(object):
                 t = self.o_ticker
             raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
-    async def query_data(self, session: ClientSession):
-        """shell function to be overwritten by every inheriting class"""
-        raise ProjBaseException("Function undefined in inherited class")
-
+    @abstractmethod
     def clean_data(self):
-        """shell function to be overwritten by every inheriting class"""
-        raise ProjBaseException("Function undefined in inherited class")
+        """Requiring a clean_data() function to be overwritten by every inheriting class"""
 
-    async def fetch(self):
-        timeout = ClientTimeout(sock_read=15, sock_connect=60, total=75)
-        connector = TCPConnector(limit_per_host=1, use_dns_cache=True)
-        async with ClientSession(
-            base_url="https://api.polygon.io", timeout=timeout, connector=connector, trust_env=True
-        ) as session:
-            await self.query_data(session)
+    @abstractmethod
+    def generate_request_args(self, args_data):
+        """Requiring a generate_request_args() function to be overwritten by every inheriting class
+
+        Args:
+            args_data: this function requires an iterable passed with the inputs used to generate url_args
+
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
+
+    # deprecated
+    async def fetch(self, session):
+        await self.query_data()
         self.clean_data()
         self.clean_data_generator = self.make_clean_generator()
 
@@ -149,20 +208,26 @@ class StockMetaData(PolygonPaginator):
 
     paginator_type = "StockMetaData"
 
-    def __init__(self, ticker: str, all_: bool):
-        self.ticker = ticker
+    def __init__(self, tickers: list[str], all_: bool):
+        self.tickers = tickers
         self.all_ = all_
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
-    async def query_data(self, session: ClientSession):
-        """"""
-        url = "/v3/reference/tickers"
-        if not self.all_:
-            self.payload["ticker"] = self.ticker
-        await self.query_all(session, url=url, payload=self.payload)
+    def generate_request_args(self):
+        """Generate the urls to query the Polygon API.
 
-    def clean_data(self):
+        Returns:
+        urls: list(dict), each dict contains the url and the payload for the request"""
+        url_base = "/v3/reference/tickers"
+        if not self.all_:
+            urls = [(url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers]
+        else:
+            urls = [(url_base, self.payload, "")]
+        return urls
+
+    def clean_data(self, results: list[dict]):
+        clean_results = []
         selected_keys = [
             "ticker",
             "name",
@@ -174,10 +239,11 @@ class StockMetaData(PolygonPaginator):
             "currency_name",
             "cik",
         ]
-        for result_list in self.results:
+        for result_list in results:
             for ticker in result_list["results"]:
                 t = {x: ticker.get(x) for x in selected_keys}
-                self.clean_results.append(t)
+                clean_results.append(t)
+        return clean_results
 
 
 class HistoricalStockPrices(PolygonPaginator):
@@ -238,19 +304,15 @@ class OptionsContracts(PolygonPaginator):
 
     def __init__(
         self,
-        ticker: str,
-        ticker_id: int,
+        tickers: list[str],
+        ticker_id_lookup: dict[str, int],  # ticker str is key, id is value
         months_hist: int = 24,
-        all_: bool = False,
-        ticker_id_lookup: dict | None = None,
     ):
         super().__init__()
-        self.ticker = ticker
-        self.ticker_id = ticker_id
+        self.tickers = tickers
+        self.ticker_id_lookup = ticker_id_lookup
         self.months_hist = months_hist
         self.base_dates = self._determine_base_dates()
-        self.all_ = all_
-        self.ticker_id_lookup = ticker_id_lookup
 
     def _determine_base_dates(self) -> list[datetime]:
         year_month_array = []
@@ -269,16 +331,39 @@ class OptionsContracts(PolygonPaginator):
             counter += 1
         return [str(x) for x in first_weekday_of_month(np.array(year_month_array)).tolist()]
 
-    async def query_data(self, session: ClientSession):
-        url = "/v3/reference/options/contracts"
-        payload = {"limit": 1000}
-        if not self.all_:
-            payload["underlying_ticker"] = self.ticker
-        args_list = [[session, url, dict(payload, **{"as_of": date})] for date in self.base_dates]
-        for args in args_list:
-            await self.query_all(*args)
+    def generate_request_args(self, args_data: list[str]) -> list[tuple[str, dict, str]]:
+        """Generate the urls to query the options contracts endpoint.
 
-    def clean_data(self):
+        Args:
+            args_data: list of tickers
+
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
+        url_base = "/v3/reference/options/contracts"
+        payload = {"limit": 1000}
+        return [
+            (url_base, dict(payload, **{"underlying_ticker": ticker, "as_of": date}), ticker)
+            for ticker in args_data
+            for date in self.base_dates
+        ]
+
+    async def download_data(self, url: str, payload: dict, ticker: str, session: ClientSession = None):
+        """Overwriting inherited download_data().
+        This special case will add a specific identified to json filename from the payload dict.
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
+        """
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(
+            results, *self._download_path(ticker + "/contracts/" + str(payload["as_of"]), str(timestamp_now()))
+        )  # NOTE: this creates a folder for each "as_of" date
+
+    def clean_data(self, results: list[dict]):
+        clean_results = []
         key_mapping = {
             "ticker": "options_ticker",
             "expiration_date": "expiration_date",
@@ -289,15 +374,14 @@ class OptionsContracts(PolygonPaginator):
             "exercise_style": "exercise_style",
             "cfi": "cfi",
         }
-        for page in self.results:
+        for page in results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = (
-                    self.ticker_id_lookup[record.get("underlying_ticker")] if self.all_ else self.ticker_id
-                )
-                self.clean_results.append(t)
-        self.clean_results = list({v["options_ticker"]: v for v in self.clean_results}.values())
+                t["underlying_ticker_id"] = self.ticker_id_lookup[record.get("underlying_ticker")]
+                clean_results.append(t)
+        clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
+        return clean_results
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
@@ -307,18 +391,12 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        o_ticker: str,
-        o_ticker_id: int,
-        expiration_date: datetime,
         month_hist: int = 24,
         multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
         super().__init__()
-        self.o_ticker = o_ticker
-        self.o_ticker_id = o_ticker_id
-        self.expiration_date = expiration_date  # datetime.date
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
@@ -329,24 +407,58 @@ class HistoricalOptionsPrices(PolygonPaginator):
         start_date = end_date - relativedelta(months=self.month_hist)
         return start_date, end_date
 
-    async def query_data(self, session: ClientSession):
-        """api call to the aggs endpoint
-
-        Parameters:
-            start_date (datetime): beginning of date range for historical query (date inclusive)
-            end_date (datetime): ending of date range for historical query (date inclusive)
-            timespan (str) : the default value is set to "day". \
-                Options are ["minute", "hour", "day", "week", "month", "quarter", "year"]
-            multiplier (int) : multiples of the timespan that should be included in the call. Defaults to 1
-
-        """
-        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-        url = (
-            f"/v2/aggs/ticker/{self.o_ticker}/range/{self.multiplier}/{self.timespan}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[0]}/"
-            + f"{self._determine_start_end_dates(self.expiration_date)[1]}"
+    def _construct_url(self, o_ticker: str, expiration_date: datetime) -> str:
+        """function to construct the url for the options prices endpoint"""
+        return f"/v2/aggs/ticker/{o_ticker}/range/{self.multiplier}/{self.timespan}/" + "{0}/{1}".format(
+            *self._determine_start_end_dates(expiration_date)
         )
-        await self.query_all(session, url, payload)
+
+    def _clean_o_ticker(self, o_ticker: str) -> str:
+        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
+        return o_ticker.split(":")[1]
+
+    def generate_request_args(
+        self, args_data: list[tuple[str, str, datetime, str]]
+    ) -> list[tuple[str, dict, str, str, str]]:
+        """Generate the urls to query the options prices endpoint.
+
+        Args:
+            args_data: list of named tuples. OptionTicker(options_ticker, id, expiration_date, underlying_ticker)
+
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker, underlying ticker, clean ticker) for each request"""
+        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
+        return [
+            (
+                self._construct_url(o_ticker.o_ticker, o_ticker.expiration_date),
+                payload,
+                o_ticker.o_ticker,
+                o_ticker.underlying_ticker,
+                self._clean_o_ticker(o_ticker.o_ticker),
+            )
+            for o_ticker in args_data
+        ]
+
+    async def download_data(
+        self, url: str, payload: dict, ticker: str, under_ticker: str, clean_ticker: str, session: ClientSession = None
+    ):
+        """Overwriting inherited download_data().
+        This special case will add a specific identified to json filename from the payload dict.
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
+        """
+        log.info(f"Downloading data for {ticker}")
+        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing data for {ticker} to file")
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                under_ticker + "/" + clean_ticker,
+                str(timestamp_now()),
+            ),
+        )
 
     def clean_data(self):
         results_hash = {}
