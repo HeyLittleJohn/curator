@@ -2,8 +2,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.exceptions import InvalidArgs
-from option_bot.schemas import (
+from option_bot.db_tools.schemas import (
     OptionsPricesRaw,
     OptionsTickerModel,
     OptionsTickers,
@@ -11,6 +10,7 @@ from option_bot.schemas import (
     StockTickers,
     TickerModel,
 )
+from option_bot.exceptions import InvalidArgs
 from option_bot.utils import Session, two_years_ago
 
 
