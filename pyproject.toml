@@ -4,7 +4,11 @@ version = "0.1.0"
 description = ""
 authors = ["Jody Hirschi <jhirschibar@gmail.com>"]
 readme = "README.md"
-packages = [{include = "./option_bot"}]
+packages = [{include = "option_bot", from = "."}, 
+            {include = "data_pipeline", from = "./option_bot"},
+            {include = "db_tools", from = "./option_bot/"},
+            {include = "rl_agent", from = "./option_bot"},
+            {include = "trader", from = "./option_bot"}]
 
 [tool.poetry.dependencies]
 python = "^3.11"

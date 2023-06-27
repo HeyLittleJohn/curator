@@ -120,9 +120,17 @@ class PolygonPaginator(ABC):
                 log.exception(e, extra={"context": "Connection Lost! Going to sleep for 45 seconds..."})
                 status = 3
 
+            except asyncio.TimeoutError as e:
+                log.exception(
+                    e,
+                    extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
+                    exc_info=False,
+                )
+                status = 4
+
             except Exception as e:
                 log.exception(e, extra={"context": "Unexpected Error while querying the API"})
-                status = 4
+                status = 5
 
             finally:
                 if status == 200:
@@ -140,7 +148,7 @@ class PolygonPaginator(ABC):
                     retry = True
                     status = 0
 
-                elif status == 2 and retry is False:
+                elif status in (2, 4) and retry is False:
                     retry = True
                     status = 0
 
