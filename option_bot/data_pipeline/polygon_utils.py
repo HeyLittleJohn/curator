@@ -10,9 +10,9 @@ from aiohttp.client_exceptions import (
     ClientConnectorError,
     ClientResponseError,
 )
+from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
 from dateutil.relativedelta import relativedelta
 
-from option_bot.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
 from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL
 from option_bot.utils import (
     first_weekday_of_month,

@@ -1,8 +1,5 @@
-from sqlalchemy import delete, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from option_bot.db_tools.schemas import (
+from data_pipeline.exceptions import InvalidArgs
+from db_tools.schemas import (
     OptionsPricesRaw,
     OptionsTickerModel,
     OptionsTickers,
@@ -10,7 +7,10 @@ from option_bot.db_tools.schemas import (
     StockTickers,
     TickerModel,
 )
-from option_bot.exceptions import InvalidArgs
+from sqlalchemy import delete, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from option_bot.utils import Session, two_years_ago
 
 
@@ -81,13 +81,12 @@ async def query_options_tickers(
 
 
 @Session
-async def query_all_stock_tickers(session: AsyncSession) -> list[TickerModel]:
+async def query_stock_tickers(session: AsyncSession, all_: bool = True, tickers: list[str] = []) -> list[TickerModel]:
     """only returns tickers likely to have options contracts"""
-    return (
-        await session.execute(
-            select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["CS", "ADRC", "ETF"]))
-        )
-    ).all()
+    stmt = select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
+    if not all_:
+        stmt = stmt.where(StockTickers.ticker.in_(tickers))
+    return (await session.execute(stmt)).all()
 
 
 @Session
