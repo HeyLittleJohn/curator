@@ -1,16 +1,27 @@
 import asyncio
 from argparse import Namespace
-from collections import namedtuple
 from datetime import datetime
 from multiprocessing import cpu_count
 from typing import Awaitable
 
 import uvloop
 from aiomultiprocess import Pool  # , set_start_method
-from sentry_sdk import capture_exception
-
-from option_bot.db_tools.queries import (
-    delete_stock_ticker,
+from data_pipeline.exceptions import (
+    InvalidArgs,
+    ProjBaseException,
+    ProjClientConnectionError,
+    ProjClientResponseError,
+    ProjIndexError,
+    ProjTimeoutError,
+)
+from data_pipeline.polygon_utils import (
+    HistoricalOptionsPrices,
+    HistoricalStockPrices,
+    OptionsContracts,
+    PolygonPaginator,
+    StockMetaData,
+)
+from db_tools.queries import (
     lookup_multi_ticker_ids,
     lookup_ticker_id,
     query_all_stock_tickers,
@@ -21,21 +32,8 @@ from option_bot.db_tools.queries import (
     update_stock_metadata,
     update_stock_prices,
 )
-from option_bot.exceptions import (
-    InvalidArgs,
-    ProjBaseException,
-    ProjClientConnectionError,
-    ProjClientResponseError,
-    ProjIndexError,
-    ProjTimeoutError,
-)
-from option_bot.polygon_utils import (
-    HistoricalOptionsPrices,
-    HistoricalStockPrices,
-    OptionsContracts,
-    PolygonPaginator,
-    StockMetaData,
-)
+from sentry_sdk import capture_exception
+
 from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE_URL
 
 
@@ -53,7 +51,6 @@ planned_exceptions = (
     ProjTimeoutError,
 )
 
-OptionTicker = namedtuple("OptionTicker", ["o_ticker", "id", "expiration_date", "underlying_ticker"])
 
 pool_default_kwargs = {
     "processes": CPUS,
@@ -124,27 +121,6 @@ async def api_pool_downloader(
     log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
 
 
-async def remove_tickers_from_universe(tickers: list[str]):
-    """Deletes the ticker from the stock ticker table which cascades and deletes all associated data."""
-    for ticker in tickers:
-        log.info(f"deleting ticker {ticker}")
-        await delete_stock_ticker(ticker)
-        log.info(f"ticker {ticker} successfully deleted")
-
-
-async def pull_all_tickers_from_db() -> list[dict]:
-    """This function pulls all stock tickers from the db and returns a list of tickers.
-
-    Returns:
-        ticker_lookup: list[dict], each dict will be a {"ticker": "ticker_id"} pair.
-
-    eg: [{'AAWW': 125}, {'ABGI': 138}, {'AA': 94}]
-    """
-    ticker_results = await query_all_stock_tickers()
-    ticker_lookup = [{x[1]: x[0]} for x in ticker_results]
-    return ticker_lookup
-
-
 async def download_stock_metadata(tickers: list[str], all_: bool = True):
     """This function downloads stock metadata from polygon and stores it in /data/StockMetaData/*.json."""
 
@@ -208,23 +184,6 @@ async def fetch_options_prices(tickers: list[str], month_hist: int = 24, all_: b
 def chunks(data: list, size=250000):
     for i in range(0, len(data), size):
         yield data[i : i + size]
-
-
-async def generate_o_ticker_lookup(tickers: list[str], all_=False) -> dict[str, OptionTicker]:
-    """Function to prepare a lookup of o_tickers to o_ticker info based on a list of underlying stock tickers
-    Args:
-        tickers: list of stock tickers
-        all_: bool (default=False) indicating whether to retrieve all o_tickers
-
-    Returns:
-        o_ticker_lookup: dict[str, OptionTicker]
-        A dict of o_tickers to OptionTicker tuple objects
-    """
-    if all_:
-        o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
-    else:
-        o_tickers = await query_options_tickers(stock_tickers=tickers)
-    return [OptionTicker(*x) for x in o_tickers]
 
 
 async def download_all_tickers(args: Namespace):
