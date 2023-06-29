@@ -1,13 +1,22 @@
 from argparse import Namespace
 
-# from option_bot.db_tools.uploader import Uploader
+from data_pipeline.download import (
+    download_options_contracts,
+    download_options_prices,
+    download_stock_metadata,
+)
 from data_pipeline.polygon_utils import PolygonPaginator
+from data_pipeline.uploader import (
+    upload_options_contracts,
+    upload_options_prices,
+    upload_stock_metadata,
+)
 from db_tools.queries import delete_stock_ticker
 
 from option_bot.proj_constants import log
 
 
-async def import_all(args: Namespace, tickers: list[str] = [], refresh: bool = False):
+async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True):
     """this is THE trigger function. It will do the following:
 
     1. Download all metadata and prices for both stocks and options
@@ -16,22 +25,41 @@ async def import_all(args: Namespace, tickers: list[str] = [], refresh: bool = F
 
     The goal is for this to be able to create the process pools required for each step.
 
-    It will toggle if "refreshing" the data or pulling everything fresh.
+    May add toggle if "refreshing" the data or pulling everything fresh.
+    As of now, refreshing won't change anything. Pull all history everytime.
+
 
     Args:
-        tickers: list of tickers to import, if empty, will import all
-        refresh: bool (default=False)"""
-    pass
+        tickers: list of tickers to import
+        all_: bool (default=True) indicating whether to retrieve data for all tickers
+    """
+    # lookup what used to be "import_all_ticker_metadata()" for options_contracts
+    # ticker_lookup = await import_all_ticker_metadata()
+    # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
+
+    await download_stock_metadata(tickers, all_)
+    await upload_stock_metadata(tickers, all_)
+    # await download_stock_prices(tickers, args.startdate, args.enddate, all_)
+    # await upload_stock_prices(tickers, all_)
+    # TODO: need to add an all_ arg to options_contracts
+    await download_options_contracts(tickers, args.month_hist, all_)
+    await upload_options_contracts(tickers, all_)
+    await download_options_prices(tickers, args.month_hist, all_)
+    await upload_options_prices(tickers, all_)
+
+    # NOTE: the args from one download step can be returned and passed to the next step.
+    # This can prevent the double pulling of ticker_ids from the db. Maybe not worth it
 
 
-async def import_partial(components=list[PolygonPaginator], tickers: list[str] = [], refresh: bool = False):
+# NOTE: this may never need to be implemented
+async def import_partial(components=list[PolygonPaginator], tickers: list[str] = [], all_: bool = True):
     """This will download, clean, and upload data for the components specified.
     This is meant to be used on an adhoc basis to fill in data gaps or backfill changes
 
     Args:
         components: list of PolygonPaginator objects
-        tickers: list of tickers to import, if empty, will import all
-        refresh: bool (default=False)
+        tickers: list of tickers to import
+        all_: bool (default=True) indicating whether to retrieve data for all tickers
     """
     pass
 

@@ -34,6 +34,11 @@ def timestamp_now(msec_units: bool = True):
     return int(datetime.now().timestamp() * 1000) if msec_units else int(datetime.now().timestamp())
 
 
+def chunk_iter_generator(data: list, size=250000):
+    for i in range(0, len(data), size):
+        yield data[i : i + size]
+
+
 def Session(func):
     """
     Decorator that adds a SQLAlchemy AsyncSession to the function passed if the function is not

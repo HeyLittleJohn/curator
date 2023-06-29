@@ -15,3 +15,7 @@ This package contains the tools, scripts, and clients needed to download data fr
 - `orchestrator.py` is the file that orchestrates the diffent components of the data pipeline including downloading, cleaning, and upload to db. Functions in this file are called by `main.py`, and are organized according to asset type and scope of the data to be acquired.
 
 - `main.py` is the entrypoint for the data pipeline. It contains an CLI that triggers specific functions from `orchestrator.py`. `main.py` will be scheduled to run.
+
+## Notes
+
+`all_` as a boolean argument indicates whether dealing with all tickers or just a list of tickers. This is its consistent use. It never indicates downloading "all components" (i.e. metadata, stock prices, options contracts, options prices)
