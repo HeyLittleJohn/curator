@@ -67,7 +67,7 @@ class PolygonPaginator(ABC):
         Returns:
             str of the download path,
             str of the file name"""
-        return f"data/{self.paginator_type}/{path}/", f"{file_name}.json"
+        return f"/.polygon_data/{self.paginator_type}/{path}/", f"{file_name}.json"
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
@@ -189,6 +189,7 @@ class PolygonPaginator(ABC):
                 t = self.o_ticker
             raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
 
+    # deprecated
     @abstractmethod
     def clean_data(self):
         """Requiring a clean_data() function to be overwritten by every inheriting class"""
@@ -367,7 +368,7 @@ class OptionsContracts(PolygonPaginator):
         results = await self._query_all(session, url, payload)
         log.info(f"Writing data for {ticker} to file")
         write_api_data_to_file(
-            results, *self._download_path(ticker + "/contracts/" + str(payload["as_of"]), str(timestamp_now()))
+            results, *self._download_path(ticker + "/" + str(payload["as_of"]), str(timestamp_now()))
         )  # NOTE: this creates a folder for each "as_of" date
 
     def clean_data(self, results: list[dict]):

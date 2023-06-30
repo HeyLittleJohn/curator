@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 from multiprocessing import cpu_count
 
 import uvloop
@@ -24,7 +25,6 @@ from db_tools.queries import (
     ticker_imported,
     update_stock_prices,
 )
-from db_tools.utils import generate_o_ticker_lookup
 from sentry_sdk import capture_exception
 
 from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE_URL
@@ -132,9 +132,14 @@ async def download_options_contracts(
     await api_pool_downloader(options)
 
 
-async def download_options_prices(tickers: list[str], month_hist: int = 24, all_: bool = True):
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
-    pool_kwargs = {"childconcurrency": 400, "maxtasksperchild": 50000}
+async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]], month_hist: int = 24):
+    """This function downloads options prices from polygon and stores it as local json.
+
+    Args:
+        o_tickers: list of OptionTicker tuples
+        month_hist: number of months of history to pull
+    """
+    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
     op_prices = HistoricalOptionsPrices(month_hist=month_hist)
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 

@@ -12,6 +12,7 @@ from data_pipeline.uploader import (
     upload_stock_metadata,
 )
 from db_tools.queries import delete_stock_ticker
+from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
 
 from option_bot.proj_constants import log
 
@@ -33,19 +34,27 @@ async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True
         tickers: list of tickers to import
         all_: bool (default=True) indicating whether to retrieve data for all tickers
     """
-    # lookup what used to be "import_all_ticker_metadata()" for options_contracts
-    # ticker_lookup = await import_all_ticker_metadata()
-    # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
-
+    # Download and upload metadata
     await download_stock_metadata(tickers, all_)
-    await upload_stock_metadata(tickers, all_)
+    await upload_stock_metadata(tickers)
+
+    # Get ticker_id_lookup from db
+    ticker_lookup = await pull_tickers_from_db(tickers, all_)
+
+    # Download and upload prices
     # await download_stock_prices(tickers, args.startdate, args.enddate, all_)
     # await upload_stock_prices(tickers, all_)
-    # TODO: need to add an all_ arg to options_contracts
-    await download_options_contracts(tickers, args.month_hist, all_)
-    await upload_options_contracts(tickers, all_)
-    await download_options_prices(tickers, args.month_hist, all_)
-    await upload_options_prices(tickers, all_)
+
+    # Download and upload options contract data
+    await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.month_hist)
+    await upload_options_contracts(ticker_lookup)
+
+    # Get o_ticker_lookup from db
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+
+    # Download and upload options prices data
+    await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.month_hist)
+    await upload_options_prices(o_tickers)
 
     # NOTE: the args from one download step can be returned and passed to the next step.
     # This can prevent the double pulling of ticker_ids from the db. Maybe not worth it

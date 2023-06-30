@@ -7,6 +7,7 @@ OptionTicker = namedtuple("OptionTicker", ["o_ticker", "id", "expiration_date", 
 
 
 async def pull_tickers_from_db(tickers: list[str] = [], all_: bool = True) -> list[dict]:
+    # TODO: rename this function
     """This function pulls all stock tickers from the db and returns a list of tickers.
 
     Returns:
