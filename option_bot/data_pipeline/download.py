@@ -49,7 +49,9 @@ async def api_pool_downloader(
     The results for each request are returned via PoolResults generator.
 
     Args:
-        paginator: PolygonPaginator object, specific to the endpoint being queried
+        paginator: PolygonPaginator object, specific to the endpoint being queried,
+        args_data: list of data args to be used to generate pool args
+        pool_kwargs: kwargs to be passed to the process pool
 
 
     """
