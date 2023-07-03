@@ -1,13 +1,13 @@
 from typing import Awaitable
 
 from aiomultiprocess import Pool
-from data_pipeline.polygon_utils import PolygonPaginator
+from data_pipeline.path_runner import PathRunner
 
 from option_bot.proj_constants import log
 
 
 async def etl_pool_uploader(
-    paginator: PolygonPaginator, upload_func: Awaitable, record_size: int, expected_args: int, pool_kwargs: dict = {}
+    paginator: PathRunner, upload_func: Awaitable, record_size: int, expected_args: int, pool_kwargs: dict = {}
 ):
     """This function will create a process pool to concurrently upload the downloaded json to the db
 

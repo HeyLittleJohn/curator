@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 from typing import Awaitable
 from datetime import datetime
 
-from option_bot.proj_constants import log
-from option_bot.utils import two_years_ago
+from option_bot.proj_constants import log, POOL_DEFAULT_KWARGS
+from option_bot.utils import two_years_ago, pool_kwarg_config
 
 
 class PathRunner(ABC):
@@ -124,7 +124,7 @@ class OptionsContractsRunner(PathRunner):
                 path_args.append(self._determine_most_recent_file(temp_path))
         return path_args
     
-    def clean_data(self, results: list[dict]):
+    def clean_data(self, results: list[dict], ticker_id_lookup:dict):
         # TODO: make sure this fits the json data schema. And add ticker_id_lookup
         clean_results = []
         key_mapping = {
@@ -140,7 +140,7 @@ class OptionsContractsRunner(PathRunner):
         for page in results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = self.ticker_id_lookup[record.get("underlying_ticker")]
+                t["underlying_ticker_id"] = ticker_id_lookup[record.get("underlying_ticker")]
                 clean_results.append(t)
         clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique

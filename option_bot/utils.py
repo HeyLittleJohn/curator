@@ -8,7 +8,7 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.proj_constants import async_session_maker, log
+from option_bot.proj_constants import async_session_maker, log, POOL_DEFAULT_KWARGS
 
 
 _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
@@ -118,3 +118,10 @@ def read_api_data_from_file(file_path: str, file_name: str) -> list[dict]:
     with open(file_path + file_name, "r") as f:
         data = json.load(f)
     return data
+
+
+def pool_kwarg_config(kwargs: dict) -> dict:
+    """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
+    pool_kwargs = POOL_DEFAULT_KWARGS.copy()
+    pool_kwargs.update(kwargs)
+    return pool_kwargs

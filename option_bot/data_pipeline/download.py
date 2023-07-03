@@ -1,9 +1,6 @@
 import asyncio
 from datetime import datetime
-from multiprocessing import cpu_count
 
-import uvloop
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiomultiprocess import Pool
 from data_pipeline.exceptions import (
     InvalidArgs,
@@ -26,12 +23,10 @@ from db_tools.queries import (
     ticker_imported,
     update_stock_prices,
 )
-from sentry_sdk import capture_exception
 
-from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE_URL
+from option_bot.proj_constants import log, POLYGON_BASE_URL
+from option_bot.utils import pool_kwarg_config
 
-
-CPUS = cpu_count() - 2
 
 planned_exceptions = (
     InvalidArgs,
@@ -41,23 +36,6 @@ planned_exceptions = (
     ProjIndexError,
     ProjTimeoutError,
 )
-
-pool_default_kwargs = {
-    "processes": CPUS,
-    "exception_handler": capture_exception,
-    "loop_initializer": uvloop.new_event_loop,
-    "childconcurrency": int(MAX_CONCURRENT_REQUESTS * 4 / CPUS),
-    "queuecount": CPUS,
-    "init_client_session": True,
-    "session_base_url": POLYGON_BASE_URL,
-}
-
-
-def pool_kwarg_config(kwargs: dict) -> dict:
-    """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
-    pool_kwargs = pool_default_kwargs.copy()
-    pool_kwargs.update(kwargs)
-    return pool_kwargs
 
 
 async def api_pool_downloader(
@@ -79,6 +57,7 @@ async def api_pool_downloader(
     url_args = paginator.generate_request_args(args_data)
 
     log.info("fetching data from polygon api")
+    pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
     pool_kwargs = pool_kwarg_config(pool_kwargs)
     async with Pool(**pool_kwargs) as pool:
         await pool.starmap(paginator.download_data, url_args)
