@@ -36,7 +36,7 @@ async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True
     """
     # Download and upload metadata
     await download_stock_metadata(tickers, all_)
-    await upload_stock_metadata(tickers)
+    await upload_stock_metadata(tickers, all_)
 
     # Get ticker_id_lookup from db
     ticker_lookup = await pull_tickers_from_db(tickers, all_)

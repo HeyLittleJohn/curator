@@ -113,9 +113,9 @@ def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
     log.info(f"Data written to {file_path + file_name}")
 
 
-def read_api_data_from_file(file_path: str, file_name: str) -> list[dict]:
+def read_data_from_file(file_path: str) -> list[dict]:
     """Read api data from a json file"""
-    with open(file_path + file_name, "r") as f:
+    with open(file_path, "r") as f:
         data = json.load(f)
     return data
 
