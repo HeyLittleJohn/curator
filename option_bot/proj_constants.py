@@ -4,8 +4,11 @@ import logging
 import os
 import sys
 from logging import FileHandler, Logger, StreamHandler
+from multiprocessing import cpu_count
 
 import sentry_sdk
+import uvloop
+from sentry_sdk import capture_exception
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -41,12 +44,8 @@ def db_uri_maker() -> str:
     return database_uri
 
 
-# total number of requests the API can handle at once. 100/sec rate limit
-MAX_CONCURRENT_REQUESTS = 100
-# Max number of requests per minute for the free API tier: 5
-MAX_QUERY_PER_MINUTE = 4
-
 POSTGRES_DATABASE_URL = db_uri_maker()
+
 
 POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
@@ -55,6 +54,21 @@ RH_PASSWORD = os.getenv("RH_PASSWORD")
 QR = os.getenv("RH_QR")
 TRAD_IRA = os.getenv("TRAD_IRA")
 ROTH_IRA = os.getenv("ROTH_IRA")
+
+# total number of requests the API can handle at once. 100/sec rate limit
+MAX_CONCURRENT_REQUESTS = 100
+# Max number of requests per minute for the free API tier: 5
+MAX_QUERY_PER_MINUTE = 4
+
+CPUS = cpu_count() - 2
+
+POOL_DEFAULT_KWARGS = {
+    "processes": CPUS,
+    "exception_handler": capture_exception,
+    "loop_initializer": uvloop.new_event_loop,
+    "childconcurrency": int(MAX_CONCURRENT_REQUESTS * 4 / CPUS),
+    "queuecount": CPUS,
+}
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
