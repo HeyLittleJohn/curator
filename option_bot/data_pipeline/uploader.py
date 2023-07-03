@@ -1,5 +1,3 @@
-from typing import Awaitable
-
 from aiomultiprocess import Pool
 from data_pipeline.path_runner import MetaDataRunner, PathRunner
 
@@ -20,7 +18,9 @@ async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}):
     log.info(f"generating the path args to be uploaded -- {runner.runner_type}")
     path_args = runner.generate_path_args()
 
-    log.info("uploading data to the database -- Starting Process Pool")
+    log.info(
+        f"uploading data to the database -- Starting Process Pool -- Upload Function: {runner.upload_func.__qualname__}"
+    )
     pool_kwargs = pool_kwarg_config(pool_kwargs)
     log.debug(f"process pool kwargs: {pool_kwargs}")
     async with Pool(**pool_kwargs) as pool:
