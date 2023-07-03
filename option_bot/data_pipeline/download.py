@@ -3,7 +3,8 @@ from datetime import datetime
 from multiprocessing import cpu_count
 
 import uvloop
-from aiomultiprocess import Pool  # , set_start_method
+from aiohttp import ClientSession, ClientTimeout, TCPConnector
+from aiomultiprocess import Pool
 from data_pipeline.exceptions import (
     InvalidArgs,
     ProjBaseException,
@@ -25,15 +26,14 @@ from db_tools.queries import (
     ticker_imported,
     update_stock_prices,
 )
+from db_tools.utils import generate_o_ticker_lookup
 from sentry_sdk import capture_exception
 
 from option_bot.proj_constants import log, MAX_CONCURRENT_REQUESTS, POLYGON_BASE_URL
 
 
-# set_start_method("fork")
-
 CPUS = cpu_count() - 2
-
+CONCURRENCY = int(MAX_CONCURRENT_REQUESTS * 4 / CPUS)
 
 planned_exceptions = (
     InvalidArgs,
@@ -44,15 +44,20 @@ planned_exceptions = (
     ProjTimeoutError,
 )
 
+session_default_kwargs = {
+    "connector": TCPConnector(limit_per_host=max(100, CONCURRENCY), use_dns_cache=True),
+    "timeout": ClientTimeout(total=60),
+    "base_url": POLYGON_BASE_URL,
+}
 
 pool_default_kwargs = {
     "processes": CPUS,
     "exception_handler": capture_exception,
     "loop_initializer": uvloop.new_event_loop,
-    "childconcurrency": int(MAX_CONCURRENT_REQUESTS * 4 / CPUS),
+    "childconcurrency": CONCURRENCY,
     "queuecount": CPUS,
-    "init_client_session": True,
-    "session_base_url": POLYGON_BASE_URL,
+    "client_session": ClientSession,
+    "session_kwargs": session_default_kwargs,
 }
 
 
@@ -145,10 +150,8 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
 
 
 async def main():
-    # ticker_lookup = await import_all_ticker_metadata()
-    # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
-    # await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
-    await download_options_prices(["SPY"], all_=True)
+    o_tickers = await generate_o_ticker_lookup(["SPY"], all_=True)
+    await download_options_prices(o_tickers=list(o_tickers.values()), month_hist=24)
 
 
 if __name__ == "__main__":

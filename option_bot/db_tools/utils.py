@@ -16,7 +16,7 @@ async def pull_tickers_from_db(tickers: list[str] = [], all_: bool = True) -> li
     eg: [{'AAWW': 125}, {'ABGI': 138}, {'AA': 94}]
     """
     ticker_results = await query_stock_tickers(tickers=tickers, all_=all_)
-    ticker_lookup = [{x[1]: x[0]} for x in ticker_results]
+    ticker_lookup = {x[1]: x[0] for x in ticker_results}
     return ticker_lookup
 
 
@@ -34,4 +34,4 @@ async def generate_o_ticker_lookup(tickers: list[str], all_: bool = False) -> di
         o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
     else:
         o_tickers = await query_options_tickers(stock_tickers=tickers)
-    return [OptionTicker(*x) for x in o_tickers]
+    return {x[0]: OptionTicker(*x) for x in o_tickers}
