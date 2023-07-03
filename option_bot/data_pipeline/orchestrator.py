@@ -53,7 +53,7 @@ async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True
     o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
 
     # Download and upload options prices data
-    await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.month_hist)
+    await download_options_prices(o_tickers=list(o_tickers.values()), month_hist=args.month_hist)
     await upload_options_prices(o_tickers)
 
     # NOTE: the args from one download step can be returned and passed to the next step.
