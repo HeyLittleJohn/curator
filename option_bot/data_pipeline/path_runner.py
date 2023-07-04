@@ -39,7 +39,9 @@ class PathRunner(ABC):
     @abstractmethod
     def generate_path_args(self) -> list[str]:
         """Requiring a generate_path_args() function to be overwritten by every inheriting class.
-        This function will generate the arguments to be passed to the pool for each file in the directory"""
+        This function will generate the arguments to be passed to the pool for each file in the directory
+
+        Optional: can accept path_input_args as defined by the inheriting class"""
         pass
 
     @abstractmethod
@@ -50,7 +52,7 @@ class PathRunner(ABC):
 
         Args:
             results (list[dict]): raw data from the file
-            ticker_data (dict): ticker data to be passed to the clean function. Optional
+            ticker_data (Any): ticker data to be passed to the clean function. Optional
 
         Returns:
             list[dict]: cleaned data"""
@@ -145,13 +147,13 @@ class OptionsContractsRunner(PathRunner):
             date = two_years_ago()
         return date.strftime("%Y-%m-01")
 
-    def generate_path_args(self, ticker_id_lookup: dict) -> list[str]:
+    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple(str, int)]:
         """This function will generate the arguments to be passed to the pool,
         It will traverse the directories for each ticker and date to find the most recent, relevant file.
 
         Returns:
-            list of file paths to be passed to the pool
-            e.g. "/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json"
+            path_args: list of tuples containing the file path and the ticker idto be passed to the pool.
+            e.g. "(/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json, 9912)"
         """
         # NOTE: may need try/except in case specific ticker files didn't successfully download
         if not os.path.exists(self.base_directory):
@@ -167,7 +169,7 @@ class OptionsContractsRunner(PathRunner):
             i = temp_dir_list.index(self.hist_limit_date)
             for date in temp_dir_list[:i]:
                 temp_path = f"{self.base_directory}/{ticker}/{date}"
-                path_args.append(self._determine_most_recent_file(temp_path), ticker_id_lookup[ticker])
+                path_args.append((self._determine_most_recent_file(temp_path), ticker_id_lookup[ticker]))
         return path_args
 
     def clean_data(self, results: list[dict], ticker_id: int) -> list[dict]:
@@ -200,13 +202,40 @@ class OptionsPricesRunner(PathRunner):
     base_directory = "/.polygon_data/OptionsPrices"
     upload_func = update_options_prices
 
-    def __init__(self, months_hist: int, hist_limit_date: str = ""):
-        self.months_hist = months_hist
-        self.hist_limit_date = self._configure_hist_limit_date(hist_limit_date)
+    def _clean_o_ticker(self, o_ticker: str) -> str:
+        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
+        return o_ticker.split(":")[1]
+
+    def _make_o_ticker(self, clean_o_ticker: str) -> str:
+        """re-adds the option prefix to the clean options ticker"""
+        return f"O:{clean_o_ticker}"
 
     def generate_path_args(self, o_tickers_lookup: dict) -> list[str]:
-        """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup"""
-        pass
+        """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup.
+
+        Args:
+            o_tickers_lookup (dict): dict(o_ticker: OptionsTicker namedtuple)
+           (OptionTicker namedtuple containing o_ticker, id, expiration_date, underlying_ticker).
+
+        Returns:
+            path_args
+        """
+        if not os.path.exists(self.base_directory):
+            log.warning("no options contracts found. Download options contracts first!")
+            raise FileNotFoundError
+
+        o_tickers = o_tickers_lookup.keys()
+        path_args = []
+        for o_ticker in o_tickers:
+            temp_path = (
+                self.base_directory
+                + "/"
+                + o_tickers_lookup[o_ticker].underlying_ticker
+                + "/"
+                + self._clean_o_ticker(o_ticker)
+            )
+            path_args.append((self._determine_most_recent_file(temp_path), o_tickers_lookup[o_ticker]))
+        return path_args
 
     def clean_data(self, results: list[dict], o_ticker: tuple[str, int, str, str]) -> list[dict]:
         """This function will clean the data and return a list of dicts to be uploaded to the db
@@ -227,10 +256,12 @@ class OptionsPricesRunner(PathRunner):
             "t": "as_of_date",
             "n": "number_of_transactions",
         }
-        for page in results:
-            if page.get("results"):
-                for record in page.get("results"):
-                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                    t["options_ticker_id"] = o_ticker[1]
-                    clean_results.append(t)
+        if type(results) is list:
+            for page in results:
+                if page.get("results"):
+                    for record in page.get("results"):
+                        t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                        t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                        t["options_ticker_id"] = o_ticker.id
+                        clean_results.append(t)
+        return clean_results
