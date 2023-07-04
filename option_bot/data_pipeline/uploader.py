@@ -1,22 +1,24 @@
 from aiomultiprocess import Pool
-from data_pipeline.path_runner import MetaDataRunner, PathRunner
+from data_pipeline.path_runner import MetaDataRunner, OptionsContractsRunner, PathRunner
 
 from option_bot.proj_constants import log
 from option_bot.utils import pool_kwarg_config
 
 
-async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}):
+async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_input_args: list[str] = []):
     """This function will create a process pool to concurrently upload the downloaded json to the db
 
     Args:
         runner: PathRunner object, specific to the data type being uploaded,
-        pool_kwargs: kwargs to be passed to the process pool
+        pool_kwargs: kwargs to be passed to the process poolm
+        path_input_args: list of args to be passed to the runner's generate_path_args() function.
+        These input args will likely be a list of tickers or something similar.
 
     """
     # NOTE: uploader was originally a linear class. It can't handle concurrency. Need to change
     # uploader = Uploader(upload_func, expected_args, record_size)
     log.info(f"generating the path args to be uploaded -- {runner.runner_type}")
-    path_args = runner.generate_path_args()
+    path_args = runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
 
     log.info(
         f"uploading data to the database -- Starting Process Pool -- Upload Function: {runner.upload_func.__qualname__}"
@@ -43,15 +45,15 @@ async def upload_stock_prices(tickers, all_):
     pass
 
 
-async def upload_options_contracts(ticker_id_lookup: dict):
+async def upload_options_contracts(ticker_id_lookup: dict, months_hist: int, hist_limit_date: str = ""):
     """This function uploads options contract data to the database"""
-    tickers = list(ticker_id_lookup.keys())
+    opt_runner = OptionsContractsRunner(months_hist, hist_limit_date)
+    await etl_pool_uploader(opt_runner, path_input_args=ticker_id_lookup)
 
 
-async def upload_options_prices(tickers, all_):
-    """This function uploads options prices data to the database"""
-    pass
+async def upload_options_prices(o_tickers: dict):
+    """This function uploads options prices data to the database
 
-
-def generate_directory_args(directory: str, file_type: str):
+    Args:
+        o_tickers: dict(o_ticker_id: OptionsTicker tuple)"""
     pass

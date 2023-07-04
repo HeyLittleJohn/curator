@@ -400,7 +400,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
 
     def __init__(
         self,
-        month_hist: int = 24,
+        months_hist: int = 24,
         multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
@@ -409,11 +409,11 @@ class HistoricalOptionsPrices(PolygonPaginator):
         self.timespan = timespan.value
         self.multiplier = multiplier
         self.adjusted = "true" if adjusted else "false"
-        self.month_hist = month_hist
+        self.months_hist = months_hist
 
     def _determine_start_end_dates(self, exp_date: date):
         end_date = datetime.now().date() if exp_date > datetime.now().date() else exp_date
-        start_date = end_date - relativedelta(months=self.month_hist)
+        start_date = end_date - relativedelta(months=self.months_hist)
         return start_date, end_date
 
     def _construct_url(self, o_ticker: str, expiration_date: datetime) -> str:

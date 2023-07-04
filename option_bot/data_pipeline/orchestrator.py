@@ -41,19 +41,19 @@ async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True
     # Get ticker_id_lookup from db
     ticker_lookup = await pull_tickers_from_db(tickers, all_)
 
-    # Download and upload prices
+    # Download and upload underlying stock prices
     # await download_stock_prices(tickers, args.startdate, args.enddate, all_)
     # await upload_stock_prices(tickers, all_)
 
     # Download and upload options contract data
     await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.month_hist)
-    await upload_options_contracts(ticker_lookup)
+    await upload_options_contracts(ticker_lookup, months_hist=args.months_hist)
 
     # Get o_ticker_lookup from db
     o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
 
     # Download and upload options prices data
-    await download_options_prices(o_tickers=list(o_tickers.values()), month_hist=args.month_hist)
+    await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.months_hist)
     await upload_options_prices(o_tickers)
 
     # NOTE: the args from one download step can be returned and passed to the next step.
