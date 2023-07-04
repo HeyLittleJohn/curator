@@ -1,12 +1,12 @@
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Awaitable
+from typing import Any, Awaitable
 
-from db_tools.queries import update_options_tickers, update_stock_metadata
+from db_tools.queries import update_options_prices, update_options_tickers, update_stock_metadata
 
 from option_bot.proj_constants import log, POSTGRES_BATCH_MAX
-from option_bot.utils import read_data_from_file, two_years_ago
+from option_bot.utils import read_data_from_file, timestamp_to_datetime, two_years_ago
 
 
 class PathRunner(ABC):
@@ -43,11 +43,20 @@ class PathRunner(ABC):
         pass
 
     @abstractmethod
-    def clean_data(self) -> list[dict]:
-        """Requiring a clean_data() function to be overwritten by every inheriting class"""
+    def clean_data(self, results: list[dict], ticker_data: Any) -> list[dict]:
+        """Requiring a clean_data() function to be overwritten by every inheriting class.
+
+        All classes should maintain this arg/return schema.
+
+        Args:
+            results (list[dict]): raw data from the file
+            ticker_data (dict): ticker data to be passed to the clean function. Optional
+
+        Returns:
+            list[dict]: cleaned data"""
         pass
 
-    async def upload(self, file_path: str):
+    async def upload(self, file_path: str, ticker_data: tuple = ()):
         """This function will read the file, clean the data, and upload to the database
 
         Every self.upload_func needs to require args in this format:
@@ -58,7 +67,7 @@ class PathRunner(ABC):
         """
         log.info(f"uploading data from {file_path}")
         raw_data = read_data_from_file(file_path)
-        clean_data = self.clean_data(raw_data)
+        clean_data = self.clean_data(raw_data, ticker_data)
         for batch in self._make_batch_generator(clean_data):
             await self.upload_func(batch)
 
@@ -90,7 +99,7 @@ class MetaDataRunner(PathRunner):
         else:
             return [self._determine_most_recent_file(f"{self.base_directory}/{ticker}") for ticker in self.tickers]
 
-    def clean_data(self, results: list[dict]):
+    def clean_data(self, results: list[dict], ticker_data: tuple = ()):
         clean_results = []
         selected_keys = [
             "ticker",
@@ -136,7 +145,7 @@ class OptionsContractsRunner(PathRunner):
             date = two_years_ago()
         return date.strftime("%Y-%m-01")
 
-    def generate_path_args(self, tickers: list[str]) -> list[str]:
+    def generate_path_args(self, ticker_id_lookup: dict) -> list[str]:
         """This function will generate the arguments to be passed to the pool,
         It will traverse the directories for each ticker and date to find the most recent, relevant file.
 
@@ -149,6 +158,7 @@ class OptionsContractsRunner(PathRunner):
             log.warning("no options contracts found. Download options contracts first!")
             raise FileNotFoundError
 
+        tickers = list(ticker_id_lookup.keys())
         path_args = []
         for ticker in tickers:
             temp_dir_list = os.listdir(self.base_directory + "/" + ticker)
@@ -157,11 +167,11 @@ class OptionsContractsRunner(PathRunner):
             i = temp_dir_list.index(self.hist_limit_date)
             for date in temp_dir_list[:i]:
                 temp_path = f"{self.base_directory}/{ticker}/{date}"
-                path_args.append(self._determine_most_recent_file(temp_path))
+                path_args.append(self._determine_most_recent_file(temp_path), ticker_id_lookup[ticker])
         return path_args
 
-    def clean_data(self, results: list[dict], ticker_id_lookup: dict):
-        # TODO: make sure this fits the json data schema. And add ticker_id_lookup
+    def clean_data(self, results: list[dict], ticker_id: int) -> list[dict]:
+        # TODO: make sure this fits the json data schema
         clean_results = []
         key_mapping = {
             "ticker": "options_ticker",
@@ -176,8 +186,51 @@ class OptionsContractsRunner(PathRunner):
         for page in results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = ticker_id_lookup[record.get("underlying_ticker")]
+                t["underlying_ticker_id"] = ticker_id
                 clean_results.append(t)
         clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
         return clean_results
+
+
+class OptionsPricesRunner(PathRunner):
+    """Runner for options prices local data"""
+
+    runner_type = "OptionsPrices"
+    base_directory = "/.polygon_data/OptionsPrices"
+    upload_func = update_options_prices
+
+    def __init__(self, months_hist: int, hist_limit_date: str = ""):
+        self.months_hist = months_hist
+        self.hist_limit_date = self._configure_hist_limit_date(hist_limit_date)
+
+    def generate_path_args(self, o_tickers_lookup: dict) -> list[str]:
+        """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup"""
+        pass
+
+    def clean_data(self, results: list[dict], o_ticker: tuple[str, int, str, str]) -> list[dict]:
+        """This function will clean the data and return a list of dicts to be uploaded to the db
+
+        Args:
+            results (list[dict]): raw data from the file
+            o_ticker (tuple[str, int, str, str]):
+            OptionTicker named tuple containing o_ticker, id, expiration_date, underlying_ticker.
+        """
+        clean_results = []
+        key_mapping = {
+            "v": "volume",
+            "vw": "volume_weight_price",
+            "c": "close_price",
+            "o": "open_price",
+            "h": "high_price",
+            "l": "low_price",
+            "t": "as_of_date",
+            "n": "number_of_transactions",
+        }
+        for page in results:
+            if page.get("results"):
+                for record in page.get("results"):
+                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                    t["options_ticker_id"] = o_ticker[1]
+                    clean_results.append(t)

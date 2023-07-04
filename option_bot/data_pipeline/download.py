@@ -110,7 +110,7 @@ async def download_options_contracts(
     await api_pool_downloader(options)
 
 
-async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]], month_hist: int = 24):
+async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]], months_hist: int = 24):
     """This function downloads options prices from polygon and stores it as local json.
 
     Args:
@@ -118,7 +118,7 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
         month_hist: number of months of history to pull
     """
     pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
-    op_prices = HistoricalOptionsPrices(month_hist=month_hist)
+    op_prices = HistoricalOptionsPrices(months_hist=months_hist)
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 

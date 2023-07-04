@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from argparse import Namespace
 from datetime import datetime
 
 from data_pipeline.exceptions import InvalidArgs
@@ -17,7 +18,7 @@ DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = two_years_ago()
 
 
-async def add_ticker(args):
+async def add_ticker(args: Namespace):
     await add_tickers_to_universe(
         [
             {
@@ -36,7 +37,7 @@ async def remove_tickers(args):
     await remove_tickers_from_universe(tickers)
 
 
-async def add_all_tickers(args):
+async def add_all_tickers(args: Namespace):
     await import_all_tickers(args)
 
 
