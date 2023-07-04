@@ -5,7 +5,7 @@ from typing import Any, Awaitable
 
 from db_tools.queries import update_options_prices, update_options_tickers, update_stock_metadata
 
-from option_bot.proj_constants import log, POSTGRES_BATCH_MAX
+from option_bot.proj_constants import log, POSTGRES_BATCH_MAX, BASE_DOWNLOAD_PATH
 from option_bot.utils import read_data_from_file, timestamp_to_datetime, two_years_ago
 
 
@@ -15,7 +15,7 @@ class PathRunner(ABC):
 
     runner_type = "Generic"
     upload_func: Awaitable = None
-    base_directory = "/.polygon_data"
+    base_directory = BASE_DOWNLOAD_PATH
 
     def __init__(self):
         self.record_size = 0
@@ -78,7 +78,7 @@ class MetaDataRunner(PathRunner):
     """Runner for stock metadata local data"""
 
     runner_type = "StockMetaData"
-    base_directory = "/.polygon_data/StockMetaData"
+    base_directory = f"{BASE_DOWNLOAD_PATH}/StockMetaData"
     upload_func = update_stock_metadata
 
     def __init__(self, tickers: list[str] = [], all_: bool = False):
@@ -90,7 +90,7 @@ class MetaDataRunner(PathRunner):
 
         Returns:
             list of file paths to be passed to the pool
-            e.g. "/.polygon_data/StockMetaData/1688127754374.json"
+            e.g. "~/.polygon_data/StockMetaData/1688127754374.json"
         """
         if not os.path.exists(self.base_directory):
             log.warning("no metadata found. Download metadata first!")
@@ -125,7 +125,7 @@ class OptionsContractsRunner(PathRunner):
     """Runner for options contracts local data"""
 
     runner_type = "OptionsContracts"
-    base_directory = "/.polygon_data/OptionsContracts"
+    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsContracts"
     upload_func = update_options_tickers
 
     def __init__(self, months_hist: int, hist_limit_date: str = ""):
@@ -147,13 +147,13 @@ class OptionsContractsRunner(PathRunner):
             date = two_years_ago()
         return date.strftime("%Y-%m-01")
 
-    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple(str, int)]:
+    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple[str, int]]:
         """This function will generate the arguments to be passed to the pool,
         It will traverse the directories for each ticker and date to find the most recent, relevant file.
 
         Returns:
             path_args: list of tuples containing the file path and the ticker idto be passed to the pool.
-            e.g. "(/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json, 9912)"
+            e.g. "(~/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json, 9912)"
         """
         # NOTE: may need try/except in case specific ticker files didn't successfully download
         if not os.path.exists(self.base_directory):
@@ -199,7 +199,7 @@ class OptionsPricesRunner(PathRunner):
     """Runner for options prices local data"""
 
     runner_type = "OptionsPrices"
-    base_directory = "/.polygon_data/OptionsPrices"
+    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsPrices"
     upload_func = update_options_prices
 
     def _clean_o_ticker(self, o_ticker: str) -> str:
