@@ -13,7 +13,7 @@ from aiohttp.client_exceptions import (
 from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload, ProjIndexError
 from dateutil.relativedelta import relativedelta
 
-from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL
+from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL, BASE_DOWNLOAD_PATH
 from option_bot.utils import (
     first_weekday_of_month,
     timestamp_now,
@@ -67,7 +67,7 @@ class PolygonPaginator(ABC):
         Returns:
             str of the download path,
             str of the file name"""
-        return f"/.polygon_data/{self.paginator_type}/{path}/", f"{file_name}.json"
+        return f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{path}", f"{file_name}.json"
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response
@@ -223,7 +223,7 @@ class StockMetaData(PolygonPaginator):
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
-    def generate_request_args(self):
+    def generate_request_args(self, args_data: list[str] = []):
         """Generate the urls to query the Polygon API.
 
         Returns:

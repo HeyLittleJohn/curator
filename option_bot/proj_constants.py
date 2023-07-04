@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 import os
+from pathlib import Path
 import sys
 from logging import FileHandler, Logger, StreamHandler
 from multiprocessing import cpu_count
@@ -46,6 +47,8 @@ def db_uri_maker() -> str:
 
 POSTGRES_DATABASE_URL = db_uri_maker()
 POSTGRES_BATCH_MAX = 62000
+
+BASE_DOWNLOAD_PATH = Path("~").expanduser() + "/.polygon_data"
 
 POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
