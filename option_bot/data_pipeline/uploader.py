@@ -1,5 +1,10 @@
 from aiomultiprocess import Pool
-from data_pipeline.path_runner import MetaDataRunner, OptionsContractsRunner, PathRunner
+from data_pipeline.path_runner import (
+    MetaDataRunner,
+    OptionsContractsRunner,
+    OptionsPricesRunner,
+    PathRunner,
+)
 
 from option_bot.proj_constants import log
 from option_bot.utils import pool_kwarg_config
@@ -56,4 +61,5 @@ async def upload_options_prices(o_tickers: dict):
 
     Args:
         o_tickers: dict(o_ticker_id: OptionsTicker tuple)"""
-    pass
+    opt_price_runner = OptionsPricesRunner()
+    await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers)
