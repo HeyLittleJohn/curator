@@ -1,16 +1,14 @@
 import argparse
 import asyncio
-from argparse import Namespace
 from datetime import datetime
 
 from data_pipeline.exceptions import InvalidArgs
-from data_pipeline.orchestrator import (
-    add_tickers_to_universe,
-    import_all_tickers,
-    remove_tickers_from_universe,
-)
+from data_pipeline.orchestrator import import_all, remove_tickers_from_universe
 
 from option_bot.utils import two_years_ago
+
+
+# from argparse import Namespace
 
 
 DEFAULT_DAYS = 500
@@ -18,27 +16,23 @@ DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = two_years_ago()
 
 
-async def add_ticker(args: Namespace):
-    await add_tickers_to_universe(
-        [
-            {
-                "ticker": ticker,
-                "start_date": args.startdate,
-                "end_date": args.enddate,
-                "months_hist": args.monthhist,
-            }
-            for ticker in args.tickers
-        ]
-    )
+# async def add_ticker(args: Namespace):
+#     await add_tickers_to_universe(
+#         [
+#             {
+#                 "ticker": ticker,
+#                 "start_date": args.startdate,
+#                 "end_date": args.enddate,
+#                 "months_hist": args.monthhist,
+#             }
+#             for ticker in args.tickers
+#         ]
+#     )
 
 
 async def remove_tickers(args):
     tickers = list(args.tickers) if type(args.tickers) != list else args.tickers
     await remove_tickers_from_universe(tickers)
-
-
-async def add_all_tickers(args: Namespace):
-    await import_all_tickers(args)
 
 
 async def refresh_tickers(args):
@@ -131,9 +125,9 @@ def main():
 
     else:
         if args.add_all:
-            asyncio.run(add_all_tickers(args))
-        else:
-            asyncio.run(add_ticker(args))
+            asyncio.run(import_all(args))
+        # else:
+        #     asyncio.run(add_ticker(args))
 
 
 if __name__ == "__main__":
