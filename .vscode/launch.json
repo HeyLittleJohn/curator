@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "main.py-CLI orchestrator",
+            "name": "Data Pipeline-CLI orchestrator",
             "type": "python",
             "request": "launch",
-            "program": "~/option_bot/option_bot/main.py",
+            "program": "~/option_bot/option_bot/data_pipeline/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args":["all_", "-aa"],
