@@ -48,7 +48,7 @@ def db_uri_maker() -> str:
 POSTGRES_DATABASE_URL = db_uri_maker()
 POSTGRES_BATCH_MAX = 62000
 
-BASE_DOWNLOAD_PATH = Path("~").expanduser() + "/.polygon_data"
+BASE_DOWNLOAD_PATH = str(Path("~").expanduser()) + "/.polygon_data"
 
 POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")

@@ -84,22 +84,23 @@ class MetaDataRunner(PathRunner):
     def __init__(self, tickers: list[str] = [], all_: bool = False):
         self.all_ = all_
         self.tickers = tickers
+        super().__init__()
 
-    def generate_path_args(self) -> list[str]:
+    def generate_path_args(self) -> list[tuple[str]]:
         """This function will generate the arguments to be passed to the pool for each file in the directory
 
         Returns:
-            list of file paths to be passed to the pool
-            e.g. "~/.polygon_data/StockMetaData/1688127754374.json"
+            list of tuples with file paths and nothing to be passed to the pool
+            e.g. ("~/.polygon_data/StockMetaData/1688127754374.json",)
         """
         if not os.path.exists(self.base_directory):
             log.warning("no metadata found. Download metadata first!")
             raise FileNotFoundError
 
         if self.all_:
-            return [self._determine_most_recent_file(self.base_directory)]
+            return [(self._determine_most_recent_file(self.base_directory),)]
         else:
-            return [self._determine_most_recent_file(f"{self.base_directory}/{ticker}") for ticker in self.tickers]
+            return [(self._determine_most_recent_file(f"{self.base_directory}/{ticker}"),) for ticker in self.tickers]
 
     def clean_data(self, results: list[dict], ticker_data: tuple = ()):
         clean_results = []
@@ -131,6 +132,7 @@ class OptionsContractsRunner(PathRunner):
     def __init__(self, months_hist: int, hist_limit_date: str = ""):
         self.months_hist = months_hist
         self.hist_limit_date = self._configure_hist_limit_date(hist_limit_date)
+        super().__init__()
 
     def _configure_hist_limit_date(self, date_str: str = "") -> str:
         """This function will return a string of the first day of the month going back up to 2 year.
@@ -201,6 +203,9 @@ class OptionsPricesRunner(PathRunner):
     runner_type = "OptionsPrices"
     base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsPrices"
     upload_func = update_options_prices
+
+    def __init__(self):
+        super().__init__()
 
     def _clean_o_ticker(self, o_ticker: str) -> str:
         """Clean the options ticker to remove the prefix to make it compatible as a file name"""
