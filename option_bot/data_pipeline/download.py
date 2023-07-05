@@ -107,7 +107,7 @@ async def download_options_contracts(
         tickers_w_ids = await lookup_multi_ticker_ids(tickers, stock=True)
         ticker_id_lookup = {x[0]: x[1] for x in tickers_w_ids}
     options = OptionsContracts(tickers, ticker_id_lookup, months_hist)
-    await api_pool_downloader(options)
+    await api_pool_downloader(paginator=options, args_data=tickers)
 
 
 async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]], months_hist: int = 24):

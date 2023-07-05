@@ -14,7 +14,6 @@ class PathRunner(ABC):
     This class will be inherited by the specific runners for each data type"""
 
     runner_type = "Generic"
-    upload_func: Awaitable = None
     base_directory = BASE_DOWNLOAD_PATH
 
     def __init__(self):
@@ -35,6 +34,15 @@ class PathRunner(ABC):
             self.batch_size = POSTGRES_BATCH_MAX // self.record_size
         for i in range(0, len(clean_data), self.batch_size):
             yield clean_data[i : i + self.batch_size]
+
+    @abstractmethod
+    async def upload_func(self, data: list[dict]):
+        """Requiring a upload_func() function to be overwritten by every inheriting class.
+        This function will upload the data to the database
+
+        Args:
+            data (list[dict]): data to be uploaded to the database"""
+        pass
 
     @abstractmethod
     def generate_path_args(self) -> list[str]:
@@ -79,12 +87,14 @@ class MetaDataRunner(PathRunner):
 
     runner_type = "StockMetaData"
     base_directory = f"{BASE_DOWNLOAD_PATH}/StockMetaData"
-    upload_func = update_stock_metadata
 
     def __init__(self, tickers: list[str] = [], all_: bool = False):
         self.all_ = all_
         self.tickers = tickers
         super().__init__()
+
+    async def upload_func(self, data: list[dict]):
+        return await update_stock_metadata(data)
 
     def generate_path_args(self) -> list[tuple[str]]:
         """This function will generate the arguments to be passed to the pool for each file in the directory
@@ -127,7 +137,6 @@ class OptionsContractsRunner(PathRunner):
 
     runner_type = "OptionsContracts"
     base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsContracts"
-    upload_func = update_options_tickers
 
     def __init__(self, months_hist: int, hist_limit_date: str = ""):
         self.months_hist = months_hist
@@ -148,6 +157,9 @@ class OptionsContractsRunner(PathRunner):
         else:
             date = two_years_ago()
         return date.strftime("%Y-%m-01")
+
+    async def upload_func(self, data: list[dict]):
+        return await update_options_tickers(data)
 
     def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple[str, int]]:
         """This function will generate the arguments to be passed to the pool,
@@ -202,7 +214,6 @@ class OptionsPricesRunner(PathRunner):
 
     runner_type = "OptionsPrices"
     base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsPrices"
-    upload_func = update_options_prices
 
     def __init__(self):
         super().__init__()
@@ -214,6 +225,9 @@ class OptionsPricesRunner(PathRunner):
     def _make_o_ticker(self, clean_o_ticker: str) -> str:
         """re-adds the option prefix to the clean options ticker"""
         return f"O:{clean_o_ticker}"
+
+    async def upload_func(self, data: list[dict]):
+        return await update_options_prices(data)
 
     def generate_path_args(self, o_tickers_lookup: dict) -> list[str]:
         """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup.
