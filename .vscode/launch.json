@@ -11,7 +11,7 @@
             "program": "~/option_bot/option_bot/data_pipeline/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["all_", "-aa"],
+            "args":["AB", "ACN","ABBV","ABC","ABCB","ABCL","ABCM","ABEO","SPY","AAPL","MSFT","TSLA","F","GM","ABT","AC","ACA","ACAB","ACAC","ACAD","ACAH","HOOD","META","ACB","ADC","ADCT","AES","AGO","AGR","AJX","AKA","ALRM","ARKF",],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
             }
