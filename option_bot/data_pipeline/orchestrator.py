@@ -17,7 +17,7 @@ from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
 from option_bot.proj_constants import log
 
 
-async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True):
+async def import_all(args: Namespace):
     """this is THE trigger function. It will do the following:
 
     1. Download all metadata and prices for both stocks and options
@@ -35,8 +35,10 @@ async def import_all(args: Namespace, tickers: list[str] = [], all_: bool = True
         all_: bool (default=True) indicating whether to retrieve data for all tickers
     """
     # Download and upload metadata
-    await download_stock_metadata(tickers, all_)
-    await upload_stock_metadata(tickers, all_)
+    tickers = args.tickers if args.tickers else []
+    all_ = True if args.add_all else False
+    await download_stock_metadata(tickers=[], all_=True)
+    await upload_stock_metadata(tickers=[], all_=True)
 
     # Get ticker_id_lookup from db
     ticker_lookup = await pull_tickers_from_db(tickers, all_)

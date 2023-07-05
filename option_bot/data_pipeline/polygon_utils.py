@@ -67,7 +67,7 @@ class PolygonPaginator(ABC):
         Returns:
             str of the download path,
             str of the file name"""
-        return f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{path}", f"{file_name}.json"
+        return f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{path}/", f"{file_name}.json"
 
     async def _execute_request(self, session: ClientSession, url: str, payload: dict = {}) -> tuple[int, dict]:
         """Execute the request and return the response status code and json response

@@ -124,10 +124,11 @@ def main():
         asyncio.run(refresh_tickers(args))
 
     else:
-        if args.add_all:
-            asyncio.run(import_all(args))
+        # if args.add_all:
+        #     asyncio.run(import_all(args))
         # else:
         #     asyncio.run(add_ticker(args))
+        asyncio.run(import_all(args))
 
 
 if __name__ == "__main__":
