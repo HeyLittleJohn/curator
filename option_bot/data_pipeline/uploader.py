@@ -53,7 +53,8 @@ async def upload_stock_prices(tickers, all_):
 async def upload_options_contracts(ticker_id_lookup: dict, months_hist: int, hist_limit_date: str = ""):
     """This function uploads options contract data to the database"""
     opt_runner = OptionsContractsRunner(months_hist, hist_limit_date)
-    await etl_pool_uploader(opt_runner, path_input_args=ticker_id_lookup)
+    pool_kwargs = {"childconcurrency": 3}
+    await etl_pool_uploader(opt_runner, path_input_args=ticker_id_lookup, pool_kwargs=pool_kwargs)
 
 
 async def upload_options_prices(o_tickers: dict):
@@ -62,4 +63,5 @@ async def upload_options_prices(o_tickers: dict):
     Args:
         o_tickers: dict(o_ticker_id: OptionsTicker tuple)"""
     opt_price_runner = OptionsPricesRunner()
-    await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers)
+    pool_kwargs = {"childconcurrency": 3}
+    await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)

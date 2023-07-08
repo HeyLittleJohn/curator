@@ -78,8 +78,9 @@ class PathRunner(ABC):
         log.info(f"uploading data from {file_path}")
         raw_data = read_data_from_file(file_path)
         clean_data = self.clean_data(raw_data, ticker_data)
-        for batch in self._make_batch_generator(clean_data):
-            await self.upload_func(batch)
+        if len(clean_data) > 0:
+            for batch in self._make_batch_generator(clean_data):
+                await self.upload_func(batch)
 
 
 class MetaDataRunner(PathRunner):
@@ -161,13 +162,13 @@ class OptionsContractsRunner(PathRunner):
     async def upload_func(self, data: list[dict]):
         return await update_options_tickers(data)
 
-    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple[str, int]]:
+    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple[str, tuple[int]]]:
         """This function will generate the arguments to be passed to the pool,
         It will traverse the directories for each ticker and date to find the most recent, relevant file.
 
         Returns:
             path_args: list of tuples containing the file path and the ticker idto be passed to the pool.
-            e.g. "(~/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json, 9912)"
+            e.g. "(~/.polygon_data/OptionsContracts/SPY/2022-06-01/1688127754374.json, (9912,))"
         """
         # NOTE: may need try/except in case specific ticker files didn't successfully download
         if not os.path.exists(self.base_directory):
@@ -183,10 +184,15 @@ class OptionsContractsRunner(PathRunner):
             i = temp_dir_list.index(self.hist_limit_date)
             for date in temp_dir_list[:i]:
                 temp_path = f"{self.base_directory}/{ticker}/{date}"
-                path_args.append((self._determine_most_recent_file(temp_path), ticker_id_lookup[ticker]))
+                path_args.append(
+                    (
+                        self._determine_most_recent_file(temp_path),
+                        (ticker_id_lookup[ticker],),  # a tuple
+                    )
+                )
         return path_args
 
-    def clean_data(self, results: list[dict], ticker_id: int) -> list[dict]:
+    def clean_data(self, results: list[dict], ticker_id: tuple[int]) -> list[dict]:
         # TODO: make sure this fits the json data schema
         clean_results = []
         key_mapping = {
@@ -202,7 +208,7 @@ class OptionsContractsRunner(PathRunner):
         for page in results:
             for record in page.get("results"):
                 t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = ticker_id
+                t["underlying_ticker_id"] = ticker_id[0]
                 clean_results.append(t)
         clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
         # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
@@ -229,7 +235,7 @@ class OptionsPricesRunner(PathRunner):
     async def upload_func(self, data: list[dict]):
         return await update_options_prices(data)
 
-    def generate_path_args(self, o_tickers_lookup: dict) -> list[str]:
+    def generate_path_args(self, o_tickers_lookup: dict) -> list[tuple[str, tuple[str, int, str, str]]]:
         """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup.
 
         Args:
