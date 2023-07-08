@@ -59,7 +59,7 @@ TRAD_IRA = os.getenv("TRAD_IRA")
 ROTH_IRA = os.getenv("ROTH_IRA")
 
 # total number of requests the API can handle at once. 100/sec rate limit
-MAX_CONCURRENT_REQUESTS = 100
+MAX_CONCURRENT_REQUESTS = 250
 # Max number of requests per minute for the free API tier: 5
 MAX_QUERY_PER_MINUTE = 4
 
@@ -69,18 +69,18 @@ POOL_DEFAULT_KWARGS = {
     "processes": CPUS,
     "exception_handler": capture_exception,
     "loop_initializer": uvloop.new_event_loop,
-    "childconcurrency": int(MAX_CONCURRENT_REQUESTS * 4 / CPUS),
+    "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
     "queuecount": CPUS,
 }
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
     future=True,
-    echo=True,
+    echo=False,
     echo_pool=True,
-    max_overflow=15,
+    max_overflow=40,
     pool_pre_ping=True,
-    pool_size=5,
+    pool_size=50,  # half of the available 100 connections
     pool_recycle=180,
     pool_timeout=30,
 )
