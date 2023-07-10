@@ -66,7 +66,7 @@ async def import_partial(args: Namespace):
     This is meant to be used on an adhoc basis to fill in data gaps or backfill changes
     """
     tickers = args.tickers if args.tickers else []
-    all_ = True if args.add_all else False
+    all_ = True if args.all_tickers else False
     ticker_lookup = None
     o_tickers = None
 

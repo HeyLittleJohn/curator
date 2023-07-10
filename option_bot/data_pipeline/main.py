@@ -96,8 +96,8 @@ def main():
     )
 
     parser.add_argument(
-        "-aa",
-        "--add-all",
+        "-at",
+        "--all-tickers",
         default=False,
         action="store_true",
         help="Adds all stocks tickers to the command. This works with refresh, or adding tickers",
@@ -124,8 +124,8 @@ def main():
     args.enddate = datetime.strptime(args.enddate, "%Y-%m")
 
     if args.remove:
-        if args.add_all:
-            raise InvalidArgs("Can't --remove and --add_all at the same time. Remove explicit tickers via CLI")
+        if args.all_tickers:
+            raise InvalidArgs("Can't --remove and --all-tickers at the same time. Remove explicit tickers via CLI")
         asyncio.run(remove_tickers(args))
 
     # elif args.refresh:
