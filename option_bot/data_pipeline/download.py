@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-from multiprocessing import pool
 
 from aiomultiprocess import Pool
 from data_pipeline.exceptions import (
@@ -18,12 +17,7 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
-from db_tools.queries import (
-    lookup_multi_ticker_ids,
-    lookup_ticker_id,
-    ticker_imported,
-    update_stock_prices,
-)
+from db_tools.queries import lookup_multi_ticker_ids
 
 from option_bot.proj_constants import log, POLYGON_BASE_URL
 from option_bot.utils import pool_kwarg_config

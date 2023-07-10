@@ -174,26 +174,6 @@ class PolygonPaginator(ABC):
         log.info(f"Writing data for {ticker} to file")
         write_api_data_to_file(results, *self._download_path(ticker, str(timestamp_now())))
 
-    # deprecated
-    def make_clean_generator(self, clean_results: list[dict]):
-        try:
-            record_size = len(clean_results[0])
-            batch_size = round(62000 / record_size)  # postgres input limit is ~65000
-            for i in range(0, len(clean_results), batch_size):
-                yield clean_results[i : i + batch_size]
-
-        except IndexError:
-            if hasattr(self, "ticker"):
-                t = self.ticker
-            elif hasattr(self, "o_ticker"):
-                t = self.o_ticker
-            raise ProjIndexError(f"No results for ticker: {t}, using object: {self.paginator_type} ")
-
-    # deprecated
-    @abstractmethod
-    def clean_data(self):
-        """Requiring a clean_data() function to be overwritten by every inheriting class"""
-
     @abstractmethod
     def generate_request_args(self, args_data):
         """Requiring a generate_request_args() function to be overwritten by every inheriting class
@@ -203,12 +183,6 @@ class PolygonPaginator(ABC):
 
         Returns:
             url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
-
-    # deprecated
-    async def fetch(self, session):
-        await self.query_data()
-        self.clean_data()
-        self.clean_data_generator = self.make_clean_generator()
 
 
 class StockMetaData(PolygonPaginator):
@@ -234,25 +208,6 @@ class StockMetaData(PolygonPaginator):
         else:
             urls = [(url_base, self.payload, "")]
         return urls
-
-    def clean_data(self, results: list[dict]):
-        clean_results = []
-        selected_keys = [
-            "ticker",
-            "name",
-            "type",
-            "active",
-            "market",
-            "locale",
-            "primary_exchange",
-            "currency_name",
-            "cik",
-        ]
-        for result_list in results:
-            for ticker in result_list["results"]:
-                t = {x: ticker.get(x) for x in selected_keys}
-                clean_results.append(t)
-        return clean_results
 
 
 class HistoricalStockPrices(PolygonPaginator):
@@ -293,25 +248,6 @@ class HistoricalStockPrices(PolygonPaginator):
             )
             for ticker in args_data
         ]
-
-    def clean_data(self):
-        key_mapping = {
-            "v": "volume",
-            "vw": "volume_weight_price",
-            "c": "close_price",
-            "o": "open_price",
-            "h": "high_price",
-            "l": "low_price",
-            "t": "as_of_date",
-            "n": "number_of_transactions",
-            "otc": "otc",
-        }
-        for page in self.results:
-            for record in page.get("results"):
-                t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                t["ticker_id"] = self.ticker_id
-                self.clean_results.append(t)
 
 
 class OptionsContracts(PolygonPaginator):
@@ -380,27 +316,6 @@ class OptionsContracts(PolygonPaginator):
         write_api_data_to_file(
             results, *self._download_path(ticker + "/" + str(payload["as_of"]), str(timestamp_now()))
         )  # NOTE: this creates a folder for each "as_of" date
-
-    def clean_data(self, results: list[dict]):
-        clean_results = []
-        key_mapping = {
-            "ticker": "options_ticker",
-            "expiration_date": "expiration_date",
-            "strike_price": "strike_price",
-            "contract_type": "contract_type",
-            "shares_per_contract": "shares_per_contract",
-            "primary_exchange": "primary_exchange",
-            "exercise_style": "exercise_style",
-            "cfi": "cfi",
-        }
-        for page in results:
-            for record in page.get("results"):
-                t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["underlying_ticker_id"] = self.ticker_id_lookup[record.get("underlying_ticker")]
-                clean_results.append(t)
-        clean_results = list({v["options_ticker"]: v for v in clean_results}.values())
-        # NOTE: the list(comprehension) above ascertains that all options_tickers are unique
-        return clean_results
 
 
 class HistoricalOptionsPrices(PolygonPaginator):
@@ -478,32 +393,3 @@ class HistoricalOptionsPrices(PolygonPaginator):
                 str(timestamp_now()),
             ),
         )
-
-    def clean_data(self):
-        results_hash = {}
-        key_mapping = {
-            "v": "volume",
-            "vw": "volume_weight_price",
-            "c": "close_price",
-            "o": "open_price",
-            "h": "high_price",
-            "l": "low_price",
-            "t": "as_of_date",
-            "n": "number_of_transactions",
-        }
-        for page in self.results:
-            if page.get("results"):
-                for record in page.get("results"):
-                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                    if not results_hash.get(page["ticker"]):
-                        results_hash[page["ticker"]] = []
-                    results_hash[page["ticker"]].append(t)
-
-        self._clean_record_hash(results_hash)
-
-    def _clean_record_hash(self, results_hash: dict):
-        for ticker in results_hash:
-            self.clean_results.extend(
-                [dict(x, **{"options_ticker_id": self.o_ticker_id}) for x in results_hash[ticker]]
-            )
