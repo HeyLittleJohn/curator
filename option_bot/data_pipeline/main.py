@@ -3,7 +3,7 @@ import asyncio
 from datetime import datetime
 
 from data_pipeline.exceptions import InvalidArgs
-from data_pipeline.orchestrator import import_all, remove_tickers_from_universe
+from data_pipeline.orchestrator import import_all, remove_tickers_from_universe, import_partial
 
 from option_bot.utils import two_years_ago
 
@@ -111,6 +111,14 @@ def main():
         help="Removes the specified underlying ticker(s) from our options data pull universe",
     )
 
+    parser.add_argument(
+        "-p",
+        "--partial",
+        type=int,
+        nargs="+",
+        help="Specify which components to pull (for import or refresh). Options are: 1) stock metadata, 2) stock prices, 3) options contracts, 4) options prices",
+    )
+
     args = parser.parse_args()
     args.startdate = datetime.strptime(args.startdate, "%Y-%m")
     args.enddate = datetime.strptime(args.enddate, "%Y-%m")
@@ -120,14 +128,13 @@ def main():
             raise InvalidArgs("Can't --remove and --add_all at the same time. Remove explicit tickers via CLI")
         asyncio.run(remove_tickers(args))
 
-    elif args.refresh:
-        asyncio.run(refresh_tickers(args))
+    # elif args.refresh:
+    #     asyncio.run(refresh_tickers(args))
+
+    elif args.partial:
+        asyncio.run(import_partial(args))
 
     else:
-        # if args.add_all:
-        #     asyncio.run(import_all(args))
-        # else:
-        #     asyncio.run(add_ticker(args))
         asyncio.run(import_all(args))
 
 
