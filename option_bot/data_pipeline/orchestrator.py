@@ -60,21 +60,35 @@ async def import_all(args: Namespace):
     await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
     await upload_options_prices(o_tickers)
 
-    # NOTE: the args from one download step can be returned and passed to the next step.
-    # This can prevent the double pulling of ticker_ids from the db. Maybe not worth it
 
-
-# NOTE: this may never need to be implemented
-async def import_partial(components=list[PolygonPaginator], tickers: list[str] = [], all_: bool = True):
+async def import_partial(args: Namespace):
     """This will download, clean, and upload data for the components specified.
     This is meant to be used on an adhoc basis to fill in data gaps or backfill changes
-
-    Args:
-        components: list of PolygonPaginator objects
-        tickers: list of tickers to import
-        all_: bool (default=True) indicating whether to retrieve data for all tickers
     """
-    pass
+    tickers = args.tickers if args.tickers else []
+    all_ = True if args.add_all else False
+    ticker_lookup = None
+    o_tickers = None
+
+    if 1 in args.partial:
+        await download_stock_metadata(tickers=[], all_=True)
+        await upload_stock_metadata(tickers=[], all_=True)
+
+    if 2 in args.partial:
+        ticker_lookup = await pull_tickers_from_db(tickers, all_)
+        await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
+        await upload_stock_prices(ticker_lookup)
+
+    if 3 in args.partial:
+        if not ticker_lookup:
+            ticker_lookup = await pull_tickers_from_db(tickers, all_)
+        await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)
+        await upload_options_contracts(ticker_lookup, months_hist=args.monthhist)
+
+    if 4 in args.partial:
+        o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+        await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
+        await upload_options_prices(o_tickers)
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
