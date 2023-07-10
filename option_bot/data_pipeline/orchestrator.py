@@ -11,6 +11,7 @@ from data_pipeline.uploader import (
     upload_options_contracts,
     upload_options_prices,
     upload_stock_metadata,
+    upload_stock_prices,
 )
 from db_tools.queries import delete_stock_ticker
 from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
@@ -46,7 +47,7 @@ async def import_all(args: Namespace):
 
     # Download and upload underlying stock prices
     await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
-    # await upload_stock_prices(tickers)
+    await upload_stock_prices(ticker_lookup)
 
     # Download and upload options contract data
     await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)

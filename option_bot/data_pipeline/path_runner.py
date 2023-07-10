@@ -3,7 +3,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Awaitable
 
-from db_tools.queries import update_options_prices, update_options_tickers, update_stock_metadata
+from db_tools.queries import update_options_prices, update_options_tickers, update_stock_metadata, update_stock_prices
 
 from option_bot.proj_constants import log, POSTGRES_BATCH_MAX, BASE_DOWNLOAD_PATH
 from option_bot.utils import read_data_from_file, timestamp_to_datetime, two_years_ago
@@ -129,6 +129,57 @@ class MetaDataRunner(PathRunner):
         for result_list in results:
             for ticker in result_list["results"]:
                 t = {x: ticker.get(x) for x in selected_keys}
+                clean_results.append(t)
+        return clean_results
+
+
+class StockPricesRunner(PathRunner):
+    """Runner for stock prices local data"""
+
+    runner_type = "StockPrices"
+    base_directory = f"{BASE_DOWNLOAD_PATH}/StockPrices"
+
+    def __init__(self):
+        super().__init__()
+
+    def generate_path_args(self, ticker_id_lookup: dict) -> list[tuple[str, tuple[int]]]:
+        if not os.path.exists(self.base_directory):
+            log.warning("no options contracts found. Download options contracts first!")
+            raise FileNotFoundError
+
+        tickers = list(ticker_id_lookup.keys())
+        path_args = []
+        for ticker in tickers:
+            temp_path = self.base_directory + "/" + ticker
+            path_args.append(
+                (
+                    self._determine_most_recent_file(temp_path),
+                    (ticker_id_lookup[ticker],),  # a tuple
+                )
+            )
+        return path_args
+
+    async def upload_func(self, data: list[dict]):
+        return await update_stock_prices(data)
+
+    def clean_data(self, results: list[dict], ticker_id: tuple[int]) -> list[dict]:
+        clean_results = []
+        key_mapping = {
+            "v": "volume",
+            "vw": "volume_weight_price",
+            "c": "close_price",
+            "o": "open_price",
+            "h": "high_price",
+            "l": "low_price",
+            "t": "as_of_date",
+            "n": "number_of_transactions",
+            "otc": "otc",
+        }
+        for page in results:
+            for record in page.get("results"):
+                t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                t["ticker_id"] = ticker_id[0]
                 clean_results.append(t)
         return clean_results
 
