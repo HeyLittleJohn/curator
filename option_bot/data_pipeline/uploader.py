@@ -4,6 +4,7 @@ from data_pipeline.path_runner import (
     OptionsContractsRunner,
     OptionsPricesRunner,
     PathRunner,
+    StockPricesRunner,
 )
 
 from option_bot.proj_constants import log
@@ -45,9 +46,11 @@ async def upload_stock_metadata(tickers: list[str], all_: bool):
     await etl_pool_uploader(meta, pool_kwargs=pool_kwargs)
 
 
-async def upload_stock_prices(tickers, all_):
+async def upload_stock_prices(ticker_id_lookup: dict):
     """This function uploads stock prices to the database"""
-    pass
+    price_runner = StockPricesRunner()
+    pool_kwargs = {"childconcurrency": 3}
+    await etl_pool_uploader(price_runner, path_input_args=ticker_id_lookup, pool_kwargs=pool_kwargs)
 
 
 async def upload_options_contracts(ticker_id_lookup: dict, months_hist: int, hist_limit_date: str = ""):
