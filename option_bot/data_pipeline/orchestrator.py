@@ -4,6 +4,7 @@ from data_pipeline.download import (
     download_options_contracts,
     download_options_prices,
     download_stock_metadata,
+    download_stock_prices,
 )
 from data_pipeline.polygon_utils import PolygonPaginator
 from data_pipeline.uploader import (
@@ -44,8 +45,8 @@ async def import_all(args: Namespace):
     ticker_lookup = await pull_tickers_from_db(tickers, all_)
 
     # Download and upload underlying stock prices
-    # await download_stock_prices(tickers, args.startdate, args.enddate, all_)
-    # await upload_stock_prices(tickers, all_)
+    await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
+    # await upload_stock_prices(tickers)
 
     # Download and upload options contract data
     await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)

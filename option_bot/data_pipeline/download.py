@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from multiprocessing import pool
 
 from aiomultiprocess import Pool
 from data_pipeline.exceptions import (
@@ -79,18 +80,11 @@ async def download_stock_metadata(tickers: list[str], all_: bool = True):
     await api_pool_downloader(meta, pool_kwargs=pool_kwargs)
 
 
-# TODO: update this
-async def fetch_stock_prices(ticker: str, start_date: str, end_date: str, ticker_id: int | None = None):
-    if not ticker_id:
-        ticker_id = await lookup_ticker_id(ticker, stock=True)
-    # TODO: Add exception handling here with a sleep function incase metadata has yet to populate
-    log.info(f"pulling ticker prices for ticker: {ticker}")
-    prices = HistoricalStockPrices(ticker, ticker_id, start_date, end_date)
-    await prices.fetch()
-    for batch in prices.clean_data_generator:
-        await update_stock_prices(batch)
-    await ticker_imported(ticker_id)
-    log.info(f"{ticker} successfully imported")
+async def download_stock_prices(ticker_id_lookup: dict[str, int], start_date: str, end_date: str):
+    tickers = list(ticker_id_lookup.keys())
+    prices = HistoricalStockPrices(start_date, end_date)
+    pool_kwargs = {"childconcurrency": 5, "processes": 1, "queuecount": 1}
+    await api_pool_downloader(paginator=prices, args_data=tickers, pool_kwargs=pool_kwargs)
 
 
 async def download_options_contracts(
