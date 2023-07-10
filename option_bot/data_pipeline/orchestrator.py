@@ -6,7 +6,6 @@ from data_pipeline.download import (
     download_stock_metadata,
     download_stock_prices,
 )
-from data_pipeline.polygon_utils import PolygonPaginator
 from data_pipeline.uploader import (
     upload_options_contracts,
     upload_options_prices,
