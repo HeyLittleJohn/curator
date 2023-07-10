@@ -227,7 +227,7 @@ class StockMetaData(PolygonPaginator):
         """Generate the urls to query the Polygon API.
 
         Returns:
-        urls: list(dict), each dict contains the url and the payload for the request"""
+        urls: list(tuple), each tuple contains the url, the payload for the request and an empty string"""
         url_base = "/v3/reference/tickers"
         if not self.all_:
             urls = [(url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers]
@@ -262,27 +262,37 @@ class HistoricalStockPrices(PolygonPaginator):
 
     def __init__(
         self,
-        ticker: str,
-        ticker_id: int,
         start_date: datetime,
         end_date: datetime,
         multiplier: int = 1,
         timespan: Timespans = Timespans.day,
         adjusted: bool = True,
     ):
-        self.ticker = ticker
-        self.ticker_id = ticker_id
         self.multiplier = multiplier
         self.timespan = timespan.value
         self.start_date = start_date.date()
         self.end_date = end_date.date()
         self.adjusted = "true" if adjusted else "false"
+        self.payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
         super().__init__()
 
-    async def query_data(self):
-        url = f"/v2/aggs/ticker/{self.ticker}/range/{self.multiplier}/{self.timespan}/{self.start_date}/{self.end_date}"
-        payload = {"adjusted": self.adjusted, "sort": "desc", "limit": 50000}
-        await self.query_all(url, payload)
+    def generate_request_args(self, args_data: list[str]) -> list[tuple[str, dict, str]]:
+        """Generate the urls to query the stock prices endpoint.
+
+        Args:
+            args_data: list of tickers(str)
+
+        Returns:
+            url_args: list(tuple) of the (url, payload, and ticker) for each request
+        """
+        return [
+            (
+                f"/v2/aggs/ticker/{ticker}/range/{self.multiplier}/{self.timespan}/{self.start_date}/{self.end_date}",
+                self.payload,
+                ticker,
+            )
+            for ticker in args_data
+        ]
 
     def clean_data(self):
         key_mapping = {
@@ -363,10 +373,10 @@ class OptionsContracts(PolygonPaginator):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        log.info(f"Downloading data for {ticker}")
+        log.info(f"Downloading options contract data for {ticker}")
         log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
-        log.info(f"Writing data for {ticker} to file")
+        log.info(f"Writing options contract data for {ticker} to file")
         write_api_data_to_file(
             results, *self._download_path(ticker + "/" + str(payload["as_of"]), str(timestamp_now()))
         )  # NOTE: this creates a folder for each "as_of" date
@@ -457,10 +467,10 @@ class HistoricalOptionsPrices(PolygonPaginator):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        log.info(f"Downloading data for {ticker}")
+        log.info(f"Downloading price data for {ticker}")
         log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
-        log.info(f"Writing data for {ticker} to file")
+        log.info(f"Writing price data for {ticker} to file")
         write_api_data_to_file(
             results,
             *self._download_path(
