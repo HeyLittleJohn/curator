@@ -8,9 +8,6 @@ from data_pipeline.orchestrator import import_all, remove_tickers_from_universe,
 from option_bot.utils import two_years_ago
 
 
-# from argparse import Namespace
-
-
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = two_years_ago()

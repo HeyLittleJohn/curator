@@ -1,3 +1,8 @@
+import asyncio
+
+from rl_agent.queries import extract_ticker_price, extract_options_contracts, extract_options_prices
+
+
 class GameEnvironmnet(object):
     async def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = 45):
         self.ticker = underlying_ticker
@@ -6,8 +11,20 @@ class GameEnvironmnet(object):
         self.end = False
         self.data = await self.pull_game_price_data()
 
+    # NOTE: should this only pull for the current game and be re-called at "reset"?
     async def pull_game_price_data(self):
-        return
+        return await asyncio.gather(
+            extract_ticker_price(self.ticker, self.start_date),
+            extract_options_contracts(self.ticker, self.start_date),
+            extract_options_prices(o_contracts, self.start_date),
+        )
+
+    async def prepare_state_data(self):
+        s_price, o_contracts, o_prices = await self.pull_game_price_data()
+        pass
+
+    def reset(self):
+        pass
 
     def step():
         pass
