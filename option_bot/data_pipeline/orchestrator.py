@@ -75,7 +75,7 @@ async def import_partial(args: Namespace):
 
     if 2 in args.partial:
         ticker_lookup = await pull_tickers_from_db(tickers, all_)
-        await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
+        # await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
         await upload_stock_prices(ticker_lookup)
 
     if 3 in args.partial:

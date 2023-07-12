@@ -176,11 +176,12 @@ class StockPricesRunner(PathRunner):
             "otc": "otc",
         }
         for page in results:
-            for record in page.get("results"):
-                t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                t["ticker_id"] = ticker_id[0]
-                clean_results.append(t)
+            if page.get("results"):
+                for record in page.get("results"):
+                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                    t["ticker_id"] = ticker_id[0]
+                    clean_results.append(t)
         return clean_results
 
 
