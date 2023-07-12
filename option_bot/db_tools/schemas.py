@@ -79,7 +79,7 @@ class StockPricesRaw(Base):
     open_price = Column(DECIMAL(19, 4), nullable=False)
     high_price = Column(DECIMAL(19, 4), nullable=False)
     low_price = Column(DECIMAL(19, 4), nullable=False)
-    volume_weight_price = Column(DECIMAL(19, 4), nullable=False)
+    volume_weight_price = Column(DECIMAL(19, 4))
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
     otc = Column(Boolean)
