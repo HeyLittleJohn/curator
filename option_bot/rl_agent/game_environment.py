@@ -1,22 +1,22 @@
 import asyncio
+from datetime import datetime
 
 from rl_agent.queries import extract_ticker_price, extract_options_contracts, extract_options_prices
 
 
 class GameEnvironmnet(object):
-    async def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = 45):
+    def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = 45):
         self.ticker = underlying_ticker
-        self.start_date = start_date
+        self.start_date = datetime.strptime(start_date, "%Y-%m-%d") if type(start_date) == str else start_date
         self.days_to_exp = days_to_exp
         self.end = False
-        self.data = await self.pull_game_price_data()
 
     # NOTE: should this only pull for the current game and be re-called at "reset"?
     async def pull_game_price_data(self):
         return await asyncio.gather(
-            extract_ticker_price(self.ticker, self.start_date),
+            extract_ticker_price(self.ticker),
             extract_options_contracts(self.ticker, self.start_date),
-            extract_options_prices(o_contracts, self.start_date),
+            extract_options_prices(self.ticker, self.start_date),
         )
 
     async def prepare_state_data(self):
@@ -28,6 +28,12 @@ class GameEnvironmnet(object):
 
     def step():
         pass
+
+
+async def main():
+    game = GameEnvironmnet("SPY", "2022-01-01")
+    s_price, o_contracts, o_prices = await game.pull_game_price_data()
+    print(s_price)
 
 
 # NOTE: this could be used for the logic of pulling the prices to be considered for each step
@@ -54,3 +60,6 @@ class GameEnvironmnet(object):
         current_price: decimal
             The current price of the underlying ticker
     """
+
+if __name__ == "__main__":
+    asyncio.run(main())

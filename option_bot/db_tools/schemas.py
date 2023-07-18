@@ -140,7 +140,6 @@ class PriceModel(BaseModel):
     class Config:
         orm_mode = True
 
-    options_ticker_id: int
     as_of_date: datetime
     close_price: Decimal
     open_price: Decimal
@@ -152,4 +151,15 @@ class PriceModel(BaseModel):
     id: Optional[int]
 
 
-# View: OptionsPricesRich where you calculate volatility, greeks, implied volatility, daily return?
+class StockPriceModel(PriceModel):
+    class Config:
+        orm_mode = True
+
+    ticker_id: int
+
+
+class OptionPriceModel(PriceModel):
+    class Config:
+        orm_mode = True
+
+    option_ticker_id: int
