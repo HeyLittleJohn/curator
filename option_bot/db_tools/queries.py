@@ -6,6 +6,8 @@ from db_tools.schemas import (
     StockPricesRaw,
     StockTickers,
     TickerModel,
+    StockPriceModel,
+    OptionPriceModel,
 )
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -126,9 +128,8 @@ async def update_stock_metadata(session: AsyncSession, data: list[TickerModel]):
 @Session
 async def update_stock_prices(
     session: AsyncSession,
-    data: list[dict],
+    data: list[StockPriceModel],
 ):
-    # TODO: update list[dict] to list[StockPriceModel]
     stmt = insert(StockPricesRaw).values(data)
     stmt = stmt.on_conflict_do_update(
         constraint="uq_stock_price",
@@ -170,9 +171,9 @@ async def update_options_tickers(session: AsyncSession, data: list[dict]):
 @Session
 async def update_options_prices(
     session: AsyncSession,
-    data: list[dict],
+    data: list[OptionPriceModel],
 ):
-    # TODO: update list[dict] to list[StockPriceModel]
+
     stmt = insert(OptionsPricesRaw).values(data)
     stmt = stmt.on_conflict_do_update(
         constraint="uq_options_price",
