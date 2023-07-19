@@ -2,10 +2,11 @@ import asyncio
 from datetime import datetime
 
 from rl_agent.queries import extract_ticker_price, extract_options_contracts, extract_options_prices
+from rl_agent.constants import DAYS_TIL_EXP
 
 
 class GameEnvironmnet(object):
-    def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = 45):
+    def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = DAYS_TIL_EXP):
         self.ticker = underlying_ticker
         self.start_date = datetime.strptime(start_date, "%Y-%m-%d") if type(start_date) == str else start_date
         self.days_to_exp = days_to_exp
