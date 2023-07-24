@@ -1,6 +1,9 @@
 import asyncio
 from datetime import datetime
 
+from py_vollib_vectorized.implied_volatility import vectorized_implied_volatility
+from py_vollib_vectorized.api import price_dataframe
+
 from rl_agent.queries import extract_ticker_price, extract_options_contracts, extract_options_prices
 from rl_agent.constants import DAYS_TIL_EXP
 
@@ -22,6 +25,12 @@ class GameEnvironmnet(object):
 
     async def prepare_state_data(self):
         s_price, o_contracts, o_prices = await self.pull_game_price_data()
+        # performs some joins
+        # calc the T annualized
+        # calc the r
+        # calc the div yield
+        # py_vollib_vectorized.api.price_dataframe() to get iv and greeks
+
         pass
 
     def reset(self):

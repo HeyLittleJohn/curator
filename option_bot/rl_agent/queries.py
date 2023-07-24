@@ -1,3 +1,4 @@
+from datetime import datetime
 from db_tools.schemas import (
     OptionsPricesRaw,
     OptionsTickers,
@@ -29,7 +30,9 @@ async def extract_ticker_price(session: AsyncSession, ticker: str) -> list[Stock
 
 
 @Session
-async def extract_options_contracts(session: AsyncSession, ticker: str, start_date) -> list[OptionsTickerModel]:
+async def extract_options_contracts(session: AsyncSession, ticker: str, start_date: str) -> list[OptionsTickerModel]:
+    if type(start_date) == str:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
     stmt = (
         select(
             OptionsTickers.options_ticker,
@@ -46,7 +49,9 @@ async def extract_options_contracts(session: AsyncSession, ticker: str, start_da
 
 
 @Session
-async def extract_options_prices(session: AsyncSession, ticker: str, start_date) -> list[OptionPriceModel]:
+async def extract_options_prices(session: AsyncSession, ticker: str, start_date: str) -> list[OptionPriceModel]:
+    if type(start_date) == str:
+        start_date = datetime.strptime(start_date, "%Y-%m-%d")
     stmt = (
         select(
             OptionsPricesRaw.as_of_date,
