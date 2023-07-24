@@ -14,8 +14,8 @@ def calc_pct_returns(prices: np.ndarray) -> np.ndarray:
     return prices[1:] / prices[:-1] - 1
 
 
-def calc_volatility(returns: np.ndarray, period: int) -> np.ndarray:
-    """Calculates volatility for a given array of returns."""
+def calc_hist_volatility(returns: np.ndarray, period: int) -> np.ndarray:
+    """Calculates historical volatility for a given array of returns."""
     return np.std(sliding_window_view(returns, period), axis=1) * np.sqrt(period)
 
 
