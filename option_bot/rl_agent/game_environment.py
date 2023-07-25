@@ -4,7 +4,12 @@ from datetime import datetime
 from py_vollib_vectorized.implied_volatility import vectorized_implied_volatility
 from py_vollib_vectorized.api import price_dataframe
 
-from rl_agent.queries import extract_ticker_price, extract_options_contracts, extract_options_prices
+from rl_agent.queries import (
+    extract_ticker_price,
+    extract_options_contracts,
+    extract_options_prices,
+    extract_game_market_data,
+)
 from rl_agent.constants import DAYS_TIL_EXP
 
 
@@ -17,20 +22,28 @@ class GameEnvironmnet(object):
 
     # NOTE: should this only pull for the current game and be re-called at "reset"?
     async def pull_game_price_data(self):
-        return await asyncio.gather(
-            extract_ticker_price(self.ticker),
-            extract_options_contracts(self.ticker, self.start_date),
-            extract_options_prices(self.ticker, self.start_date),
-        )
+        # return await asyncio.gather(
+        #     extract_ticker_price(self.ticker),
+        #     extract_options_contracts(self.ticker, self.start_date),
+        #     extract_options_prices(self.ticker, self.start_date),
+        # )
+        return await extract_game_market_data(self.ticker, self.start_date)
+
+    # NOTE: may want to pull data from before the start date to calc hist volatility, etc
 
     async def prepare_state_data(self):
-        s_price, o_contracts, o_prices = await self.pull_game_price_data()
-        # performs some joins
+        # s_price, o_contracts, o_prices = await self.pull_game_price_data()
+        df = await self.pull_game_price_data()
+
         # calc the T annualized
         # calc the r
         # calc the div yield
         # py_vollib_vectorized.api.price_dataframe() to get iv and greeks
 
+        pass
+
+    def _impute_missing_data(self):
+        # use this https://github.com/rsheftel/pandas_market_calendars to find missing days
         pass
 
     def reset(self):
