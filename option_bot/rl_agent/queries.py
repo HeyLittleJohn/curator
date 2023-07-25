@@ -123,7 +123,3 @@ async def extract_game_market_data(session: AsyncSession, ticker: str, start_dat
             "opt_number_of_transactions",
         ],
     )
-
-
-# NOTE: didn't work for this: df = await extract_game_state("SPY", "2022-01-01")
-# It was killed. Not sure the error
