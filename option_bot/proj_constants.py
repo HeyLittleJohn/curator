@@ -8,6 +8,7 @@ from logging import FileHandler, Logger, StreamHandler
 from multiprocessing import cpu_count
 
 import sentry_sdk
+import pandas_market_calendars as mcal
 import uvloop
 from sentry_sdk import capture_exception
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
@@ -141,3 +142,11 @@ file_handler.setFormatter(log_formatter)
 
 log.addHandler(stream_handler)
 log.addHandler(file_handler)
+
+
+# market calendar
+o_cal = mcal.get_calendar("CBOE_Equity_Options")
+o_cal = o_cal.schedule(start_date="2021-01-01", end_date="2025-01-01")
+
+e_cal = mcal.get_calendar("NYSE")
+e_cal = e_cal.schedule(start_date="2021-01-01", end_date="2025-01-01")

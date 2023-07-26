@@ -8,7 +8,7 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.proj_constants import async_session_maker, log, POOL_DEFAULT_KWARGS
+from option_bot.proj_constants import async_session_maker, log, POOL_DEFAULT_KWARGS, o_cal, e_cal
 
 
 _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
@@ -16,6 +16,14 @@ _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a t
 
 def timestamp_to_datetime(timestamp: int, msec_units: bool = True) -> datetime:
     return datetime.fromtimestamp(timestamp / 1000) if msec_units else datetime.fromtimestamp(timestamp)
+
+
+def string_to_datetime(date_string: str, date_format: str = "%Y-%m-%d") -> datetime:
+    return datetime.strptime(date_string, date_format)
+
+
+def string_to_date(date_string: str, date_format: str = "%Y-%m-%d") -> datetime.date:
+    return datetime.strptime(date_string, date_format).date()
 
 
 def two_years_ago():
@@ -27,6 +35,16 @@ def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
         year_month_array = year_month_array.astype(np.datetime64)
     return np.busday_offset(year_month_array, 0, roll="modifiedpreceding", weekmask=[1, 1, 1, 1, 1, 0, 0])
     # NOTE: may need to add info for market holidays
+
+
+def trading_days_in_range(start_date: str, end_date: str, cal_type="e_cal") -> int:
+    if cal_type == "e_cal":
+        cal = e_cal
+    elif cal_type == "o_cal":
+        cal = o_cal
+    else:
+        raise ValueError(f"cal_type must be 'e_cal' or 'o_cal', not {cal_type}")
+    return cal[start_date:end_date].shape[0]
 
 
 def timestamp_now(msec_units: bool = True):
