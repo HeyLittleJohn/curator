@@ -10,7 +10,8 @@ from rl_agent.queries import (
     extract_options_prices,
     extract_game_market_data,
 )
-from rl_agent.constants import DAYS_TIL_EXP
+from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
+from option_bot.utils import trading_days_in_range
 
 
 class GameEnvironmnet(object):
@@ -34,13 +35,31 @@ class GameEnvironmnet(object):
     async def prepare_state_data(self):
         # s_price, o_contracts, o_prices = await self.pull_game_price_data()
         df = await self.pull_game_price_data()
-
-        # calc the T annualized
-        # calc the r
+        df["flag"] = df["contract_type"].apply(lambda x: "c" if x.value == "call" else "p")
+        # calc the time to expiration
+        df["T"] = df.apply(
+            lambda x: trading_days_in_range(x["as_of_date"], x["expiration_date"], "o_cal") / ANNUAL_TRADING_DAYS,
+            axis=1,
+        )  # NOTE: THIS IS SLOW! Need to optimize with cuDF or np.vectorize
+        # reference: https://shubhanshugupta.com/speed-up-apply-function-pandas-dataframe/#3-rapids-cudf-
+        # add the risk free rate
+        df = df.merge(RISK_FREE, on="as_of_date")
         # calc the div yield
-        # py_vollib_vectorized.api.price_dataframe() to get iv and greeks
+        # NOTE: div yield is not currently in the db
 
-        pass
+        price_dataframe(
+            df,
+            flag_col="flag",
+            underlying_price_col="stock_close_price",
+            strike_col="strike_price",
+            annualized_tte_col="T",
+            riskfree_rate_col="risk_free_rate",
+            price_col="opt_close_price",
+            model="black_scholes",  # _merton when you add dividend yield
+            inplace=True,
+        )
+
+        return df
 
     def _impute_missing_data(self):
         # use this https://github.com/rsheftel/pandas_market_calendars to find missing days
