@@ -14,7 +14,7 @@ from rl_agent.queries import (
 )
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
 from option_bot.utils import trading_days_in_range
-from am_pm.port_tools import calc_log_returns, calc_pct_returns, calc_hist_volatility, calc_correlation
+from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility, calc_correlation
 
 
 class GameEnvironment(object):
@@ -32,14 +32,17 @@ class GameEnvironment(object):
     }
     long_short = ["long", "short"]
 
-    def __init__(self, underlying_ticker: str, start_date: str, days_to_exp: int = DAYS_TIL_EXP, num_positions=1):
+    def __init__(
+        self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1
+    ):
         self.ticker = underlying_ticker
-        self.start_date = datetime.strptime(start_date, "%Y-%m-%d") if type(start_date) == str else start_date
+        self.data_start_date = datetime.strptime(start_date, "%Y-%m-%d") if type(start_date) == str else start_date
+        self.game_start_date: datetime = None
         self.start_days_to_exp = days_to_exp
         self.days_to_exp = days_to_exp
         self.num_positions = num_positions
-        self.end = False
-        self.position = "short"
+        self.end: bool = False
+        self.position: str = "short"
         self.state_data_df = pd.DataFrame()
         self.underlying_price_df = pd.DataFrame()
 
@@ -50,7 +53,7 @@ class GameEnvironment(object):
         #     extract_options_contracts(self.ticker, self.start_date),
         #     extract_options_prices(self.ticker, self.start_date),
         # )
-        return await extract_game_market_data(self.ticker, self.start_date)
+        return await extract_game_market_data(self.ticker, self.data_start_date)
 
     # NOTE: may want to pull data from before the start date to calc hist volatility, etc
 
@@ -83,10 +86,10 @@ class GameEnvironment(object):
             model="black_scholes",  # _merton when you add dividend yield
             inplace=True,
         )
-        df["log_returns"] = calc_log_returns(df["stock_close_price"])
-        df["pct_returns"] = calc_pct_returns(df["stock_close_price"])
-        df["hist_90_vol"] = calc_hist_volatility(df["log_returns"], 90)
-        df["hist_30_vol"] = calc_hist_volatility(df["log_returns"], 30)
+        df["log_returns"] = calc_log_returns(df["stock_close_price"].to_numpy(dtype="float64"))
+        df["pct_returns"] = calc_pct_returns(df["stock_close_price"].to_numpy(dtype="float64"))
+        df["hist_90_vol"] = calc_hist_volatility(df["log_returns"].to_numpy(dtype="float64"), 90)
+        df["hist_30_vol"] = calc_hist_volatility(df["log_returns"].to_numpy(dtype="float64"), 30)
 
         self.state_data_df = df
         self.underlying_price_df = (
@@ -98,8 +101,10 @@ class GameEnvironment(object):
         pass
 
     def reset(self):
+        """self.days_to_exp is the counter within the game
+        self.start_days_to_exp is the original value that self.days_to_exp is reset to. Set on class init()"""
         self.days_to_exp = self.start_days_to_exp
-        self.start_date, self.under_start_price, self.opt_tkr = self._init_random_positions()
+        self.game_start_date, self.under_start_price, self.opt_tkr = self._init_random_positions()
         self.game_state = self.state_data_df[
             (self.state_data_df["as_of_date"] >= self.start_date)
             & (self.state_data_df["options_ticker"] == self.opt_tkr)
@@ -118,11 +123,11 @@ class GameEnvironment(object):
         It takes the as_of_date value and the stock_close_price from that row.
         It then filters the self.state_data_df to only include rows with that as_of_date and chooses self.num_positions options contracts whose strike prices are +/- 8 contracts away from the stock_close_price.
 
-        NOTE: may use under_start_price to decide if options should only be in the money or out of the money. But that can be done later
+        NOTE: may use under_start_price to decide if options should only be in the money or out of the money. But that can be done later.
+        Or, to make sure that the strike price is within some range of the underlying price.
         """
         ix = random.randint(0, len(self.underlying_price_df) - self.days_to_exp)
-        start_date = self.underlying_price_df.loc[ix, "as_of_date"]
-        under_start_price = self.underlying_price_df.loc[ix, "stock_close_price"]
+        start_date, under_start_price = self.underlying_price_df.iloc[ix].values
         opt_tkrs = (
             self.state_data_df["options_ticker"]
             .loc[
