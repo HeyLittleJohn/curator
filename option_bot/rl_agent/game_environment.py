@@ -3,18 +3,12 @@ from datetime import datetime
 import random
 
 import pandas as pd
-from py_vollib_vectorized.implied_volatility import vectorized_implied_volatility
 from py_vollib_vectorized.api import price_dataframe
 
-from rl_agent.queries import (
-    extract_ticker_price,
-    extract_options_contracts,
-    extract_options_prices,
-    extract_game_market_data,
-)
+from rl_agent.queries import extract_game_market_data
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
 from option_bot.utils import trading_days_in_range
-from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility, calc_correlation
+from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility
 
 
 class GameEnvironment(object):
@@ -43,8 +37,8 @@ class GameEnvironment(object):
         self.num_positions = num_positions
         self.end: bool = False
         self.position: str = "short"
-        self.state_data_df = pd.DataFrame()
-        self.underlying_price_df = pd.DataFrame()
+        self.state_data_df: pd.DataFrame = pd.DataFrame()
+        self.underlying_price_df: pd.DataFrame = pd.DataFrame()
 
     # NOTE: should this only pull for the current game and be re-called at "reset"?
     async def _pull_game_price_data(self):
@@ -105,10 +99,14 @@ class GameEnvironment(object):
         self.start_days_to_exp is the original value that self.days_to_exp is reset to. Set on class init()"""
         self.days_to_exp = self.start_days_to_exp
         self.game_start_date, self.under_start_price, self.opt_tkr = self._init_random_positions()
-        self.game_state = self.state_data_df[
-            (self.state_data_df["as_of_date"] >= self.start_date)
-            & (self.state_data_df["options_ticker"] == self.opt_tkr)
-        ]
+        self.game_state = (
+            self.state_data_df.loc[
+                (self.state_data_df["as_of_date"] >= self.game_start_date)
+                & (self.state_data_df["options_ticker"] == self.opt_tkr)
+            ]
+            .sort_values("as_of_date", ascending=True)
+            .reset_index(drop=True)
+        )
         self.position = "short"
         # NOTE: may randomly set as long or short, but currently, we are just selling options
         self.end = False
@@ -125,22 +123,22 @@ class GameEnvironment(object):
 
         NOTE: may use under_start_price to decide if options should only be in the money or out of the money. But that can be done later.
         Or, to make sure that the strike price is within some range of the underlying price.
+
+        TODO: remove the magic numbers
         """
         ix = random.randint(0, len(self.underlying_price_df) - self.days_to_exp)
         start_date, under_start_price = self.underlying_price_df.iloc[ix].values
-        opt_tkrs = (
-            self.state_data_df["options_ticker"]
-            .loc[
-                self.state_data_df[
-                    (self.state_data_df["as_of_date"] == start_date)
-                    & (self.state_data_df["DTE"] >= self.days_to_exp)
-                    & (self.state_data_df["DTE"] <= self.days_to_exp + 15)
-                ]
+        opt_tkrs_df = (
+            self.state_data_df.loc[
+                (self.state_data_df["as_of_date"] == start_date)
+                & (self.state_data_df["DTE"] >= self.days_to_exp)
+                & (self.state_data_df["DTE"] <= self.days_to_exp + 15)  # NOTE: this is a magic number
             ]
-            .head(50)
-            .sort_values(["expiration_date", "opt_number_of_transactions"], ascending=[True, False])
-        )  # produces a series
-        opt_tkr = opt_tkrs[random.randint(0, opt_tkrs.shape[0])]
+            .head(50)  # NOTE: this is a magic number
+            .sort_values(by=["expiration_date", "opt_number_of_transactions"], ascending=[True, False])
+            .reset_index(drop=True)
+        )
+        opt_tkr = opt_tkrs_df.iloc[random.randint(0, opt_tkrs_df.shape[0])]["options_ticker"]
         return start_date, under_start_price, opt_tkr
 
     def _calc_reward(self):
