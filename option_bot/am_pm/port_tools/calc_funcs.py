@@ -19,7 +19,7 @@ def calc_pct_returns(prices: np.ndarray) -> np.ndarray:
 def calc_hist_volatility(returns: np.ndarray, period: int) -> np.ndarray:
     """Calculates historical volatility for a given array of returns."""
     t = np.std(sliding_window_view(returns, period), axis=1) * np.sqrt(period)
-    return np.insert(t, obj=[0 for i in range(period)], values=0, axis=0)
+    return np.insert(t, obj=[0 for i in range(period - 1)], values=0, axis=0)
 
 
 def calc_correlation(array_1: np.ndarray, array_2: np.ndarray) -> np.ndarray:

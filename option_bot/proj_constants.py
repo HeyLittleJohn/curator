@@ -137,7 +137,7 @@ stream_handler = StreamHandler(sys.stdout)
 stream_handler.setFormatter(log_formatter)
 
 # Add a filehandler
-file_handler = FileHandler("option_bot/.logs/option_bot_logs.log")
+file_handler = FileHandler(".logs/option_bot_logs.log")
 file_handler.setFormatter(log_formatter)
 
 log.addHandler(stream_handler)
