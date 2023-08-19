@@ -115,14 +115,24 @@ class GameEnvironment(object):
         """returns the next state, reward, and whether the game is over"""
         self.days_to_exp -= 1
 
-    def _init_random_positions(self):
+    def _init_random_positions(self) -> list[str]:
         """this function initializes the game with random positions.
         It chooses a row from the self.underlying_price_df that is atleast self.days_to_exp positions away from the last row.
         It takes the as_of_date value and the stock_close_price from that row.
         It then filters the self.state_data_df to only include rows with that as_of_date and chooses self.num_positions options contracts whose strike prices are +/- 8 contracts away from the stock_close_price.
 
+        Returns:
+            start_date: datetime
+                the date that is the basis for current observations.
+            under_start_price: decimal
+                The current price of the underlying ticker
+            opt_tkrs: List[str]
+                the options contract tickers, len = self.num_positions
+
+
         NOTE: may use under_start_price to decide if options should only be in the money or out of the money. But that can be done later.
         Or, to make sure that the strike price is within some range of the underlying price.
+        Otherwise we don't need to return it as long as we have the start_date
 
         TODO: remove the magic numbers
         """
@@ -133,13 +143,17 @@ class GameEnvironment(object):
                 (self.state_data_df["as_of_date"] == start_date)
                 & (self.state_data_df["DTE"] >= self.days_to_exp)
                 & (self.state_data_df["DTE"] <= self.days_to_exp + 15)  # NOTE: this is a magic number
+                & (~self.state_data_df["IV"].isna())
             ]
             .head(50)  # NOTE: this is a magic number
             .sort_values(by=["expiration_date", "opt_number_of_transactions"], ascending=[True, False])
             .reset_index(drop=True)
         )
-        opt_tkr = opt_tkrs_df.iloc[random.randint(0, opt_tkrs_df.shape[0])]["options_ticker"]
-        return start_date, under_start_price, opt_tkr
+        opt_tkrs = [
+            opt_tkrs_df.iloc[random.randint(0, opt_tkrs_df.shape[0])]["options_ticker"]
+            for i in range(self.num_positions)
+        ]
+        return start_date, under_start_price, opt_tkrs
 
     def _calc_reward(self):
         pass
