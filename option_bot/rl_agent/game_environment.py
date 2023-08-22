@@ -24,7 +24,11 @@ class GameEnvironment(object):
         3: ["double_call_credit_spread", "double_put_credit_spread", "strap", "strip"],
         4: ["iron_condor", "butterfly_spread"],
     }
-    long_short = ["long", "short"]
+    long_short = {"long": 1, "short": 2}
+
+    actions = {"close": 1, "hold": 2}
+
+    contract_types = {"call": 1, "put": 2}
 
     def __init__(
         self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1
@@ -94,15 +98,25 @@ class GameEnvironment(object):
         # use this https://github.com/rsheftel/pandas_market_calendars to find missing days
         pass
 
+    def _normalize_state_data(self):
+        """normalize transactions and volume and other figures so that the gradients don't explode"""
+        pass
+
+    def _state_to_tensor(self, df: pd.DataFrame):
+        """convert the state data to a tensor"""
+
     def reset(self):
         """self.days_to_exp is the counter within the game
-        self.start_days_to_exp is the original value that self.days_to_exp is reset to. Set on class init()"""
+        self.start_days_to_exp is the original value that self.days_to_exp is reset to. Set on class init()
+
+        Returns:
+            First state of the game. One row of the df for each option contract"""
         self.days_to_exp = self.start_days_to_exp
-        self.game_start_date, self.under_start_price, self.opt_tkr = self._init_random_positions()
+        self.game_start_date, self.under_start_price, self.opt_tkrs = self._init_random_positions()
         self.game_state = (
             self.state_data_df.loc[
                 (self.state_data_df["as_of_date"] >= self.game_start_date)
-                & (self.state_data_df["options_ticker"] == self.opt_tkr)
+                & (self.state_data_df["options_ticker"].isin(self.opt_tkrs))
             ]
             .sort_values("as_of_date", ascending=True)
             .reset_index(drop=True)
@@ -110,6 +124,7 @@ class GameEnvironment(object):
         self.position = "short"
         # NOTE: may randomly set as long or short, but currently, we are just selling options
         self.end = False
+        return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
 
     def step(self):
         """returns the next state, reward, and whether the game is over"""
@@ -156,6 +171,8 @@ class GameEnvironment(object):
         return start_date, under_start_price, opt_tkrs
 
     def _calc_reward(self):
+        """calculates the reward for the current state.
+        Calculating a single aggregate reward, potentially will isolate reward per option."""
         pass
 
     def _determine_end(self):
