@@ -65,12 +65,15 @@ class GameEnvironment(object):
         df["flag"] = np.where(df["contract_type"] == ContractType.call, "c", "p")
         df["flag_int"] = np.where(df["contract_type"] == ContractType.call, 1, 2)
         # calc the time to expiration
-        df["DTE"] = df.apply(
-            lambda x: trading_days_in_range(x["as_of_date"], x["expiration_date"], "o_cal"),
-            axis=1,
-        )  # NOTE: THIS IS SLOW! Need to optimize with cuDF or np.vectorize
+        df["DTE"] = np.vectorize(trading_days_in_range)(df["as_of_date"], df["expiration_date"], "o_cal")
+        # df['DTE'] = df.apply(
+        #     lambda x: trading_days_in_range(x["as_of_date"], x["expiration_date"], "o_cal"),
+        #     axis=1,
+        # )
+
+        # NOTE: THIS IS SLOW! Need to optimize with cuDF or np.vectorize
         # reference: https://shubhanshugupta.com/speed-up-apply-function-pandas-dataframe/#3-rapids-cudf-
-        # the two .apply()s are both slow, especially together
+
         df["T"] = df["DTE"] / ANNUAL_TRADING_DAYS
 
         # add the risk free rate
