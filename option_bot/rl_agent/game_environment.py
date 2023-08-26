@@ -10,6 +10,7 @@ from rl_agent.queries import extract_game_market_data
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
 from db_tools.schemas import ContractType
 from option_bot.utils import trading_days_in_range
+from rl_agent.utils import dataframe_to_dict
 from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility
 
 
@@ -28,7 +29,7 @@ class GameEnvironment(object):
     }
     long_short = {"long": 1, "short": 2}
 
-    actions = {"close": 1, "hold": 2}
+    actions_labels = {"close": 0, "hold": 1}
 
     contract_types = {"call": 1, "put": 2}
 
@@ -45,6 +46,7 @@ class GameEnvironment(object):
         self.num_positions = num_positions
         self.end: bool = False
         self.position: str = "short"
+        self.opt_tkrs: list[str] = []
         self.state_data_df: pd.DataFrame = pd.DataFrame()
         self.underlying_price_df: pd.DataFrame = pd.DataFrame()
 
@@ -142,11 +144,17 @@ class GameEnvironment(object):
         return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
 
     def step(self, actions: list[int], current_state: pd.DataFrame):
-        """Function thatreturns the next state, reward, and whether the game is over based on the input actions
+        """Function thatreturns the next state, reward, and whether the game is over based on the input actions.
+        It extracts the next state from the game_state_df based on the next as_of_date.
+        It then converts state to dicts with keys being the opt_tickers
+        If there were no transactions for a given ticker, it will use the previous state's option values for that ticker.
+        It then calculates the rewards for the actions and sums into an aggregate reward
 
         Args:
             actions: list[int]
-                the actions to take for each position. len(actions) == self.num_positions
+                the actions to take for each position. len(actions) == self.num_positions and in the same order
+            current_state: pd.DataFrame
+                the current state of the game.
 
         Returns:
             next_state: pd.DataFrame
@@ -156,9 +164,45 @@ class GameEnvironment(object):
             end: bool
                 whether the game is over. (if positions are closed or reached exp date)
         """
+        # count down days to expiration
         self.days_to_exp -= 1
+        if self.days_to_exp == 0 or sum(actions) == 0:  # may need a _determine_end() func
+            self.end = True
         self.game_current_date_ix += 1
+
+        # retrieve data for the underlying stock for the next day
         new_date = self.underlying_price_df["as_of_date"].iloc[self.game_current_date_ix]
+        underlying_state = self.underlying_price_df.loc[self.underlying_price_df["as_of_date"] == new_date].to_dict(
+            "records"
+        )
+
+        # calculate the new state, backfilling with options data from the previous state if no transactions on the new_date
+        next_state = self.game_state.loc[self.game_state["as_of_date"] == new_date]
+        current_state = dataframe_to_dict(df=current_state, index_key="options_ticker")
+        next_state = dataframe_to_dict(df=next_state, index_key="options_ticker")
+        for tkr in self.opt_tkrs:
+            if tkr not in next_state:
+                next_state[tkr] = current_state[tkr]
+                for k, v in underlying_state:
+                    next_state[tkr][k] = v
+
+        # calculate the reward
+        reward = self._calc_reward(actions, current_state, next_state) if not self.end else None
+        return next_state, reward, self.end
+
+    def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
+        """calculates the reward for the current state.
+        Calculating a single aggregate reward
+        """  # NOTE: potentially will isolate reward per option in future
+        rewards = []
+        for i in range(len(actions)):
+            if actions[i] == 0:
+                rewards.append(0)
+            else:
+                new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
+                old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
+                rewards.append(new_price - old_price)
+        return sum(rewards)
 
     def _init_random_positions(self) -> list[str]:
         """this function initializes the game with random positions.
@@ -202,39 +246,6 @@ class GameEnvironment(object):
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
         return start_date, under_start_price, opt_tkrs, game_date_index
 
-    def _calc_reward(self):
-        """calculates the reward for the current state.
-        Calculating a single aggregate reward, potentially will isolate reward per option."""
-        pass
-
-    def _determine_end(self):
-        pass
-
-
-# NOTE: this could be used for the logic of pulling the prices to be considered for each step
-"""    Attributes:
-        options_tickers: List[str]
-            the options contract tickers
-
-        exp_date: [datetime, datetime]
-            the range of option expiration dates to be queried
-
-        strike_price: decimal
-            the strike price range want to include in our queries
-
-    Note:
-        exp_date and strike_price are inclusive ranges"""
-
-"""
-    Attributes:
-        ticker: str
-            the underlying stock ticker
-        base_date: [datetime]
-            the date that is the basis for current observations. \
-            In other words: the date at which you are looking at the chain of options data
-        current_price: decimal
-            The current price of the underlying ticker
-    """
 
 if __name__ == "__main__":
     pass
