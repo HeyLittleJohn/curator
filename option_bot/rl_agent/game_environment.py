@@ -5,6 +5,7 @@ import random
 import pandas as pd
 import numpy as np
 from py_vollib_vectorized.api import price_dataframe
+from sklearn.preprocessing import StandardScaler
 
 from rl_agent.queries import extract_game_market_data
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
@@ -110,7 +111,7 @@ class GameEnvironment(object):
 
     def _normalize_state_data(self):
         """normalize transactions and volume and other figures so that the gradients don't explode"""
-        pass
+        scaler = StandardScaler()
 
     def _state_to_tensor(self, df: pd.DataFrame):
         """convert the state data to a tensor"""
