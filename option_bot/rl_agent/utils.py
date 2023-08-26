@@ -1,7 +1,7 @@
 from pandas import DataFrame
 import torch
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from rl_agent.agent import device
 
 
 def dataframe_to_dict(df: DataFrame, index_key: str) -> list[dict]:
