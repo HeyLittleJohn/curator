@@ -1,18 +1,23 @@
 import asyncio
 from datetime import datetime
 import random
+from collections import namedtuple
 
 import pandas as pd
 import numpy as np
 from py_vollib_vectorized.api import price_dataframe
 from sklearn.preprocessing import StandardScaler
+from torch import long
+from torch.nn.functional import normalize  # use this OR sklearn scaler
 
 from rl_agent.queries import extract_game_market_data
-from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE
+from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE, ACTIONS
 from db_tools.schemas import ContractType
 from option_bot.utils import trading_days_in_range
 from rl_agent.utils import dataframe_to_dict
 from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility
+
+position = namedtuple("position", ("orig_price", "long_short", "status", "nom_return", "pct_return"))
 
 
 class GameEnvironment(object):
@@ -28,11 +33,35 @@ class GameEnvironment(object):
         3: ["double_call_credit_spread", "double_put_credit_spread", "strap", "strip"],
         4: ["iron_condor", "butterfly_spread"],
     }
-    long_short = {"long": 1, "short": 2}
+    long_short_labels = {1: "SHORT", 2: "LONG"}
 
-    actions_labels = {"close": 0, "hold": 1}
+    actions_labels = dict(zip(range(len(ACTIONS)), ACTIONS))
 
     contract_types = {"call": 1, "put": 2}
+
+    feature_cols = [
+        "stock_close_price",
+        "stock_volume",
+        "stock_number_of_transactions",
+        "strike_price",
+        "opt_close_price",
+        "opt_volume",
+        "opt_number_of_transactions",
+        "DTE",
+        "T",
+        "risk_free_rate",
+        "IV",
+        "delta",
+        "gamma",
+        "theta",
+        "rho",
+        "vega",
+        "log_returns",
+        "pct_returns",
+        "hist_90_vol",
+        "hist_30_vol",
+        "flag_int",
+    ]
 
     def __init__(
         self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1
@@ -42,6 +71,7 @@ class GameEnvironment(object):
         self.game_start_date: datetime = None
         self.game_date_index: pd.Series = None
         self.game_current_date_ix: int = None
+        self.game_rewards: dict = {}
         self.start_days_to_exp = days_to_exp
         self.days_to_exp = days_to_exp
         self.num_positions = num_positions
@@ -67,6 +97,9 @@ class GameEnvironment(object):
         df = await self._pull_game_price_data()
         df["flag"] = np.where(df["contract_type"] == ContractType.call, "c", "p")
         df["flag_int"] = np.where(df["contract_type"] == ContractType.call, 1, 2)
+        # swap flag int for a proper dummy variable with pd.get_dummies(df["flag_int"], prefix="flag_int")
+        # or change to 0, 1 as a normal categorical variable. Update class attribute too
+
         # calc the time to expiration
         df["DTE"] = np.vectorize(trading_days_in_range)(df["as_of_date"], df["expiration_date"], "o_cal")
         # df['DTE'] = df.apply(
@@ -119,6 +152,7 @@ class GameEnvironment(object):
     def reset(self):
         """self.days_to_exp is the counter within the game
         self.start_days_to_exp is the original value that self.days_to_exp is reset to. Set on class init()
+        self.positions is a dict with a list [initial value of option position, long_short_position] for each option contract
 
         Returns:
             First state of the game. One row of the df for each option contract
@@ -129,6 +163,7 @@ class GameEnvironment(object):
             self.under_start_price,
             self.opt_tkrs,
             self.game_date_index,
+            long_short_positions,
         ) = self._init_random_positions()
         self.game_state = (
             self.state_data_df.loc[
@@ -138,8 +173,16 @@ class GameEnvironment(object):
             .sort_values("as_of_date", ascending=True)
             .reset_index(drop=True)
         )
-        self.position = "short"
-        # NOTE: may randomly set as long or short, but currently, we are just selling options
+        self.game_position = {
+            self.opt_tkrs[i]: [
+                self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0]["opt_close_price"],
+                long_short_positions[i],
+                "open",
+            ]
+            for i in range(self.opt_tkrs)
+        }
+        self.game_rewards = {opt_tkr: [] for opt_tkr in self.opt_tkrs}
+
         self.end = False
         self.game_current_date_ix = 0
         return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
@@ -162,8 +205,6 @@ class GameEnvironment(object):
                 the next state of the next step of the game. The next row in game_state_df with index of the next as_of_date
             reward: decimal
                 the reward for the current state based on the change in value of the options contracts
-            end: bool
-                whether the game is over. (if positions are closed or reached exp date)
         """
         # count down days to expiration
         self.days_to_exp -= 1
@@ -189,16 +230,15 @@ class GameEnvironment(object):
 
         # calculate the reward
         reward = self._calc_reward(actions, current_state, next_state) if not self.end else None
-        return next_state, reward, self.end
+        return next_state, reward
 
     def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """calculates the reward for the current state.
         Calculating a single aggregate reward
         """  # NOTE: potentially will isolate reward per option in future
-        rewards = []
         for i in range(len(actions)):
-            if actions[i] == 0:
-                rewards.append(0)
+            if self.actions_labels[actions[i]] == "CLOSE POSITION":
+                self.game_rewards.append(0)
             else:
                 new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
                 old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
@@ -220,10 +260,14 @@ class GameEnvironment(object):
                 the options contract tickers, len = self.num_positions
             game_date_index: pd.Series
                 the index of the dates that will be used for the game. len = self.days_to_exp + 1
+            long_short_positions: List[int]
+                the long or short positions for each option contract. len = self.num_positions
 
         NOTE: may use under_start_price to decide if options should only be in the money or out of the money. But that can be done later.
         Or, to make sure that the strike price is within some range of the underlying price.
         Otherwise we don't need to return it as long as we have the start_date
+
+        Also: starting with only short positions for now
 
         TODO: remove the magic numbers
         """
@@ -245,7 +289,10 @@ class GameEnvironment(object):
             for i in range(self.num_positions)
         ]
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
-        return start_date, under_start_price, opt_tkrs, game_date_index
+        long_short_positions = [
+            1 for i in self.num_positions
+        ]  # [random.randint(1, 2) for i in range(self.num_positions)]
+        return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
 
 
 if __name__ == "__main__":
