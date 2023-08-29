@@ -27,7 +27,7 @@ class GameEnvironment(object):
     The action space will be the number of combinations of actions per position. 2^n where n is [1,4]
     """
 
-    positions = {
+    position_strats = {
         1: ["call", "put"],
         2: ["call_credit_spread", "put_credit_spread", "staddle", "strangle"],
         3: ["double_call_credit_spread", "double_put_credit_spread", "strap", "strip"],
@@ -43,41 +43,43 @@ class GameEnvironment(object):
         "stock_close_price",
         "stock_volume",
         "stock_number_of_transactions",
+        "log_returns",
+        "pct_returns",
+        "hist_90_vol",
+        "hist_30_vol",
+        "risk_free_rate",
         "strike_price",
         "opt_close_price",
         "opt_volume",
         "opt_number_of_transactions",
         "DTE",
         "T",
-        "risk_free_rate",
         "IV",
         "delta",
         "gamma",
         "theta",
         "rho",
         "vega",
-        "log_returns",
-        "pct_returns",
-        "hist_90_vol",
-        "hist_30_vol",
         "flag_int",
     ]
+    underlying_cols = feature_cols[:8]
+    option_cols = feature_cols[8:]
 
     def __init__(
         self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1
     ):
         self.ticker = underlying_ticker
         self.data_start_date = datetime.strptime(start_date, "%Y-%m-%d") if type(start_date) == str else start_date
+        self.start_days_to_exp = days_to_exp
+        self.days_to_exp = days_to_exp
+        self.num_positions = num_positions
+        self.opt_tkrs: list[str] = []
         self.game_start_date: datetime = None
         self.game_date_index: pd.Series = None
         self.game_current_date_ix: int = None
         self.game_rewards: dict = {}
-        self.start_days_to_exp = days_to_exp
-        self.days_to_exp = days_to_exp
-        self.num_positions = num_positions
+        self.game_positions: dict = {}
         self.end: bool = False
-        self.position: str = "short"
-        self.opt_tkrs: list[str] = []
         self.state_data_df: pd.DataFrame = pd.DataFrame()
         self.underlying_price_df: pd.DataFrame = pd.DataFrame()
 
@@ -113,10 +115,12 @@ class GameEnvironment(object):
         df["T"] = df["DTE"] / ANNUAL_TRADING_DAYS
 
         # add the risk free rate
-        df = df.merge(RISK_FREE, on="as_of_date")
+        df = df.merge(RISK_FREE, on="as_of_date").sort_values("as_of_date").reset_index(drop=True)
+
         # calc the div yield
         # NOTE: div yield is not currently in the db
 
+        # calc the implied volatility and greeks
         price_dataframe(
             df,
             flag_col="flag",
@@ -128,6 +132,8 @@ class GameEnvironment(object):
             model="black_scholes",  # _merton when you add dividend yield
             inplace=True,
         )
+
+        # calc the log returns, pct returns, and historical volatility on underlying
         df["log_returns"] = calc_log_returns(df["stock_close_price"].to_numpy(dtype="float64"))
         df["pct_returns"] = calc_pct_returns(df["stock_close_price"].to_numpy(dtype="float64"))
         df["hist_90_vol"] = calc_hist_volatility(df["log_returns"].to_numpy(dtype="float64"), 90)
@@ -135,7 +141,7 @@ class GameEnvironment(object):
 
         self.state_data_df = df
         self.underlying_price_df = (
-            df[["as_of_date", "stock_close_price"]].drop_duplicates().sort_values("as_of_date").reset_index(drop=True)
+            df[["as_of_date"] + self.underlying_cols].drop_duplicates().sort_values("as_of_date").reset_index(drop=True)
         )
 
     def _impute_missing_data(self):
@@ -174,15 +180,16 @@ class GameEnvironment(object):
             .reset_index(drop=True)
         )
         self.game_position = {
-            self.opt_tkrs[i]: [
+            self.opt_tkrs[i]: position(
                 self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0]["opt_close_price"],
                 long_short_positions[i],
                 "open",
-            ]
+                0.0,
+                0.0,
+            )
             for i in range(self.opt_tkrs)
         }
         self.game_rewards = {opt_tkr: [] for opt_tkr in self.opt_tkrs}
-
         self.end = False
         self.game_current_date_ix = 0
         return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
@@ -208,11 +215,12 @@ class GameEnvironment(object):
         """
         # count down days to expiration
         self.days_to_exp -= 1
-        if self.days_to_exp == 0 or sum(actions) == 0:  # may need a _determine_end() func
+        if self.days_to_exp == 0 or sum(actions) == 0:  # sum(actions) will = 0 when the last position is being closed
             self.end = True
-        self.game_current_date_ix += 1
+            return pd.DataFrame, 0.0
 
         # retrieve data for the underlying stock for the next day
+        self.game_current_date_ix += 1
         new_date = self.underlying_price_df["as_of_date"].iloc[self.game_current_date_ix]
         underlying_state = self.underlying_price_df.loc[self.underlying_price_df["as_of_date"] == new_date].to_dict(
             "records"
@@ -224,9 +232,14 @@ class GameEnvironment(object):
         next_state = dataframe_to_dict(df=next_state, index_key="options_ticker")
         for tkr in self.opt_tkrs:
             if tkr not in next_state:
-                next_state[tkr] = current_state[tkr]
+                next_state[tkr].update(current_state[tkr])
                 for k, v in underlying_state:
                     next_state[tkr][k] = v
+                next_state[tkr]["as_of_date"] = new_date  # should be redundant after underlying_state update
+                next_state[tkr]["opt_volume"] = 0
+                next_state[tkr]["opt_number_of_transactions"] = 0
+                next_state[tkr]["DTE"] -= 1
+                next_state[tkr]["T"] = next_state[tkr]["DTE"] / ANNUAL_TRADING_DAYS
 
         # calculate the reward
         reward = self._calc_reward(actions, current_state, next_state) if not self.end else None
