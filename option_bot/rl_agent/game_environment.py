@@ -36,7 +36,7 @@ class GameEnvironment(object):
     long_short_labels = {1: "SHORT", 2: "LONG"}
 
     actions_labels = dict(zip(range(len(ACTIONS)), ACTIONS))
-
+    position_status = ["open", "closed"]
     contract_types = {"call": 1, "put": 2}
 
     feature_cols = [
@@ -180,12 +180,14 @@ class GameEnvironment(object):
             .reset_index(drop=True)
         )
         self.game_position = {
-            self.opt_tkrs[i]: position(
-                self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0]["opt_close_price"],
-                long_short_positions[i],
-                "open",
-                0.0,
-                0.0,
+            self.opt_tkrs[i]: position(  # namedtuple
+                self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0][
+                    "opt_close_price"
+                ],  # original price
+                long_short_positions[i],  # long or short
+                "open",  # status
+                0.0,  # nominal return
+                0.0,  # percent return
             )
             for i in range(self.opt_tkrs)
         }
@@ -248,15 +250,31 @@ class GameEnvironment(object):
     def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """calculates the reward for the current state.
         Calculating a single aggregate reward
-        """  # NOTE: potentially will isolate reward per option in future
+
+        NOTE: potentially will isolate reward per option in future
+        Also, may calculate reward as percent return on collateral per day or some ratio like that.
+        Or simply nominal return per day. Room to experiment here.
+        If there is a third possible action, this if/else will need to be changed
+        """
+        reward = 0.0
         for i in range(len(actions)):
-            if self.actions_labels[actions[i]] == "CLOSE POSITION":
-                self.game_rewards.append(0)
+            if self.game_position[self.opt_tkrs[i]].status == "open":
+                if self.actions_labels[actions[i]] == "CLOSE POSITION":
+                    self.game_rewards[self.opt_tkrs[i]].append(0)
+                    self.game_position[self.opt_tkrs[i]].status = "closed"
+                else:
+                    new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
+                    old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
+                    reward += new_price - old_price
+                    self.game_rewards[self.opt_tkrs[i]].append(new_price - old_price)
+                    self.game_position[self.opt_tkrs[i]].nom_return += new_price - old_price
+                    self.game_position[self.opt_tkrs[i]].pct_return = (
+                        self.game_position[self.opt_tkrs[i]].nom_return
+                        / self.game_position[self.opt_tkrs[i]].orig_price
+                    )
             else:
-                new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
-                old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
-                rewards.append(new_price - old_price)
-        return sum(rewards)
+                self.game_rewards[self.opt_tkrs[i]].append(0)
+        return reward
 
     def _init_random_positions(self) -> list[str]:
         """this function initializes the game with random positions.
