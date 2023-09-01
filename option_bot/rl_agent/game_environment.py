@@ -212,14 +212,18 @@ class GameEnvironment(object):
         Returns:
             next_state: pd.DataFrame
                 the next state of the next step of the game. The next row in game_state_df with index of the next as_of_date
-            reward: decimal
-                the reward for the current state based on the change in value of the options contracts
+            end: bool
+                flag stating whether the game is over
+            game_position: dict[str, namedtuple]
+                the current position of each option contract in the game
+            game_reward: dict[str, list[float]]
+                the pct_point reward for each position in the game
         """
         # count down days to expiration
         self.days_to_exp -= 1
         if self.days_to_exp == 0 or sum(actions) == 0:  # sum(actions) will = 0 when the last position is being closed
             self.end = True
-            return pd.DataFrame, 0.0
+            return pd.DataFrame, self.end, self.game_positions, self.game_rewards
 
         # retrieve data for the underlying stock for the next day
         self.game_current_date_ix += 1
@@ -244,37 +248,38 @@ class GameEnvironment(object):
                 next_state[tkr]["T"] = next_state[tkr]["DTE"] / ANNUAL_TRADING_DAYS
 
         # calculate the reward
-        reward = self._calc_reward(actions, current_state, next_state) if not self.end else None
-        return next_state, reward
+        self._calc_reward(actions, current_state, next_state)
+        return next_state, self.end, self.game_positions, self.game_rewards
 
     def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
-        """calculates the reward for the current state.
-        Calculating a single aggregate reward
+        """
+        calculates the reward for the current state (the percentage point change for the day)
+        as well as calcs the nominal and percent return for each option contract in the game_position
 
         NOTE: potentially will isolate reward per option in future
         Also, may calculate reward as percent return on collateral per day or some ratio like that.
-        Or simply nominal return per day. Room to experiment here.
         If there is a third possible action, this if/else will need to be changed
         """
-        reward = 0.0
         for i in range(len(actions)):
             if self.game_position[self.opt_tkrs[i]].status == "open":
                 if self.actions_labels[actions[i]] == "CLOSE POSITION":
                     self.game_rewards[self.opt_tkrs[i]].append(0)
                     self.game_position[self.opt_tkrs[i]].status = "closed"
+                    self.game_position[self.opt_tkrs[i]].nom_return = 0
+                    self.game_position[self.opt_tkrs[i]].pct_return = 0
                 else:
                     new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
                     old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
                     reward += new_price - old_price
-                    self.game_rewards[self.opt_tkrs[i]].append(new_price - old_price)
+                    self.game_rewards[self.opt_tkrs[i]].append(
+                        (new_price - old_price) / self.game_position[self.opt_tkrs[i]].orig_price
+                    )
                     self.game_position[self.opt_tkrs[i]].nom_return += new_price - old_price
                     self.game_position[self.opt_tkrs[i]].pct_return = (
-                        self.game_position[self.opt_tkrs[i]].nom_return
-                        / self.game_position[self.opt_tkrs[i]].orig_price
+                        new_price / self.game_position[self.opt_tkrs[i]].orig_price
                     )
             else:
                 self.game_rewards[self.opt_tkrs[i]].append(0)
-        return reward
 
     def _init_random_positions(self) -> list[str]:
         """this function initializes the game with random positions.
