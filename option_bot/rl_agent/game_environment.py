@@ -212,8 +212,6 @@ class GameEnvironment(object):
         Returns:
             next_state: pd.DataFrame
                 the next state of the next step of the game. The next row in game_state_df with index of the next as_of_date
-            end: bool
-                flag stating whether the game is over
             game_position: dict[str, namedtuple]
                 the current position of each option contract in the game
             game_reward: dict[str, list[float]]
@@ -249,7 +247,7 @@ class GameEnvironment(object):
 
         # calculate the reward
         self._calc_reward(actions, current_state, next_state)
-        return next_state, self.end, self.game_positions, self.game_rewards
+        return pd.DataFrame(next_state).reset_index(drop=False), self.game_positions, self.game_rewards
 
     def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """
@@ -270,14 +268,26 @@ class GameEnvironment(object):
                 else:
                     new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
                     old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
-                    reward += new_price - old_price
-                    self.game_rewards[self.opt_tkrs[i]].append(
-                        (new_price - old_price) / self.game_position[self.opt_tkrs[i]].orig_price
-                    )
-                    self.game_position[self.opt_tkrs[i]].nom_return += new_price - old_price
-                    self.game_position[self.opt_tkrs[i]].pct_return = (
-                        new_price / self.game_position[self.opt_tkrs[i]].orig_price
-                    )
+                    nom_reward = new_price - old_price
+
+                    if self.long_short_labels[self.game_position[self.opt_tkrs[i]].long_short] == "SHORT":
+                        self.game_rewards[self.opt_tkrs[i]].append(
+                            -1 * nom_reward / self.game_position[self.opt_tkrs[i]].orig_price
+                        )
+
+                        self.game_position[self.opt_tkrs[i]].nom_return += -1 * nom_reward
+                        self.game_position[self.opt_tkrs[i]].pct_return = 1 - (
+                            new_price / self.game_position[self.opt_tkrs[i]].orig_price
+                        )
+                    else:
+                        self.game_rewards[self.opt_tkrs[i]].append(
+                            nom_reward / self.game_position[self.opt_tkrs[i]].orig_price
+                        )
+
+                        self.game_position[self.opt_tkrs[i]].nom_return += nom_reward
+                        self.game_position[self.opt_tkrs[i]].pct_return = (
+                            new_price / self.game_position[self.opt_tkrs[i]].orig_price
+                        )
             else:
                 self.game_rewards[self.opt_tkrs[i]].append(0)
 
@@ -329,6 +339,11 @@ class GameEnvironment(object):
             1 for i in self.num_positions
         ]  # [random.randint(1, 2) for i in range(self.num_positions)]
         return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
+
+
+def calc_port_return_from_positions(positions: dict[str, namedtuple]) -> float:
+    """Calculate the pct return from the positions in the portfolio"""
+    return sum([positions[tkr].pct_return for tkr in positions.keys()])
 
 
 if __name__ == "__main__":

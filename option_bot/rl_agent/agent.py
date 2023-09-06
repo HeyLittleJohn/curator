@@ -13,6 +13,7 @@ from rl_agent.constants import (
     HIDDEN_SIZE_LG,
     HIDDEN_SIZE_SM,
     DEVICE,
+    SUCCESS_THRESHOLD,
 )
 
 transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end"))
@@ -61,15 +62,15 @@ class DQN_Network(nn.Module):
         if episode % 20 == 0 and self.gamma < 0.95:  # TODO: update magic number
             self.gamma += 0.05
 
-    def check_progress(self, reward, episode, done=False):
+    def check_progress(self, reward, episode):
         """function to evaluate the reward being earned per episode, compared with recent averages.
         If reward is above a certain threshold, the agent is considered to have solved the environment"""
-
+        done = False
         self.rewards.append(reward)
         if reward > self.best[0]:
             print("new best job! Score:{}, Episode:{}".format(reward, episode))
             self.best = (reward, episode)
-        recent = np.mean(self.rewards[-100:])
+        recent = np.mean(self.rewards[-100:])  # moving average of last 100 rewards
         if recent > SUCCESS_THRESHOLD:
             print("Done! Your last 100 episode average was: ", recent)
             done = True
