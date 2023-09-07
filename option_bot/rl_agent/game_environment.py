@@ -12,6 +12,7 @@ from torch.nn.functional import normalize  # use this OR sklearn scaler
 
 from rl_agent.queries import extract_game_market_data
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE, ACTIONS
+from rl_agent.exceptions import InvalidStep, InvalidReset
 from db_tools.schemas import ContractType
 from option_bot.utils import trading_days_in_range
 from rl_agent.utils import dataframe_to_dict
@@ -33,7 +34,7 @@ class GameEnvironment(object):
         3: ["double_call_credit_spread", "double_put_credit_spread", "strap", "strip"],
         4: ["iron_condor", "butterfly_spread"],
     }
-    long_short_labels = {1: "SHORT", 2: "LONG"}
+    long_short_labels = {1: "LONG", 2: "SHORT"}
 
     actions_labels = dict(zip(range(len(ACTIONS)), ACTIONS))
     position_status = ["open", "closed"]
@@ -168,6 +169,9 @@ class GameEnvironment(object):
         Returns:
             First state of the game. One row of the df for each option contract
         """
+        if self.state_data_df.shape[0] == 0:
+            raise InvalidReset("The state data has not been loaded. Please call prepare_state_data() first.")
+
         self.days_to_exp = self.start_days_to_exp
         (
             self.game_start_date,
@@ -222,11 +226,13 @@ class GameEnvironment(object):
             game_reward: dict[str, list[float]]
                 the pct_point reward for each position in the game
         """
+        if self.end:
+            raise InvalidStep("The game has ended. Please reset the game to continue.")
         # count down days to expiration
         self.days_to_exp -= 1
         if self.days_to_exp == 0 or sum(actions) == 0:  # sum(actions) will = 0 when the last position is being closed
             self.end = True
-            return pd.DataFrame, self.end, self.game_positions, self.game_rewards
+            return pd.DataFrame(), self.end, self.game_positions, self.game_rewards
 
         # retrieve data for the underlying stock for the next day
         self.game_current_date_ix += 1
@@ -341,7 +347,7 @@ class GameEnvironment(object):
         ]
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
         long_short_positions = [
-            1 for i in range(self.num_positions)
+            2 for i in range(self.num_positions)
         ]  # [random.randint(1, 2) for i in range(self.num_positions)]
         return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
 
