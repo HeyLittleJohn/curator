@@ -202,7 +202,9 @@ class GameEnvironment(object):
         }
         self.game_rewards = {opt_tkr: [] for opt_tkr in self.opt_tkrs}
         self.end = False
-        self.game_current_date_ix = 0
+        self.game_current_date_ix = self.underlying_price_df.loc[
+            self.underlying_price_df["as_of_date"] == self.game_start_date
+        ].index[0]
         return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
 
     def step(self, actions: list[int], current_state: pd.DataFrame):
@@ -277,8 +279,8 @@ class GameEnvironment(object):
                     self.game_positions[self.opt_tkrs[i]].nom_return = 0
                     self.game_positions[self.opt_tkrs[i]].pct_return = 0
                 else:
-                    new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
-                    old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
+                    new_price = float(next_state[self.opt_tkrs[i]]["opt_close_price"])
+                    old_price = float(current_state[self.opt_tkrs[i]]["opt_close_price"])
                     nom_reward = new_price - old_price
 
                     if self.long_short_labels[self.game_positions[self.opt_tkrs[i]].long_short] == "SHORT":
