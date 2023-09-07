@@ -83,6 +83,11 @@ class GameEnvironment(object):
         self.state_data_df: pd.DataFrame = pd.DataFrame()
         self.underlying_price_df: pd.DataFrame = pd.DataFrame()
 
+    def __repr__(self):
+        data_loaded = True if self.state_data_df.shape[0] > 0 else False
+        game_started = True if len(self.game_positions) > 0 else False
+        return f"GameEnvironment(ticker={self.ticker}, data_start_date={self.data_start_date.date()}, days_to_exp={self.days_to_exp}, num_of_positions={self.num_positions}, data_loaded={data_loaded}, game_started={game_started}, game_ended={self.end})"
+
     # NOTE: should this only pull for the current game and be re-called at "reset"?
     async def _pull_game_price_data(self):
         # return await asyncio.gather(
@@ -179,7 +184,7 @@ class GameEnvironment(object):
             .sort_values("as_of_date", ascending=True)
             .reset_index(drop=True)
         )
-        self.game_position = {
+        self.game_positions = {
             self.opt_tkrs[i]: position(  # namedtuple
                 self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0][
                     "opt_close_price"
@@ -189,7 +194,7 @@ class GameEnvironment(object):
                 0.0,  # nominal return
                 0.0,  # percent return
             )
-            for i in range(self.opt_tkrs)
+            for i in range(len(self.opt_tkrs))
         }
         self.game_rewards = {opt_tkr: [] for opt_tkr in self.opt_tkrs}
         self.end = False
@@ -212,7 +217,7 @@ class GameEnvironment(object):
         Returns:
             next_state: pd.DataFrame
                 the next state of the next step of the game. The next row in game_state_df with index of the next as_of_date
-            game_position: dict[str, namedtuple]
+            game_positions: dict[str, namedtuple]
                 the current position of each option contract in the game
             game_reward: dict[str, list[float]]
                 the pct_point reward for each position in the game
@@ -252,41 +257,41 @@ class GameEnvironment(object):
     def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """
         calculates the reward for the current state (the percentage point change for the day)
-        as well as calcs the nominal and percent return for each option contract in the game_position
+        as well as calcs the nominal and percent return for each option contract in the game_positions
 
         NOTE: potentially will isolate reward per option in future
         Also, may calculate reward as percent return on collateral per day or some ratio like that.
         If there is a third possible action, this if/else will need to be changed
         """
         for i in range(len(actions)):
-            if self.game_position[self.opt_tkrs[i]].status == "open":
+            if self.game_positions[self.opt_tkrs[i]].status == "open":
                 if self.actions_labels[actions[i]] == "CLOSE POSITION":
                     self.game_rewards[self.opt_tkrs[i]].append(0)
-                    self.game_position[self.opt_tkrs[i]].status = "closed"
-                    self.game_position[self.opt_tkrs[i]].nom_return = 0
-                    self.game_position[self.opt_tkrs[i]].pct_return = 0
+                    self.game_positions[self.opt_tkrs[i]].status = "closed"
+                    self.game_positions[self.opt_tkrs[i]].nom_return = 0
+                    self.game_positions[self.opt_tkrs[i]].pct_return = 0
                 else:
                     new_price = next_state[self.opt_tkrs[i]]["opt_close_price"]
                     old_price = current_state[self.opt_tkrs[i]]["opt_close_price"]
                     nom_reward = new_price - old_price
 
-                    if self.long_short_labels[self.game_position[self.opt_tkrs[i]].long_short] == "SHORT":
+                    if self.long_short_labels[self.game_positions[self.opt_tkrs[i]].long_short] == "SHORT":
                         self.game_rewards[self.opt_tkrs[i]].append(
-                            -1 * nom_reward / self.game_position[self.opt_tkrs[i]].orig_price
+                            -1 * nom_reward / self.game_positions[self.opt_tkrs[i]].orig_price
                         )
 
-                        self.game_position[self.opt_tkrs[i]].nom_return += -1 * nom_reward
-                        self.game_position[self.opt_tkrs[i]].pct_return = 1 - (
-                            new_price / self.game_position[self.opt_tkrs[i]].orig_price
+                        self.game_positions[self.opt_tkrs[i]].nom_return += -1 * nom_reward
+                        self.game_positions[self.opt_tkrs[i]].pct_return = 1 - (
+                            new_price / self.game_positions[self.opt_tkrs[i]].orig_price
                         )
                     else:
                         self.game_rewards[self.opt_tkrs[i]].append(
-                            nom_reward / self.game_position[self.opt_tkrs[i]].orig_price
+                            nom_reward / self.game_positions[self.opt_tkrs[i]].orig_price
                         )
 
-                        self.game_position[self.opt_tkrs[i]].nom_return += nom_reward
-                        self.game_position[self.opt_tkrs[i]].pct_return = (
-                            new_price / self.game_position[self.opt_tkrs[i]].orig_price
+                        self.game_positions[self.opt_tkrs[i]].nom_return += nom_reward
+                        self.game_positions[self.opt_tkrs[i]].pct_return = (
+                            new_price / self.game_positions[self.opt_tkrs[i]].orig_price
                         )
             else:
                 self.game_rewards[self.opt_tkrs[i]].append(0)
@@ -318,7 +323,7 @@ class GameEnvironment(object):
         TODO: remove the magic numbers
         """
         ix = random.randint(0, len(self.underlying_price_df) - self.days_to_exp)
-        start_date, under_start_price = self.underlying_price_df.iloc[ix].values
+        start_date, under_start_price = self.underlying_price_df.iloc[ix][["as_of_date", "stock_close_price"]].values
         opt_tkrs_df = (
             self.state_data_df.loc[
                 (self.state_data_df["as_of_date"] == start_date)
@@ -336,7 +341,7 @@ class GameEnvironment(object):
         ]
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
         long_short_positions = [
-            1 for i in self.num_positions
+            1 for i in range(self.num_positions)
         ]  # [random.randint(1, 2) for i in range(self.num_positions)]
         return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
 
