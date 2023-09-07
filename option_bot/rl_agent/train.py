@@ -8,7 +8,7 @@ from rl_agent.agent import DQN_Network, Memories, transition
 from rl_agent.constants import EPISODES, BATCH_SIZE, MEMORY_MAX, DEVICE
 
 
-def train_agent(ticker: str, start_date: str, num_positions: int):
+async def train_agent(ticker: str, start_date: str, num_positions: int):
     """
     Script to train the DQN network and the learning agent
 
@@ -24,7 +24,7 @@ def train_agent(ticker: str, start_date: str, num_positions: int):
         num_positions (int): number of positions to hold in the portfolio
     """
     env = GameEnvironment(ticker, start_date, num_positions=num_positions)
-    env.prepare_state_data()
+    await env.prepare_state_data()
     model = DQN_Network(actions_dim=len(env.actions), state_dim=len(env.feature_cols))
     sgd = Adam(model.parameters(), lr=model.alpha)
     memory = Memories(MEMORY_MAX)
