@@ -229,7 +229,7 @@ class GameEnvironment(object):
         ].index[0]
         return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
 
-    def step(self, actions: list[int], current_state: pd.DataFrame):
+    def step(self, actions: dict[str, int], current_state: pd.DataFrame):
         """Function thatreturns the next state, reward, and whether the game is over based on the input actions.
         It extracts the next state from the game_state_df based on the next as_of_date.
         It then converts state to dicts with keys being the opt_tickers
@@ -254,7 +254,9 @@ class GameEnvironment(object):
             raise InvalidStep("The game has ended. Please reset the game to continue.")
         # count down days to expiration
         self.days_to_exp -= 1
-        if self.days_to_exp == 0 or sum(actions) == 0:  # sum(actions) will = 0 when the last position is being closed
+        if (
+            self.days_to_exp == 0 or sum(actions.values()) == 0
+        ):  # sum(actions) will = 0 when the last position is being closed
             self.end = True
             return pd.DataFrame(), self.end, self.game_positions, self.game_rewards
 
@@ -284,7 +286,7 @@ class GameEnvironment(object):
         self._calc_reward(actions, current_state, next_state)
         return pd.DataFrame(next_state).reset_index(drop=False), self.game_positions, self.game_rewards
 
-    def _calc_reward(self, actions: list[int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
+    def _calc_reward(self, actions: dict[str, int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """
         calculates the reward for the current state (the percentage point change for the day)
         as well as calcs the nominal and percent return for each option contract in the game_positions
@@ -293,38 +295,30 @@ class GameEnvironment(object):
         Also, may calculate reward as percent return on collateral per day or some ratio like that.
         If there is a third possible action, this if/else will need to be changed
         """
-        for i in range(len(actions)):
-            if self.game_positions[self.opt_tkrs[i]].status == "open":
-                if self.actions_labels[actions[i]] == "CLOSE POSITION":
-                    self.game_rewards[self.opt_tkrs[i]].append(0)
-                    self.game_positions[self.opt_tkrs[i]].status = "closed"
-                    self.game_positions[self.opt_tkrs[i]].nom_return = 0
-                    self.game_positions[self.opt_tkrs[i]].pct_return = 0
+        for tkr in self.opt_tkrs:
+            if self.game_positions[tkr].status == "open":
+                if self.actions_labels[actions[tkr]] == "CLOSE POSITION":
+                    self.game_rewards[tkr].append(0)
+                    self.game_positions[tkr].status = "closed"
+                    self.game_positions[tkr].nom_return = 0
+                    self.game_positions[tkr].pct_return = 0
                 else:
-                    new_price = float(next_state[self.opt_tkrs[i]]["opt_close_price"])
-                    old_price = float(current_state[self.opt_tkrs[i]]["opt_close_price"])
+                    new_price = float(next_state[tkr]["opt_close_price"])
+                    old_price = float(current_state[tkr]["opt_close_price"])
                     nom_reward = new_price - old_price
 
-                    if self.long_short_labels[self.game_positions[self.opt_tkrs[i]].long_short] == "SHORT":
-                        self.game_rewards[self.opt_tkrs[i]].append(
-                            -1 * nom_reward / self.game_positions[self.opt_tkrs[i]].orig_price
-                        )
+                    if self.long_short_labels[self.game_positions[tkr].long_short] == "SHORT":
+                        self.game_rewards[tkr].append(-1 * nom_reward / self.game_positions[tkr].orig_price)
 
-                        self.game_positions[self.opt_tkrs[i]].nom_return += -1 * nom_reward
-                        self.game_positions[self.opt_tkrs[i]].pct_return = 1 - (
-                            new_price / self.game_positions[self.opt_tkrs[i]].orig_price
-                        )
+                        self.game_positions[tkr].nom_return += -1 * nom_reward
+                        self.game_positions[tkr].pct_return = 1 - (new_price / self.game_positions[tkr].orig_price)
                     else:
-                        self.game_rewards[self.opt_tkrs[i]].append(
-                            nom_reward / self.game_positions[self.opt_tkrs[i]].orig_price
-                        )
+                        self.game_rewards[tkr].append(nom_reward / self.game_positions[tkr].orig_price)
 
-                        self.game_positions[self.opt_tkrs[i]].nom_return += nom_reward
-                        self.game_positions[self.opt_tkrs[i]].pct_return = (
-                            new_price / self.game_positions[self.opt_tkrs[i]].orig_price
-                        )
+                        self.game_positions[tkr].nom_return += nom_reward
+                        self.game_positions[tkr].pct_return = new_price / self.game_positions[tkr].orig_price
             else:
-                self.game_rewards[self.opt_tkrs[i]].append(0)
+                self.game_rewards[tkr].append(0)
 
     def _init_random_positions(self) -> list[str]:
         """this function initializes the game with random positions.
