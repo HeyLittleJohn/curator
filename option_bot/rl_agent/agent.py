@@ -3,9 +3,11 @@ import random
 
 import torch
 import numpy as np
+from pandas import DataFrame
 import torch.nn as nn
 import torch.nn.functional as F
 
+from rl_agent.utils import dataframe_to_tensor
 from rl_agent.constants import (
     GAMMA,
     ALPHA,
@@ -45,14 +47,28 @@ class DQN_Network(nn.Module):
         # x = torch.sigmoid(self.fc3(x)) # an alternative to leaky_relu
         return x
 
-    def choose_action(self, state):
-        if np.random.rand() <= self.epsilon:
-            action = np.random.randint(self.actions_dim)
-        else:
-            with torch.no_grad():
-                pred = self.forward(state)
-                action = torch.argmax(pred).item()  # gets it off the gpu
-        return action
+    def choose_action(self, state: DataFrame, feature_cols: list[str]) -> dict:
+        """function to choose an action based on the current state of the environment.
+        Maps actions in a dictionary to the considered options ticker
+
+        Args:
+            state (DataFrame): current state of the environment
+            feature_cols (list[str]): list of feature columns that are model inputs
+
+        Returns:
+            actions: (dict[str:int]) actions mapped to affiliated options tickers
+                {"O:SPY230616P00368000": 0, "O:SPY230616P00369000": 1, ...}
+        """
+        actions = {}
+        for i in range(state.shape[0]):
+            if np.random.rand() <= self.epsilon:
+                actions[state.iloc[i]["options_ticker"]] = np.random.randint(self.actions_dim)
+            else:
+                with torch.no_grad():
+                    feature_state = dataframe_to_tensor(state.iloc[i][feature_cols])
+                    pred = self.forward(feature_state)
+                    actions[state.iloc[i]["options_ticker"]] = torch.argmax(pred).item()  # gets it off the gpu
+        return actions
 
     def decay_epsilon(self):
         if self.epsilon > 0.001:
