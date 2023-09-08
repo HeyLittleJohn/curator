@@ -35,7 +35,7 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
         while not env.end:
             actions = model.choose_action(state, env.feature_cols)
             next_state, game_positions, game_rewards = env.step(actions, current_state=state)
-            r = sum([game_rewards[tkr][-1] for tkr in game_rewards.keys()])
+
             for tkr in env.opt_tkrs:
                 memory.add_transition(transition(state, actions[tkr], game_rewards[tkr][-1], next_state, env.end))
             reward = calc_port_return_from_positions(game_positions)
