@@ -100,6 +100,7 @@ class DQN_Network(nn.Module):
         and option type to categorical variables
         Finally, it converts the data to a tensor and sends it to the gpu
         """
+        pass
 
 
 class Memories(object):
