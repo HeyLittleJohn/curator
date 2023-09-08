@@ -139,15 +139,37 @@ class GameEnvironment(object):
             inplace=True,
         )
 
-        # calc the log returns, pct returns, and historical volatility on underlying
-        df["log_returns"] = calc_log_returns(df["stock_close_price"].to_numpy(dtype="float64"))
-        df["pct_returns"] = calc_pct_returns(df["stock_close_price"].to_numpy(dtype="float64"))
-        df["hist_90_vol"] = calc_hist_volatility(df["log_returns"].to_numpy(dtype="float64"), 90)
-        df["hist_30_vol"] = calc_hist_volatility(df["log_returns"].to_numpy(dtype="float64"), 30)
+        # split out the underlying and the state dfs
 
         self.state_data_df = df
         self.underlying_price_df = (
-            df[["as_of_date"] + self.underlying_cols].drop_duplicates().sort_values("as_of_date").reset_index(drop=True)
+            df[["as_of_date"] + self.underlying_cols[0:3]]
+            .drop_duplicates()
+            .sort_values("as_of_date")
+            .reset_index(drop=True)
+        )
+
+        # calc the log returns, pct returns, and historical volatility on underlying
+
+        self.underlying_price_df["log_returns"] = calc_log_returns(
+            self.underlying_price_df["stock_close_price"].to_numpy(dtype="float64")
+        )
+        self.underlying_price_df["pct_returns"] = calc_pct_returns(
+            self.underlying_price_df["stock_close_price"].to_numpy(dtype="float64")
+        )
+        self.underlying_price_df["hist_90_vol"] = calc_hist_volatility(
+            self.underlying_price_df["log_returns"].to_numpy(dtype="float64"), 90
+        )
+        self.underlying_price_df["hist_30_vol"] = calc_hist_volatility(
+            self.underlying_price_df["log_returns"].to_numpy(dtype="float64"), 30
+        )
+
+        self.state_data_df = (
+            self.state_data_df.merge(
+                self.underlying_price_df[["as_of_date"] + self.underlying_cols[3:7]], on="as_of_date"
+            )
+            .sort_values("as_of_date")
+            .reset_index(drop=True)
         )
 
     def _impute_missing_data(self):
