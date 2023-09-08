@@ -94,6 +94,13 @@ class DQN_Network(nn.Module):
             print("Episode:{}, recent average:{}".format(episode, recent))
         return done
 
+    def _feature_prep(self, state: DataFrame, feature_cols: list[str]) -> torch.Tensor:
+        """function to prepare the state for the model.
+        This filters to just the feature cols, converts position(long/short, open/closed)
+        and option type to categorical variables
+        Finally, it converts the data to a tensor and sends it to the gpu
+        """
+
 
 class Memories(object):
     def __init__(self, memory_max):
