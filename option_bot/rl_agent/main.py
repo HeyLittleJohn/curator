@@ -15,5 +15,10 @@ def train(ticker: str, start_date: str, num_positions: int):
     save(agent.state_dict(), f"ticker_{ticker}_{start_date}_{num_positions}.pth")
 
 
+@app.command()
+def test(num: int):
+    typer.echo(f"Testing {num}...")
+
+
 if __name__ == "__main__":
     app()

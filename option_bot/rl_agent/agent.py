@@ -107,6 +107,9 @@ class Memories(object):
     def __init__(self, memory_max):
         self.replay_memory = deque([], maxlen=memory_max)
 
+    def __repr__(self):
+        return f"Memories(saved_replay={len(self.replay_memory)}, max={self.replay_memory.maxlen})"
+
     def add_transition(self, obs):
         self.replay_memory.append(obs)
 

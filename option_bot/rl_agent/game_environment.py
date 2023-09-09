@@ -1,7 +1,8 @@
 import asyncio
+from decimal import Decimal
 from datetime import datetime
 import random
-from collections import namedtuple
+from dataclasses import dataclass
 
 import pandas as pd
 import numpy as np
@@ -18,7 +19,14 @@ from option_bot.utils import trading_days_in_range
 from rl_agent.utils import dataframe_to_dict
 from am_pm.port_tools.calc_funcs import calc_log_returns, calc_pct_returns, calc_hist_volatility
 
-position = namedtuple("position", ("orig_price", "long_short", "status", "nom_return", "pct_return"))
+
+@dataclass
+class Position:
+    orig_price: Decimal
+    long_short: int
+    status: str
+    nom_return: float
+    pct_return: float
 
 
 class GameEnvironment(object):
@@ -211,7 +219,7 @@ class GameEnvironment(object):
             .reset_index(drop=True)
         )
         self.game_positions = {
-            self.opt_tkrs[i]: position(  # namedtuple
+            self.opt_tkrs[i]: Position(  # dataclass
                 self.game_state.loc[self.game_state["options_ticker"] == self.opt_tkrs[i]].iloc[0][
                     "opt_close_price"
                 ],  # original price
@@ -258,7 +266,7 @@ class GameEnvironment(object):
             self.days_to_exp == 0 or sum(actions.values()) == 0
         ):  # sum(actions) will = 0 when the last position is being closed
             self.end = True
-            return pd.DataFrame(), self.end, self.game_positions, self.game_rewards
+            return pd.DataFrame(), self.game_positions, self.game_rewards
 
         # retrieve data for the underlying stock for the next day
         self.game_current_date_ix += 1
@@ -308,15 +316,17 @@ class GameEnvironment(object):
                     nom_reward = new_price - old_price
 
                     if self.long_short_labels[self.game_positions[tkr].long_short] == "SHORT":
-                        self.game_rewards[tkr].append(-1 * nom_reward / self.game_positions[tkr].orig_price)
+                        self.game_rewards[tkr].append(-1 * nom_reward / float(self.game_positions[tkr].orig_price))
 
                         self.game_positions[tkr].nom_return += -1 * nom_reward
-                        self.game_positions[tkr].pct_return = 1 - (new_price / self.game_positions[tkr].orig_price)
+                        self.game_positions[tkr].pct_return = 1 - (
+                            new_price / float(self.game_positions[tkr].orig_price)
+                        )
                     else:
-                        self.game_rewards[tkr].append(nom_reward / self.game_positions[tkr].orig_price)
+                        self.game_rewards[tkr].append(nom_reward / float(self.game_positions[tkr].orig_price))
 
                         self.game_positions[tkr].nom_return += nom_reward
-                        self.game_positions[tkr].pct_return = new_price / self.game_positions[tkr].orig_price
+                        self.game_positions[tkr].pct_return = new_price / float(self.game_positions[tkr].orig_price)
             else:
                 self.game_rewards[tkr].append(0)
 
@@ -370,7 +380,7 @@ class GameEnvironment(object):
         return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
 
 
-def calc_port_return_from_positions(positions: dict[str, namedtuple]) -> float:
+def calc_port_return_from_positions(positions: dict[str, Position]) -> float:
     """Calculate the pct return from the positions in the portfolio"""
     return sum([positions[tkr].pct_return for tkr in positions.keys()])
 
