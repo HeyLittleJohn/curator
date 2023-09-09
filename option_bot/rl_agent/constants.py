@@ -29,3 +29,28 @@ HIDDEN_SIZE_SM = 256
 EPSILON = 1.0
 ALPHA = 0.001
 GAMMA = 0.99
+
+# Features #####
+FEATURE_COLS = [
+    "stock_close_price",
+    "stock_volume",
+    "stock_number_of_transactions",
+    "log_returns",
+    "pct_returns",
+    "hist_90_vol",
+    "hist_30_vol",
+    "risk_free_rate",
+    "strike_price",
+    "opt_close_price",
+    "opt_volume",
+    "opt_number_of_transactions",
+    "DTE",
+    "T",
+    "IV",
+    "delta",
+    "gamma",
+    "theta",
+    "rho",
+    "vega",
+    "flag_int",
+]
