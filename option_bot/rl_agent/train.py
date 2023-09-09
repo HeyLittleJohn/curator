@@ -37,14 +37,17 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
             next_state, game_positions, game_rewards = env.step(actions, current_state=state)
 
             for tkr in env.opt_tkrs:
-                memory.add_transition(transition(state, actions[tkr], game_rewards[tkr][-1], next_state, env.end))
+                if actions[tkr] != 0 and env.start_days_to_exp - env.days_to_exp > 1:
+                    memory.add_transition(transition(state, actions[tkr], game_rewards[tkr][-1], next_state, env.end))
             reward = calc_port_return_from_positions(game_positions)
 
             if len(memory.replay_memory) >= BATCH_SIZE:
                 optimize_with_replay(model, memory, sgd, BATCH_SIZE)
+                print(f"Optimizing with Memory, memories: {len(memory.replay_memory)}")
 
             state = next_state
 
+        print(f"Episode: {i}, Reward: {reward}, Memories: {len(memory.replay_memory)}")
         model.decay_epsilon()
         model.gamma_update(i)
         done = model.check_progress(reward, i)

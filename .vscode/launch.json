@@ -46,7 +46,7 @@
             "program": "~/option_bot/option_bot/rl_agent/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["SPY", "2023-01-01", "1"],
+            "args":["train", "SPY", "2023-01-01", "1"],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
             }
