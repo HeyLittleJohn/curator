@@ -369,10 +369,14 @@ class GameEnvironment(object):
             .sort_values(by=["expiration_date", "opt_number_of_transactions"], ascending=[True, False])
             .reset_index(drop=True)
         )
-        opt_tkrs = [
-            opt_tkrs_df.iloc[random.randint(0, opt_tkrs_df.shape[0])]["options_ticker"]
-            for i in range(self.num_positions)
-        ]
+        opt_tkr_ix = []
+        while len(opt_tkr_ix) < self.num_positions:
+            opt_ix = random.randint(0, opt_tkrs_df.shape[0])
+            if opt_ix not in opt_tkr_ix:
+                opt_tkr_ix.append(opt_ix)
+
+        opt_tkrs = opt_tkrs_df.iloc[opt_tkr_ix]["options_ticker"].tolist()
+
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
         long_short_positions = [
             2 for i in range(self.num_positions)
