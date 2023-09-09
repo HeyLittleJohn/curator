@@ -12,7 +12,7 @@ from torch import long
 from torch.nn.functional import normalize  # use this OR sklearn scaler
 
 from rl_agent.queries import extract_game_market_data
-from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE, ACTIONS
+from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE, ACTIONS, FEATURE_COLS
 from rl_agent.exceptions import InvalidStep, InvalidReset
 from db_tools.schemas import ContractType
 from option_bot.utils import trading_days_in_range
@@ -48,31 +48,8 @@ class GameEnvironment(object):
     position_status = ["open", "closed"]
     contract_types = {"call": 1, "put": 2}
 
-    feature_cols = [
-        "stock_close_price",
-        "stock_volume",
-        "stock_number_of_transactions",
-        "log_returns",
-        "pct_returns",
-        "hist_90_vol",
-        "hist_30_vol",
-        "risk_free_rate",
-        "strike_price",
-        "opt_close_price",
-        "opt_volume",
-        "opt_number_of_transactions",
-        "DTE",
-        "T",
-        "IV",
-        "delta",
-        "gamma",
-        "theta",
-        "rho",
-        "vega",
-        "flag_int",
-    ]
-    underlying_cols = feature_cols[:8]
-    option_cols = feature_cols[8:]
+    underlying_cols = FEATURE_COLS[:8]
+    option_cols = FEATURE_COLS[8:]
 
     def __init__(
         self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1

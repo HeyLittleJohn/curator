@@ -16,6 +16,7 @@ from rl_agent.constants import (
     HIDDEN_SIZE_SM,
     DEVICE,
     SUCCESS_THRESHOLD,
+    FEATURE_COLS,
 )
 
 transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end"))
@@ -47,13 +48,13 @@ class DQN_Network(nn.Module):
         # x = torch.sigmoid(self.fc3(x)) # an alternative to leaky_relu
         return x
 
-    def choose_action(self, state: DataFrame, feature_cols: list[str]) -> dict:
+    def choose_action(self, state: DataFrame) -> dict:
         """function to choose an action based on the current state of the environment.
-        Maps actions in a dictionary to the considered options ticker
+        Maps actions in a dictionary to the considered options ticker.
+        Uses FEATURE_COLS (list[str]): list of feature columns that are model inputs
 
         Args:
             state (DataFrame): current state of the environment
-            feature_cols (list[str]): list of feature columns that are model inputs
 
         Returns:
             actions: (dict[str:int]) actions mapped to affiliated options tickers
@@ -65,7 +66,7 @@ class DQN_Network(nn.Module):
                 actions[state.iloc[i]["options_ticker"]] = np.random.randint(self.actions_dim)
             else:
                 with torch.no_grad():
-                    feature_state = dataframe_to_tensor(state.iloc[i][feature_cols])
+                    feature_state = dataframe_to_tensor(state.iloc[i][FEATURE_COLS])
                     pred = self.forward(feature_state)
                     actions[state.iloc[i]["options_ticker"]] = torch.argmax(pred).item()  # gets it off the gpu
         return actions

@@ -33,7 +33,7 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
         state = env.reset()
         reward = 0
         while not env.end:
-            actions = model.choose_action(state, env.feature_cols)
+            actions = model.choose_action(state)
             next_state, game_positions, game_rewards = env.step(actions, current_state=state)
 
             for tkr in env.opt_tkrs:
