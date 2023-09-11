@@ -1,3 +1,4 @@
+from numpy import float32
 from pandas import DataFrame
 import torch
 
@@ -9,9 +10,9 @@ def dataframe_to_dict(df: DataFrame, index_key: str) -> list[dict]:
     return df.set_index(index_key).to_dict("index")
 
 
-def dataframe_to_tensor(df: DataFrame) -> torch.Tensor:
+def state_to_tensor(df: DataFrame) -> torch.Tensor:
     """Convert dataframe to tensor"""
-    return torch.tensor(df.to_numpy(), device=DEVICE, dtype=torch.float32)
+    return torch.tensor(df.to_numpy(dtype=float), device=DEVICE, dtype=torch.float32)
 
 
 def convert_dicts_to_tensors(list_of_dicts: list[dict]) -> list[torch.Tensor]:

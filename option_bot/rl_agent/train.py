@@ -30,10 +30,10 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
     memory = Memories(MEMORY_MAX)
 
     for i in range(EPISODES):
-        state = env.reset()
+        state, game_positions = env.reset()
         reward = 0
         while not env.end:
-            actions = model.choose_action(state)
+            actions = model.choose_action(state, game_positions)
             next_state, game_positions, game_rewards = env.step(actions, current_state=state)
 
             for tkr in env.opt_tkrs:

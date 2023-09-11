@@ -42,11 +42,11 @@ class GameEnvironment(object):
         3: ["double_call_credit_spread", "double_put_credit_spread", "strap", "strip"],
         4: ["iron_condor", "butterfly_spread"],
     }
-    long_short_labels = {1: "LONG", 2: "SHORT"}
+    long_short_labels = {0: "LONG", 1: "SHORT"}
 
     actions_labels = dict(zip(range(len(ACTIONS)), ACTIONS))
     position_status = ["open", "closed"]
-    contract_types = {"call": 1, "put": 2}
+    contract_types = {"call": 0, "put": 1}
 
     underlying_cols = FEATURE_COLS[:8]
     option_cols = FEATURE_COLS[8:]
@@ -89,9 +89,7 @@ class GameEnvironment(object):
         # s_price, o_contracts, o_prices = await self.pull_game_price_data()
         df = await self._pull_game_price_data()
         df["flag"] = np.where(df["contract_type"] == ContractType.call, "c", "p")
-        df["flag_int"] = np.where(df["contract_type"] == ContractType.call, 1, 2)
-        # swap flag int for a proper dummy variable with pd.get_dummies(df["flag_int"], prefix="flag_int")
-        # or change to 0, 1 as a normal categorical variable. Update class attribute too
+        df["flag_put"] = np.where(df["contract_type"] == ContractType.put, 1, 0)
 
         # calc the time to expiration
         df["DTE"] = np.vectorize(trading_days_in_range)(df["as_of_date"], df["expiration_date"], "o_cal")
@@ -174,7 +172,9 @@ class GameEnvironment(object):
         self.positions is a dict with a list [initial value of option position, long_short_position] for each option contract
 
         Returns:
-            First state of the game. One row of the df for each option contract
+            state: (pd.DataFrame) First state of the game. One row of the df for each option contract
+            positions: (dict[str, Position]) the initial positions of the game. {opt_tkr: Position}
+
         """
         if self.state_data_df.shape[0] == 0:
             raise InvalidReset("The state data has not been loaded. Please call prepare_state_data() first.")
@@ -212,7 +212,7 @@ class GameEnvironment(object):
         self.game_current_date_ix = self.underlying_price_df.loc[
             self.underlying_price_df["as_of_date"] == self.game_start_date
         ].index[0]
-        return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date]
+        return self.game_state.loc[self.game_state["as_of_date"] == self.game_start_date], self.game_positions
 
     def step(self, actions: dict[str, int], current_state: pd.DataFrame):
         """Function thatreturns the next state, reward, and whether the game is over based on the input actions.
@@ -230,7 +230,7 @@ class GameEnvironment(object):
         Returns:
             next_state: pd.DataFrame
                 the next state of the next step of the game. The next row in game_state_df with index of the next as_of_date
-            game_positions: dict[str, namedtuple]
+            game_positions: dict[str, Position]
                 the current position of each option contract in the game
             game_reward: dict[str, list[float]]
                 the pct_point reward for each position in the game
@@ -356,8 +356,8 @@ class GameEnvironment(object):
 
         game_date_index = self.underlying_price_df["as_of_date"].iloc[ix : ix + self.days_to_exp + 1]
         long_short_positions = [
-            2 for i in range(self.num_positions)
-        ]  # [random.randint(1, 2) for i in range(self.num_positions)]
+            1 for i in range(self.num_positions)  # sets all as short for now
+        ]  # [random.randint(0, 1) for i in range(self.num_positions)]
         return start_date, under_start_price, opt_tkrs, game_date_index, long_short_positions
 
 
