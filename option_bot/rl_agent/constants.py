@@ -52,5 +52,5 @@ FEATURE_COLS = [
     "theta",
     "rho",
     "vega",
-    "flag_int",
+    "flag_put",
 ]

@@ -3,11 +3,12 @@ import random
 
 import torch
 import numpy as np
-from pandas import DataFrame
+from pandas import DataFrame, get_dummies
 import torch.nn as nn
 import torch.nn.functional as F
 
-from rl_agent.utils import dataframe_to_tensor
+from rl_agent.utils import state_to_tensor
+from rl_agent.game_environment import Position
 from rl_agent.constants import (
     GAMMA,
     ALPHA,
@@ -48,13 +49,14 @@ class DQN_Network(nn.Module):
         # x = torch.sigmoid(self.fc3(x)) # an alternative to leaky_relu
         return x
 
-    def choose_action(self, state: DataFrame) -> dict:
+    def choose_action(self, state: DataFrame, game_positions: dict) -> dict:
         """function to choose an action based on the current state of the environment.
         Maps actions in a dictionary to the considered options ticker.
         Uses FEATURE_COLS (list[str]): list of feature columns that are model inputs
 
         Args:
-            state (DataFrame): current state of the environment
+            state (DataFrame): current state of the environment,
+            game_positions (dict): current positions in the game {opt_tkr: Position}
 
         Returns:
             actions: (dict[str:int]) actions mapped to affiliated options tickers
@@ -66,7 +68,7 @@ class DQN_Network(nn.Module):
                 actions[state.iloc[i]["options_ticker"]] = np.random.randint(self.actions_dim)
             else:
                 with torch.no_grad():
-                    feature_state = dataframe_to_tensor(state.iloc[i][FEATURE_COLS])
+                    feature_state = self._feature_prep(state.iloc[i], game_positions[state.iloc[i]["options_ticker"]])
                     pred = self.forward(feature_state)
                     actions[state.iloc[i]["options_ticker"]] = torch.argmax(pred).item()  # gets it off the gpu
         return actions
@@ -95,13 +97,16 @@ class DQN_Network(nn.Module):
             print("Episode:{}, recent average:{}".format(episode, recent))
         return done
 
-    def _feature_prep(self, state: DataFrame, feature_cols: list[str]) -> torch.Tensor:
+    def _feature_prep(self, state: DataFrame, game_position: Position) -> torch.Tensor:
         """function to prepare the state for the model.
-        This filters to just the feature cols, converts position(long/short, open/closed)
-        and option type to categorical variables
+        This converts position(long/short, open/closed) to a binary flag
+        It filters to just the feature columns
         Finally, it converts the data to a tensor and sends it to the gpu
         """
-        pass
+        state["short"] = game_position.long_short
+        state["open"] = 1 if game_position.status == "open" else 0
+        state = state[FEATURE_COLS + ["short", "open"]]
+        return state_to_tensor(state)
 
 
 class Memories(object):
