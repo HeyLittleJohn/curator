@@ -13,7 +13,7 @@ from torch.nn.functional import normalize  # use this OR sklearn scaler
 
 from rl_agent.queries import extract_game_market_data
 from rl_agent.constants import DAYS_TIL_EXP, ANNUAL_TRADING_DAYS, RISK_FREE, ACTIONS, FEATURE_COLS
-from rl_agent.exceptions import InvalidStep, InvalidReset
+from rl_agent.exceptions import InvalidStep, InvalidReset, EmptyInit
 from db_tools.schemas import ContractType
 from option_bot.utils import trading_days_in_range
 from rl_agent.utils import dataframe_to_dict
@@ -176,17 +176,25 @@ class GameEnvironment(object):
             positions: (dict[str, Position]) the initial positions of the game. {opt_tkr: Position}
 
         """
+        init = False
         if self.state_data_df.shape[0] == 0:
             raise InvalidReset("The state data has not been loaded. Please call prepare_state_data() first.")
 
         self.days_to_exp = self.start_days_to_exp
-        (
-            self.game_start_date,
-            self.under_start_price,
-            self.opt_tkrs,
-            self.game_date_index,
-            long_short_positions,
-        ) = self._init_random_positions()
+        init_count = 0
+        while not init:
+            try:
+                (
+                    self.game_start_date,
+                    self.under_start_price,
+                    self.opt_tkrs,
+                    self.game_date_index,
+                    long_short_positions,
+                ) = self._init_random_positions()
+                init = True
+                print(f"init count: {init_count}")
+            except EmptyInit:
+                init_count += 1
         self.game_state = (
             self.state_data_df.loc[
                 (self.state_data_df["as_of_date"] >= self.game_start_date)
@@ -346,6 +354,8 @@ class GameEnvironment(object):
             .sort_values(by=["expiration_date", "opt_number_of_transactions"], ascending=[True, False])
             .reset_index(drop=True)
         )
+        if opt_tkrs_df.empty:
+            raise
         opt_tkr_ix = []
         while len(opt_tkr_ix) < self.num_positions:
             opt_ix = random.randint(0, opt_tkrs_df.shape[0])
