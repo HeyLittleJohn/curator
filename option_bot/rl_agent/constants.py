@@ -3,7 +3,7 @@ from pathlib import Path
 import pandas as pd
 from torch.cuda import is_available
 
-DEVICE = "gpu" if is_available() else "cpu"
+DEVICE = "cuda" if is_available() else "cpu"
 
 # Search Boundaries  #####
 CONTRACT_COUNT = 4
@@ -53,4 +53,6 @@ FEATURE_COLS = [
     "rho",
     "vega",
     "flag_put",
-]
+    "short",
+    "open",
+]  # the last 2 are added before inference during the training step

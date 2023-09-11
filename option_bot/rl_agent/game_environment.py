@@ -49,7 +49,7 @@ class GameEnvironment(object):
     contract_types = {"call": 0, "put": 1}
 
     underlying_cols = FEATURE_COLS[:8]
-    option_cols = FEATURE_COLS[8:]
+    option_cols = FEATURE_COLS[8:-2]
 
     def __init__(
         self, underlying_ticker: str, start_date: str | datetime, days_to_exp: int = DAYS_TIL_EXP, num_positions=1
