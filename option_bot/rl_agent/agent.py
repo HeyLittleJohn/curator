@@ -20,7 +20,8 @@ from rl_agent.constants import (
     FEATURE_COLS,
 )
 
-transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end"))
+transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end", "game_positions"))
+# s and s_prime are dataframes, while a, r, and game_postions are dicts with an opt_tkr as the key, end is bool
 
 
 class DQN_Network(nn.Module):
@@ -105,7 +106,7 @@ class DQN_Network(nn.Module):
         """
         state["short"] = game_position.long_short
         state["open"] = 1 if game_position.status == "open" else 0
-        state = state[FEATURE_COLS + ["short", "open"]]
+        state = state[FEATURE_COLS]
         return state_to_tensor(state)
 
 
