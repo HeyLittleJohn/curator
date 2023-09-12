@@ -277,7 +277,8 @@ class GameEnvironment(object):
 
         # calculate the reward
         self._calc_reward(actions, current_state, next_state)
-        return pd.DataFrame(next_state).reset_index(drop=False), self.game_positions, self.game_rewards
+        next_state_df = pd.DataFrame([{**next_state[tkr], **{"options_ticker": tkr}} for tkr in next_state])
+        return next_state_df, self.game_positions, self.game_rewards
 
     def _calc_reward(self, actions: dict[str, int], current_state: pd.DataFrame, next_state: pd.DataFrame) -> float:
         """

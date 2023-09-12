@@ -69,7 +69,9 @@ class DQN_Network(nn.Module):
                 actions[state.iloc[i]["options_ticker"]] = np.random.randint(self.actions_dim)
             else:
                 with torch.no_grad():
-                    feature_state = self._feature_prep(state.iloc[i], game_positions[state.iloc[i]["options_ticker"]])
+                    feature_state = self._feature_prep(
+                        state.iloc[i].copy(), game_positions[state.iloc[i]["options_ticker"]]
+                    )
                     pred = self.forward(feature_state)
                     actions[state.iloc[i]["options_ticker"]] = torch.argmax(pred).item()  # gets it off the gpu
         return actions
