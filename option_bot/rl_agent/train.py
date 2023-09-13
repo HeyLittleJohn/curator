@@ -36,19 +36,32 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
         reward = 0
         while not env.end:
             actions = model.choose_action(state, game_positions)
-            next_state, game_positions, game_rewards = env.step(actions, current_state=state)
+            next_state, new_game_positions, game_rewards = env.step(actions, current_state=state)
 
             if not (
-                sum(actions.values()) == 0 and env.start_days_to_exp - env.days_to_exp == 0
+                sum(actions.values()) == 0 and env.start_days_to_exp - env.days_to_exp <= 1
             ):  # add to memory if it didn't close the position on the first day
-                memory.add_transition(transition(state, actions, game_rewards, next_state, env.end, game_positions))
+                for tkr in env.opt_tkrs:  # NOTE: may need to ignore closed positions
+                    memory.add_transition(
+                        transition(
+                            state.loc[state["options_ticker"] == tkr].copy(),
+                            actions[tkr],
+                            game_rewards[tkr][-1],
+                            next_state.loc[next_state["options_ticker"] == tkr].copy(),
+                            env.end,
+                            game_positions[tkr],
+                            new_game_positions[tkr],
+                        )
+                    )
             reward = calc_port_return_from_positions(game_positions)
+            # NOTE: "reward" here is only used to check progress, not for optimization
 
             if len(memory.replay_memory) >= BATCH_SIZE:
                 optimize_with_replay(model, memory, sgd, BATCH_SIZE)
                 print(f"Optimizing with Memory, memories: {len(memory.replay_memory)}")
 
             state = next_state
+            game_positions = new_game_positions
 
         print(f"Episode: {i}, Reward: {reward}, Memories: {len(memory.replay_memory)}")
         model.decay_epsilon()
@@ -65,14 +78,19 @@ def optimize_with_replay(model, memories, optimizer, batch_size):
     a = torch.tensor(batch.a).to(DEVICE)
     r = torch.tensor(batch.r).to(DEVICE)
     # calculates and gathers the values based on the states + actions with the current model
-    pred = model(batch.s)
+    pred = model(batch.s, memories_positions=batch.game_positions)
     values = torch.gather(pred, 1, a.reshape(batch_size, 1))  # gathers the value of the best action
 
     target_values = torch.zeros(batch_size, device=DEVICE)  # starting tensor for actual target values
-    non_terminal = [batch.s_prime[i] for i in range(batch_size) if not batch.end[i]]
-    non_terminal = torch.tensor(non_terminal, device=DEVICE)
+    non_terminal_s = []
+    non_terminal_pos = []
+    for i in range(batch_size):
+        if not batch.end[i]:
+            non_terminal_s.append(batch.s_prime[i])
+            non_terminal_pos.append(batch.game_positions_prime[i])
+
     mask = torch.tensor(~np.array(batch.end), device=DEVICE, dtype=torch.bool)
-    target_values[mask] = model(non_terminal).max(1)[0].detach()
+    target_values[mask] = model(non_terminal_s, memories_positions=non_terminal_pos).max(1)[0].detach()
     target_values = (target_values * model.gamma) + r
 
     loss_criteria = SmoothL1Loss()

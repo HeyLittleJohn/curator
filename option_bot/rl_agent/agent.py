@@ -1,9 +1,10 @@
 from collections import namedtuple, deque
+from typing import Optional
 import random
 
 import torch
 import numpy as np
-from pandas import DataFrame, get_dummies
+from pandas import DataFrame, get_dummies, concat
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -20,7 +21,7 @@ from rl_agent.constants import (
     FEATURE_COLS,
 )
 
-transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end", "game_positions"))
+transition = namedtuple("tran", ("s", "a", "r", "s_prime", "end", "game_positions", "game_positions_prime"))
 # s and s_prime are dataframes, while a, r, and game_postions are dicts with an opt_tkr as the key, end is bool
 
 
@@ -41,8 +42,10 @@ class DQN_Network(nn.Module):
         self.fc2 = nn.Linear(self.hidden_size_lg, self.hidden_size_sm)
         self.fc3 = nn.Linear(self.hidden_size_sm, actions_dim)
 
-    def forward(self, x):
-        if not type(x) == torch.Tensor:
+    def forward(self, x, memories_positions: Optional[tuple[Position]] = None):
+        if memories_positions:
+            x = self._feature_prep(memories_state=x, memories_position=memories_positions)
+        elif not type(x) == torch.Tensor:
             x = torch.tensor(x).to(DEVICE)
         x = F.leaky_relu(self.fc1(x))
         x = F.leaky_relu(self.fc2(x))
@@ -100,15 +103,41 @@ class DQN_Network(nn.Module):
             print("Episode:{}, recent average:{}".format(episode, recent))
         return done
 
-    def _feature_prep(self, state: DataFrame, game_position: Position) -> torch.Tensor:
-        """function to prepare the state for the model.
-        This converts position(long/short, open/closed) to a binary flag
-        It filters to just the feature columns
-        Finally, it converts the data to a tensor and sends it to the gpu
+    def _feature_prep(
+        self,
+        state: Optional[DataFrame] = None,
+        game_position: Optional[Position] = None,
+        memories_state: Optional[tuple[DataFrame]] = None,
+        memories_position: Optional[tuple[Position]] = None,
+    ) -> torch.Tensor:
         """
-        state["short"] = game_position.long_short
-        state["open"] = 1 if game_position.status == "open" else 0
-        state = state[FEATURE_COLS]
+        Prepare the state for the model.
+
+        Args:
+            state (Optional[DataFrame]): The current state of the game.
+            game_position (Optional[Position]): The current position of the game.
+            memories_state (Optional[tuple[DataFrame]]): The previous states of the game.
+            memories_position (Optional[tuple[Position]]): The previous positions of the game.
+
+        Returns:
+            torch.Tensor: The prepared state as a tensor.
+
+        This function converts the long/short and open/closed position to a binary flag.
+        It filters the state to just the feature columns.
+        Finally, it converts the data to a tensor and sends it to the GPU.
+        """
+        if not memories_state:
+            state["short"] = game_position.long_short
+            state["open"] = 1 if game_position.status == "open" else 0
+            state = state[FEATURE_COLS]
+
+        else:
+            position_df = DataFrame(memories_position)
+            state_df = concat(memories_state, ignore_index=True)
+            state_df["short"] = position_df["long_short"]
+            state_df["open"] = np.where(position_df["status"] == "open", 1, 0)
+            state = state_df[FEATURE_COLS]
+
         return state_to_tensor(state)
 
 
