@@ -31,7 +31,8 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
     memory = Memories(MEMORY_MAX)
 
     done = False
-    for i in range(EPISODES):
+    episode = 0
+    while episode <= EPISODES:
         state, game_positions = env.reset()
         reward = 0
         while not env.end:
@@ -58,15 +59,16 @@ async def train_agent(ticker: str, start_date: str, num_positions: int):
 
             if len(memory.replay_memory) >= BATCH_SIZE:
                 optimize_with_replay(model, memory, sgd, BATCH_SIZE)
-                print(f"Optimizing with Memory, memories: {len(memory.replay_memory)}")
 
             state = next_state
             game_positions = new_game_positions
 
-        print(f"Episode: {i}, Reward: {reward}, Memories: {len(memory.replay_memory)}")
-        model.decay_epsilon()
-        model.gamma_update(i)
-        done = model.check_progress(reward, i)
+        if len(memory.replay_memory) >= BATCH_SIZE:
+            print(f"Episode: {episode}, Reward: {reward}, Memories: {len(memory.replay_memory)}")
+            model.decay_epsilon()
+            model.gamma_update(episode)
+            done = model.check_progress(reward, episode)
+            episode += 1
         if done:
             break
     return model
