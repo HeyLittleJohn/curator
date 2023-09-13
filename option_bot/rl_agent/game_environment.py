@@ -1,6 +1,7 @@
 import asyncio
 from decimal import Decimal
 from datetime import datetime
+from math import log
 import random
 from dataclasses import dataclass
 
@@ -251,14 +252,14 @@ class GameEnvironment(object):
             self.days_to_exp == 0 or sum(actions.values()) == 0
         ):  # sum(actions) will = 0 when the last position is being closed
             self.end = True
-            return pd.DataFrame(), self.game_positions, self.game_rewards
+            return current_state, self.game_positions, self.game_rewards
 
         # retrieve data for the underlying stock for the next day
         self.game_current_date_ix += 1
         new_date = self.underlying_price_df["as_of_date"].iloc[self.game_current_date_ix]
         underlying_state = self.underlying_price_df.loc[self.underlying_price_df["as_of_date"] == new_date].to_dict(
             "records"
-        )
+        )[0]
 
         # calculate the new state, backfilling with options data from the previous state if no transactions on the new_date
         next_state = self.game_state.loc[self.game_state["as_of_date"] == new_date]
@@ -266,8 +267,8 @@ class GameEnvironment(object):
         next_state = dataframe_to_dict(df=next_state, index_key="options_ticker")
         for tkr in self.opt_tkrs:
             if tkr not in next_state:
-                next_state[tkr].update(current_state[tkr])
-                for k, v in underlying_state:
+                next_state[tkr] = current_state[tkr]
+                for k, v in underlying_state.items():
                     next_state[tkr][k] = v
                 next_state[tkr]["as_of_date"] = new_date  # should be redundant after underlying_state update
                 next_state[tkr]["opt_volume"] = 0
@@ -356,10 +357,11 @@ class GameEnvironment(object):
             .reset_index(drop=True)
         )
         if opt_tkrs_df.empty:
-            raise
+            print(f"No qualifying options for {start_date}, ix: {ix}")
+            raise EmptyInit(f"No qualifying options for this random position")
         opt_tkr_ix = []
         while len(opt_tkr_ix) < self.num_positions:
-            opt_ix = random.randint(0, opt_tkrs_df.shape[0])
+            opt_ix = random.randint(0, opt_tkrs_df.shape[0] - 1)
             if opt_ix not in opt_tkr_ix:
                 opt_tkr_ix.append(opt_ix)
 
