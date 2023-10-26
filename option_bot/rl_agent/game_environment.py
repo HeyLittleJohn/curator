@@ -193,7 +193,7 @@ class GameEnvironment(object):
                     long_short_positions,
                 ) = self._init_random_positions()
                 init = True
-                print(f"init count: {init_count}")
+                # print(f"init count: {init_count}")
             except EmptyInit:
                 init_count += 1
         self.game_state = (

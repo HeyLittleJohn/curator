@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import ConfigDict, BaseModel
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -51,8 +51,7 @@ class StockTickers(Base):
 
 
 class TickerModel(BaseModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
     ticker: str
     imported: bool
@@ -103,8 +102,7 @@ class OptionsTickers(Base):
 
 
 class OptionsTickerModel(BaseModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
     options_ticker: str
     underlying_ticker_id: int
@@ -137,8 +135,7 @@ class OptionsPricesRaw(Base):
 
 
 class PriceModel(BaseModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
     as_of_date: datetime
     close_price: Decimal
@@ -152,14 +149,12 @@ class PriceModel(BaseModel):
 
 
 class StockPriceModel(PriceModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
     ticker_id: int
 
 
 class OptionPriceModel(PriceModel):
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)
 
     option_ticker_id: int
