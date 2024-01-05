@@ -1,4 +1,4 @@
-# Option Bot
+# Little John
 
 This project contains the code to backfill data (from [Polygon](https://polygon.io), [Robinhood with the unofficial API](https://github.com/robinhood-unofficial/pyrh)), build a training environment for a trading agent, and then to train/test a DQN algorithm.
 
