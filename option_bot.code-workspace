@@ -21,7 +21,7 @@
 			"editor.formatOnSave": true,
 			"editor.insertSpaces": true,
 			"editor.codeActionsOnSave": {
-				"source.organizeImports": true
+				"source.organizeImports": "explicit"
 			},
 		},
 		"isort.importStrategy": "fromEnvironment",
