@@ -6,7 +6,7 @@
     "configurations": [
         {
             "name": "Data Pipeline-CLI orchestrator",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "~/option_bot/option_bot/data_pipeline/main.py",
             "console": "integratedTerminal",
@@ -19,7 +19,7 @@
         },
         {
             "name": "Generic Python Debug",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
@@ -27,7 +27,7 @@
         },
         {
             "name": "Polygon - Multiprocessing",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
@@ -41,7 +41,7 @@
         },
         {
             "name": "Training Agent",
-            "type": "python",
+            "type": "debugpy",
             "request": "launch",
             "program": "~/option_bot/option_bot/rl_agent/main.py",
             "console": "integratedTerminal",

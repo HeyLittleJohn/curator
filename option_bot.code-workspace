@@ -8,31 +8,31 @@
 		}
 	],
 	"settings": {
-		"python.formatting.provider": "black",
-		"python.formatting.blackArgs": [
-			"--line-length",
-			"120"
-		],
 		"[python]": {
-			"editor.defaultFormatter": null,
+			"editor.defaultFormatter": "charliermarsh.ruff",
 			"editor.formatOnSave": true,
 			"editor.insertSpaces": true,
 			"editor.codeActionsOnSave": {
-				"source.organizeImports": "explicit"
+				"source.organizeImports": "explicit",
+				"source.fixAll": "explicit",
 			},
 		},
-		"isort.importStrategy": "fromEnvironment",
 		"python.analysis.autoImportCompletions": true,
 		"python.analysis.typeCheckingMode": "off",
-		"python.linting.enabled": true,
-		"python.linting.pylintEnabled": false,
-		"python.linting.flake8Enabled": true,
-		"python.linting.mypyEnabled": false,
 		"python.testing.pytestEnabled": false,
 		"python.analysis.logLevel": "Error",
-		"python.analysis.importFormat": "relative",
+		"python.analysis.importFormat": "absolute",
 		"python.analysis.extraPaths": [
-			"/home/jhirschi/"
+			"/home/jhirschi/option_bot"
+		],
+		"python.languageServer": "Pylance",
+		"ruff.enable": true,
+		"ruff.configuration": "",
+		"ruff.lint.select": [
+			"ALL"
+		],
+		"ruff.path": [
+			"/home/jhirschi/.pyenv/versions/3.11.4/envs/option_bot/bin/ruff"
 		]
 	}
 }

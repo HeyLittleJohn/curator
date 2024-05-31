@@ -3,10 +3,13 @@ import asyncio
 from datetime import datetime
 
 from data_pipeline.exceptions import InvalidArgs
-from data_pipeline.orchestrator import import_all, remove_tickers_from_universe, import_partial
+from data_pipeline.orchestrator import (
+    import_all,
+    import_partial,
+    remove_tickers_from_universe,
+)
 
 from option_bot.utils import two_years_ago
-
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
@@ -28,7 +31,7 @@ DEFAULT_START_DATE = two_years_ago()
 
 
 async def remove_tickers(args):
-    tickers = list(args.tickers) if type(args.tickers) != list else args.tickers
+    tickers = list(args.tickers) if isinstance(args.tickers, list) else args.tickers
     await remove_tickers_from_universe(tickers)
 
 
@@ -113,7 +116,13 @@ def main():
         "--partial",
         type=int,
         nargs="+",
-        help="Specify which components to pull (for import or refresh). Options are: 1) stock metadata, 2) stock prices, 3) options contracts, 4) options prices",
+        help=(
+            "Components to pull (import/refresh):"
+            "1: stock metadata, "
+            "2: stock prices, "
+            "3: options contracts, "
+            "4: options prices"
+        ),
     )
 
     args = parser.parse_args()
@@ -122,7 +131,9 @@ def main():
 
     if args.remove:
         if args.all_tickers:
-            raise InvalidArgs("Can't --remove and --all-tickers at the same time. Remove explicit tickers via CLI")
+            raise InvalidArgs(
+                "Can't --remove and --all-tickers at the same time. Remove explicit tickers via CLI"
+            )
         asyncio.run(remove_tickers(args))
 
     # elif args.refresh:
