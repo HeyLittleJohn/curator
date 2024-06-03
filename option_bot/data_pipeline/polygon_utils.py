@@ -13,7 +13,7 @@ from aiohttp.client_exceptions import (
 from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
 
-from option_bot.proj_constants import log, POLYGON_API_KEY, POLYGON_BASE_URL, BASE_DOWNLOAD_PATH
+from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
     first_weekday_of_month,
     timestamp_now,
@@ -22,6 +22,7 @@ from option_bot.utils import (
 
 
 class Timespans(Enum):
+    second = "second"
     minute = "minute"
     hour = "hour"
     day = "day"
@@ -373,7 +374,13 @@ class HistoricalOptionsPrices(PolygonPaginator):
         ]
 
     async def download_data(
-        self, url: str, payload: dict, ticker: str, under_ticker: str, clean_ticker: str, session: ClientSession = None
+        self,
+        url: str,
+        payload: dict,
+        ticker: str,
+        under_ticker: str,
+        clean_ticker: str,
+        session: ClientSession = None,
     ):
         """Overwriting inherited download_data().
         This special case will add a specific identified to json filename from the payload dict.
