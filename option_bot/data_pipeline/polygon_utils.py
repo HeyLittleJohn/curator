@@ -58,6 +58,10 @@ class PolygonPaginator(ABC):
         """Clean the url to remove the base url"""
         return url.replace(POLYGON_BASE_URL, "")
 
+    def _clean_o_ticker(self, o_ticker: str) -> str:
+        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
+        return o_ticker.split(":")[1]
+
     def _download_path(self, path: str, file_name: str) -> str:
         """Returns the path and filename where API data will be downloaded
         Args:
@@ -347,10 +351,6 @@ class HistoricalOptionsPrices(PolygonPaginator):
             *self._determine_start_end_dates(expiration_date)
         )
 
-    def _clean_o_ticker(self, o_ticker: str) -> str:
-        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
-        return o_ticker.split(":")[1]
-
     def generate_request_args(
         self, args_data: list[tuple[str, str, datetime, str]]
     ) -> list[tuple[str, dict, str, str, str]]:
@@ -399,3 +399,18 @@ class HistoricalOptionsPrices(PolygonPaginator):
                 str(timestamp_now()),
             ),
         )
+
+
+class CurrentContractSnapshot(PolygonPaginator):
+    """Object to query Polygon API and retrieve current snapshot with greeks and IV. Not historical data"""
+
+    paginator_type = "ContractSnapshot"
+
+    def __init__(self, ticker: str, o_ticker: str):
+        self.ticker = ticker
+        self.o_ticker = o_ticker
+        super().__init__()
+
+    def _construct_url(self, ticker: str, o_ticker: str) -> str:
+        """function to construct the url for the snapshot endpoint"""
+        return f"/v3/snapshot/options/{ticker}/{o_ticker}"
