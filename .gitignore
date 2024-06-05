@@ -6,5 +6,4 @@
 data/*
 *data/
 .python-version
-.pgfiles/*
 .models
