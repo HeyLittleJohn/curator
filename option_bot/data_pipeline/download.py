@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 
 from aiomultiprocess import Pool
@@ -19,9 +18,8 @@ from data_pipeline.polygon_utils import (
 )
 from db_tools.queries import lookup_multi_ticker_ids
 
-from option_bot.proj_constants import log, POLYGON_BASE_URL
+from option_bot.proj_constants import POLYGON_BASE_URL, log
 from option_bot.utils import pool_kwarg_config
-
 
 planned_exceptions = (
     InvalidArgs,
@@ -110,13 +108,17 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def main():
-    # ticker_lookup = await import_all_ticker_metadata()
-    # ticker_lookup = {list(x.keys())[0]: list(x.values())[0] for x in ticker_lookup}
-    # await fetch_options_contracts(ticker_id_lookup=ticker_lookup)
-    await download_options_prices(["SPY"], all_=True)
+async def download_options_snapshots(o_tickers: list[tuple[str, int, datetime, str]]):
+    pass
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
-    # fetch_options_contracts(["SPY", "HOOD", "IVV"]))
+async def download_options_quotes(o_tickers: list[tuple[str, int, datetime, str]], months_hist: int = 24):
+    pass
+
+
+# async def main():
+# await download_options_prices(["SPY"], all_=True)
+
+
+# if __name__ == "__main__":
+#     asyncio.run(main())

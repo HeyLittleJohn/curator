@@ -6,6 +6,7 @@ from data_pipeline.path_runner import (
     PathRunner,
     StockPricesRunner,
 )
+from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import log
 from option_bot.utils import pool_kwarg_config
@@ -24,7 +25,9 @@ async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_inp
     # NOTE: uploader was originally a linear class. It can't handle concurrency. Need to change
     # uploader = Uploader(upload_func, expected_args, record_size)
     log.info(f"generating the path args to be uploaded -- {runner.runner_type}")
-    path_args = runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
+    path_args = (
+        runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
+    )
 
     log.info(
         f"uploading data to the database -- Starting Process Pool -- Upload Function: {runner.upload_func.__qualname__}"
@@ -68,3 +71,11 @@ async def upload_options_prices(o_tickers: dict):
     opt_price_runner = OptionsPricesRunner()
     pool_kwargs = {"childconcurrency": 3}
     await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
+
+
+async def upload_options_snapshots(o_tickers: dict[str, OptionTicker]):
+    pass
+
+
+async def upload_options_quotes(o_tickers: dict[str, OptionTicker]):
+    pass
