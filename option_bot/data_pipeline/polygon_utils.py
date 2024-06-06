@@ -182,11 +182,16 @@ class PolygonPaginator(ABC):
     def generate_request_args(self, args_data):
         """Requiring a generate_request_args() function to be overwritten by every inheriting class
 
+        This function builds the list of args that get passed to the `download_data()` function in the process pool. 
+
+        Look at the download_data inputs to see the reqs for this function's outputs
+
         Args:
             args_data: this function requires an iterable passed with the inputs used to generate url_args
 
         Returns:
-            url_args: list(tuple) of the (url, payload, and ticker_id) for each request"""
+            url_args: list(tuple) of the (url, payload, and ticker_id) for each request \
+                defined by each classes's download_data() function"""
 
 
 class StockMetaData(PolygonPaginator):
