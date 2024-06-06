@@ -406,11 +406,23 @@ class CurrentContractSnapshot(PolygonPaginator):
 
     paginator_type = "ContractSnapshot"
 
-    def __init__(self, ticker: str, o_ticker: str):
-        self.ticker = ticker
-        self.o_ticker = o_ticker
+    def __init__(self):
         super().__init__()
 
     def _construct_url(self, ticker: str, o_ticker: str) -> str:
         """function to construct the url for the snapshot endpoint"""
         return f"/v3/snapshot/options/{ticker}/{o_ticker}"
+
+    def generate_request_args(self, args_data):
+        return super().generate_request_args(args_data)
+    
+    async def download_data(self, url: str, )
+
+
+class HistoricalQuotes(PolygonPaginator):
+    """Object to query Polygon API and retrieve historical quotes for the options chain for a given ticker"""
+
+    paginator_type = "OptionsQuotes"
+
+    def __init__(self):
+        super().__init__()

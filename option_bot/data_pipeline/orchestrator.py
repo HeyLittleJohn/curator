@@ -3,12 +3,16 @@ from argparse import Namespace
 from data_pipeline.download import (
     download_options_contracts,
     download_options_prices,
+    download_options_quotes,
+    download_options_snapshots,
     download_stock_metadata,
     download_stock_prices,
 )
 from data_pipeline.uploader import (
     upload_options_contracts,
     upload_options_prices,
+    upload_options_quotes,
+    upload_options_snapshots,
     upload_stock_metadata,
     upload_stock_prices,
 )
@@ -52,12 +56,21 @@ async def import_all(args: Namespace):
     await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)
     await upload_options_contracts(ticker_lookup, months_hist=args.monthhist)
 
-    # Get o_ticker_lookup from db
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+    # Download and upload current snapshot of options contracts
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
+
+    await download_options_snapshots(list(o_tickers.values()))
+    await upload_options_snapshots(o_tickers)
 
     # Download and upload options prices data
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+
     await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
     await upload_options_prices(o_tickers)
+
+    # Download and upload quotes
+    await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
+    await upload_options_quotes(o_tickers)
 
 
 async def import_partial(args: Namespace):
