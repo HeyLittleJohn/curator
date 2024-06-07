@@ -160,7 +160,7 @@ class OptionPriceModel(PriceModel):
     option_ticker_id: int
 
 
-class OptionsSnapshotModel(BaseModel()):
+class OptionsSnapshotModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     options_ticker_id: int

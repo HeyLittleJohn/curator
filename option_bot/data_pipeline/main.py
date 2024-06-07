@@ -11,23 +11,9 @@ from data_pipeline.orchestrator import (
 
 from option_bot.utils import months_ago
 
-DEFAULT_DAYS = 500
-DEFAULT_MONTHS_HIST = 24
+DEFAULT_DAYS = 750
+DEFAULT_MONTHS_HIST = 36
 DEFAULT_START_DATE = months_ago()
-
-
-# async def add_ticker(args: Namespace):
-#     await add_tickers_to_universe(
-#         [
-#             {
-#                 "ticker": ticker,
-#                 "start_date": args.startdate,
-#                 "end_date": args.enddate,
-#                 "months_hist": args.monthhist,
-#             }
-#             for ticker in args.tickers
-#         ]
-#     )
 
 
 async def remove_tickers(args):
