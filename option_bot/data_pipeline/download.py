@@ -10,6 +10,7 @@ from data_pipeline.exceptions import (
     ProjTimeoutError,
 )
 from data_pipeline.polygon_utils import (
+    CurrentContractSnapshot,
     HistoricalOptionsPrices,
     HistoricalStockPrices,
     OptionsContracts,
@@ -17,6 +18,7 @@ from data_pipeline.polygon_utils import (
     StockMetaData,
 )
 from db_tools.queries import lookup_multi_ticker_ids
+from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import POLYGON_BASE_URL, log
 from option_bot.utils import pool_kwarg_config
@@ -108,12 +110,27 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_snapshots(o_tickers: list[tuple[str, int, datetime, str]]):
-    pass
+async def download_options_snapshots(o_tickers: list[OptionTicker]):
+    """This function downloads options snapshots from polygon and stores it as local json.
+
+    Args:
+        o_tickers: list of OptionTicker tuples
+    """
+    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    op_snapshots = CurrentContractSnapshot()
+    await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_quotes(o_tickers: list[tuple[str, int, datetime, str]], months_hist: int = 24):
-    pass
+async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: int = 24):
+    """This function downloads options quotes from polygon and stores it as local json.
+
+    Args:
+        o_tickers: list of OptionTicker tuples
+        month_hist: number of months of history to pull
+    """
+    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    op_quotes = HistoricalOptionsPrices(months_hist=months_hist)
+    await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
 # async def main():
