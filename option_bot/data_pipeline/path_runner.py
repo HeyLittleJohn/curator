@@ -35,7 +35,7 @@ class PathRunner(ABC):
         # NOTE: this lambda may be unnecessary. Does it slow it down?
         return directory_path + "/" + f[0]
 
-    def _make_batch_generator(self, clean_data: list[dict]) -> Generator[dict]:
+    def _make_batch_generator(self, clean_data: list[dict]) -> Generator[list[dict], None, None]:
         if self.batch_size == 0:
             self.record_size = len(clean_data[0].keys())
             self.batch_size = POSTGRES_BATCH_MAX // self.record_size

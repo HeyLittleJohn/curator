@@ -19,15 +19,23 @@ app = typer.Typer(
 )
 
 
+def validate_partial(ctx, param, value: list[int]):
+    if not all(1 <= i <= 6 for i in value):
+        raise typer.BadParameter("All values must be between 1 and 6")
+    return value
+
+
 @app.command(name="add")
 def add(
     tickers: list[str] = typer.Argument(
-        default=["SPY"], help="Underlying tickers to add to the data universe or to include in the pull"
+        help="Underlying tickers to add to the data universe or to include in the pull"
     ),
     all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
     partial: list[int] = typer.Option(
-        None,
+        [5],
+        "--partial",
         "-p",
+        callback=validate_partial,
         help=(
             "Components to pull (import/refresh):"
             " 1: stock metadata,"
@@ -50,6 +58,7 @@ def add(
     ),
     months_hist: int = typer.Option(
         DEFAULT_MONTHS_HIST,
+        "--months-hist",
         "-m",
         help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
     ),
@@ -65,12 +74,14 @@ def add(
 @app.command(name="refresh")
 def refresh(
     tickers: list[str] = typer.Argument(
-        default=["SPY"], help="Underlying tickers to add to the data universe or to include in the pull"
+        help="Underlying tickers to add to the data universe or to include in the pull"
     ),
     all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
     partial: list[int] = typer.Option(
-        None,
+        [5],
+        "--partial",
         "-p",
+        callback=validate_partial,
         help=(
             "Components to pull (import/refresh):"
             " 1: stock metadata,"
@@ -93,6 +104,7 @@ def refresh(
     ),
     months_hist: int = typer.Option(
         DEFAULT_MONTHS_HIST,
+        "--months-hist",
         "-m",
         help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
     ),
@@ -103,9 +115,7 @@ def refresh(
 
 @app.command(name="remove")
 def remove(
-    tickers: list[str] = typer.Argument(
-        default=["SPY"], help="Underlying tickers to remove from the data universe"
-    ),
+    tickers: list[str] = typer.Argument(help="Underlying tickers to remove from the data universe"),
 ):
     typer.echo(f"Removing tickers: {tickers}")
     asyncio.run(remove_tickers(tickers))
