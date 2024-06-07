@@ -3,12 +3,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import ConfigDict, BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
+    DECIMAL,
     BigInteger,
     Boolean,
     Column,
-    DECIMAL,
     Enum,
     ForeignKey,
     Integer,
@@ -18,7 +18,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import expression, func
 from sqlalchemy.types import Date, DateTime
-
 
 Base = declarative_base()
 
@@ -158,3 +157,32 @@ class OptionPriceModel(PriceModel):
     model_config = ConfigDict(from_attributes=True)
 
     option_ticker_id: int
+
+
+class OptionSnapshotModel(BaseModel()):
+    model_config = ConfigDict(from_attributes=True)
+
+    options_ticker_id: int
+    as_of_date: datetime
+    implied_volatility: Decimal
+    delta: Decimal
+    gamma: Decimal
+    theta: Decimal
+    vega: Decimal
+    open_interest: int
+    id: Optional[int]
+
+
+class OptionSnapshot(Base):
+    __tablename__ = "option_snapshots"
+    __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_price"),)
+
+    id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
+    options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
+    as_of_date = Column(DateTime, nullable=False)
+    implied_volatility = Column(DECIMAL(24, 20), nullable=False)
+    delta = Column(DECIMAL(24, 20), nullable=False)
+    gamma = Column(DECIMAL(24, 20), nullable=False)
+    theta = Column(DECIMAL(24, 20), nullable=False)
+    vega = Column(DECIMAL(24, 20), nullable=False)
+    open_interest = Column(BigInteger, nullable=False)

@@ -1,11 +1,18 @@
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Awaitable
+from typing import Any, Generator
 
-from db_tools.queries import update_options_prices, update_options_tickers, update_stock_metadata, update_stock_prices
+from db_tools.queries import (
+    update_options_prices,
+    update_options_snapshot,
+    update_options_tickers,
+    update_stock_metadata,
+    update_stock_prices,
+)
+from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import log, POSTGRES_BATCH_MAX, BASE_DOWNLOAD_PATH
+from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
 from option_bot.utils import read_data_from_file, timestamp_to_datetime, two_years_ago
 
 
@@ -28,7 +35,7 @@ class PathRunner(ABC):
         # NOTE: this lambda may be unnecessary. Does it slow it down?
         return directory_path + "/" + f[0]
 
-    def _make_batch_generator(self, clean_data: list[dict]) -> list[dict]:
+    def _make_batch_generator(self, clean_data: list[dict]) -> Generator[dict]:
         if self.batch_size == 0:
             self.record_size = len(clean_data[0].keys())
             self.batch_size = POSTGRES_BATCH_MAX // self.record_size
@@ -111,7 +118,10 @@ class MetaDataRunner(PathRunner):
         if self.all_:
             return [(self._determine_most_recent_file(self.base_directory),)]
         else:
-            return [(self._determine_most_recent_file(f"{self.base_directory}/{ticker}"),) for ticker in self.tickers]
+            return [
+                (self._determine_most_recent_file(f"{self.base_directory}/{ticker}"),)
+                for ticker in self.tickers
+            ]
 
     def clean_data(self, results: list[dict], ticker_data: tuple = ()):
         clean_results = []
@@ -314,7 +324,7 @@ class OptionsPricesRunner(PathRunner):
             path_args.append((self._determine_most_recent_file(temp_path), o_tickers_lookup[o_ticker]))
         return path_args
 
-    def clean_data(self, results: list[dict], o_ticker: tuple[str, int, str, str]) -> list[dict]:
+    def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
         """This function will clean the data and return a list of dicts to be uploaded to the db
 
         Args:
@@ -333,7 +343,7 @@ class OptionsPricesRunner(PathRunner):
             "t": "as_of_date",
             "n": "number_of_transactions",
         }
-        if type(results) is list:
+        if isinstance(results, list):
             for page in results:
                 if page.get("results"):
                     for record in page.get("results"):
@@ -342,3 +352,20 @@ class OptionsPricesRunner(PathRunner):
                         t["options_ticker_id"] = o_ticker.id
                         clean_results.append(t)
         return clean_results
+
+
+class OptionsSnapshotRunner(OptionsPricesRunner):
+    """Runner for options snapshot data"""
+
+    runner_type = "OptionsSnapshots"
+    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsSnapshots"
+
+    def __init__(self):
+        super().__init__()
+
+    async def upload_func(self, data: list[dict]):
+        return await update_options_snapshot(data)
+
+
+class OptionsQuoteRunner(PathRunner):
+    pass
