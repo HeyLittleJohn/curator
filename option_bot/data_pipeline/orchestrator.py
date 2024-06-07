@@ -1,9 +1,8 @@
-from argparse import Namespace
+from datetime import datetime
 
 from data_pipeline.download import (
     download_options_contracts,
     download_options_prices,
-    download_options_quotes,
     download_options_snapshots,
     download_stock_metadata,
     download_stock_prices,
@@ -11,7 +10,6 @@ from data_pipeline.download import (
 from data_pipeline.uploader import (
     upload_options_contracts,
     upload_options_prices,
-    upload_options_quotes,
     upload_options_snapshots,
     upload_stock_metadata,
     upload_stock_prices,
@@ -22,7 +20,7 @@ from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
 from option_bot.proj_constants import log
 
 
-async def import_all(args: Namespace):
+async def import_all(tickers: list, start_date: datetime, end_date: datetime, months_hist: int):
     """this is THE trigger function. It will do the following:
 
     1. Download all metadata and prices for both stocks and options
@@ -33,74 +31,76 @@ async def import_all(args: Namespace):
 
     May add toggle if "refreshing" the data or pulling everything fresh.
     As of now, refreshing won't change anything. Pull all history everytime.
-
-
-    Args:
-        tickers: list of tickers to import
-        all_: bool (default=True) indicating whether to retrieve data for all tickers
     """
     # Download and upload metadata
-    tickers = args.tickers if args.tickers else []
-    all_ = True if args.add_all else False
+
     await download_stock_metadata(tickers=[], all_=True)
     await upload_stock_metadata(tickers=[], all_=True)
 
     # Get ticker_id_lookup from db
-    ticker_lookup = await pull_tickers_from_db(tickers, all_)
+    ticker_lookup = await pull_tickers_from_db(tickers, all_=True)
 
     # Download and upload underlying stock prices
-    await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
+    await download_stock_prices(ticker_lookup, start_date, end_date)
     await upload_stock_prices(ticker_lookup)
 
     # Download and upload options contract data
-    await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)
-    await upload_options_contracts(ticker_lookup, months_hist=args.monthhist)
+    await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=months_hist)
+    await upload_options_contracts(ticker_lookup, months_hist=months_hist)
 
     # Download and upload current snapshot of options contracts
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=True, unexpired=True)
 
     await download_options_snapshots(list(o_tickers.values()))
     await upload_options_snapshots(o_tickers)
 
     # Download and upload options prices data
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=True)
 
-    await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
+    await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=months_hist)
     await upload_options_prices(o_tickers)
 
     # Download and upload quotes
-    await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
-    await upload_options_quotes(o_tickers)
+    # await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
+    # await upload_options_quotes(o_tickers)
 
 
-async def import_partial(args: Namespace):
-    """This will download, clean, and upload data for the components specified.
+async def import_partial(
+    partial: list[int], tickers: list, start_date: datetime, end_date: datetime, months_hist: int
+):
+    """This will download, clean, and upload data for the components specified in `partial`
     This is meant to be used on an adhoc basis to fill in data gaps or backfill changes
     """
-    tickers = args.tickers if args.tickers else []
-    all_ = True if args.all_tickers else False
+
+    all_ = True if len(tickers) == 0 else False
     ticker_lookup = None
     o_tickers = None
 
-    if 1 in args.partial:
-        await download_stock_metadata(tickers=[], all_=True)
-        await upload_stock_metadata(tickers=[], all_=True)
+    if 1 in partial:  # stock metadata
+        await download_stock_metadata(tickers=tickers, all_=all_)
+        await upload_stock_metadata(tickers=tickers, all_=all_)
 
-    if 2 in args.partial:
+    if 2 in partial:  # stock prices
         ticker_lookup = await pull_tickers_from_db(tickers, all_)
-        # await download_stock_prices(ticker_lookup, args.startdate, args.enddate)
+        await download_stock_prices(ticker_lookup, start_date, end_date)
         await upload_stock_prices(ticker_lookup)
 
-    if 3 in args.partial:
+    if 3 in partial:  # options contracts
         if not ticker_lookup:
             ticker_lookup = await pull_tickers_from_db(tickers, all_)
-        await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=args.monthhist)
-        await upload_options_contracts(ticker_lookup, months_hist=args.monthhist)
+        await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=months_hist)
+        await upload_options_contracts(ticker_lookup, months_hist=months_hist)
 
-    if 4 in args.partial:
+    if 4 in partial:  # options prices
         o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
-        await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=args.monthhist)
+        await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=months_hist)
         await upload_options_prices(o_tickers)
+
+    if 5 in partial:  # snapshots
+        if not o_tickers:
+            o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
+        await download_options_snapshots(list(o_tickers.values()))
+        await upload_options_snapshots(o_tickers)
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
