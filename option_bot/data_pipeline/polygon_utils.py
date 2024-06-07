@@ -12,6 +12,7 @@ from aiohttp.client_exceptions import (
 )
 from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
+from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
@@ -182,7 +183,7 @@ class PolygonPaginator(ABC):
     def generate_request_args(self, args_data):
         """Requiring a generate_request_args() function to be overwritten by every inheriting class
 
-        This function builds the list of args that get passed to the `download_data()` function in the process pool. 
+        This function builds the list of args that get passed to the `download_data()` function in the process pool.
 
         Look at the download_data inputs to see the reqs for this function's outputs
 
@@ -203,6 +204,7 @@ class StockMetaData(PolygonPaginator):
     def __init__(self, tickers: list[str], all_: bool):
         self.tickers = tickers
         self.all_ = all_
+        self.url_base = "/v3/reference/tickers"
         self.payload = {"active": "true", "market": "stocks", "limit": 1000}
         super().__init__()
 
@@ -211,12 +213,18 @@ class StockMetaData(PolygonPaginator):
 
         Returns:
         urls: list(tuple), each tuple contains the url, the payload for the request and an empty string"""
-        url_base = "/v3/reference/tickers"
         if not self.all_:
-            urls = [(url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers]
+            urls = [
+                (self.url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers
+            ]
         else:
-            urls = [(url_base, self.payload, "")]
+            urls = [(self.url_base, self.payload, "")]
         return urls
+
+
+# class StockDetails(StockMetaData):
+# NOTE: this class will hit the same endpoint but will add `/{ticker}?{date}` for historical data
+# add if then logic to exception handling to check the ticker events endpoint if ticker not found
 
 
 class HistoricalStockPrices(PolygonPaginator):
@@ -356,9 +364,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
             *self._determine_start_end_dates(expiration_date)
         )
 
-    def generate_request_args(
-        self, args_data: list[tuple[str, str, datetime, str]]
-    ) -> list[tuple[str, dict, str, str, str]]:
+    def generate_request_args(self, args_data: list[OptionTicker]) -> list[tuple[str, dict, str, str, str]]:
         """Generate the urls to query the options prices endpoint.
 
         Args:
@@ -382,7 +388,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         self,
         url: str,
         payload: dict,
-        ticker: str,
+        o_ticker: str,
         under_ticker: str,
         clean_ticker: str,
         session: ClientSession = None,
@@ -393,10 +399,10 @@ class HistoricalOptionsPrices(PolygonPaginator):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        log.info(f"Downloading price data for {ticker}")
-        log.debug(f"Downloading data for {ticker} with url: {url} and payload: {payload}")
+        log.info(f"Downloading price data for {o_ticker}")
+        log.debug(f"Downloading data for {o_ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
-        log.info(f"Writing price data for {ticker} to file")
+        log.info(f"Writing price data for {o_ticker} to file")
         write_api_data_to_file(
             results,
             *self._download_path(
@@ -414,14 +420,53 @@ class CurrentContractSnapshot(PolygonPaginator):
     def __init__(self):
         super().__init__()
 
-    def _construct_url(self, ticker: str, o_ticker: str) -> str:
+    def _construct_url(self, under_ticker: str, o_ticker: str) -> str:
         """function to construct the url for the snapshot endpoint"""
-        return f"/v3/snapshot/options/{ticker}/{o_ticker}"
+        return f"/v3/snapshot/options/{under_ticker}/{o_ticker}"
 
-    def generate_request_args(self, args_data):
-        return super().generate_request_args(args_data)
-    
-    async def download_data(self, url: str, )
+    def generate_request_args(self, args_data: list[OptionTicker]):
+        """Generate the urls to query the options prices endpoint.
+        Inputs should be OptionTickers for unexpired contracts.
+
+        Args:
+            args_data: list of named tuples. OptionTicker(options_ticker, id, expiration_date, underlying_ticker)
+
+        Returns:
+            url_args: list(tuple) of the (url, underlying ticker, clean ticker) for each request"""
+        return [
+            (
+                self._construct_url(o_ticker.underlying_ticker, o_ticker.o_ticker),
+                o_ticker.o_ticker,
+                o_ticker.underlying_ticker,
+                self._clean_o_ticker(o_ticker.o_ticker),
+            )
+            for o_ticker in args_data
+        ]
+
+    async def download_data(
+        self,
+        url: str,
+        o_ticker: str,
+        under_ticker: str,
+        clean_ticker: str,
+        session: ClientSession = None,
+    ):
+        """Overwriting inherited download_data().
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
+        """
+        log.info(f"Downloading snapshot/greek data for {o_ticker}")
+        log.debug(f"Downloading data for {o_ticker} with url: {url} and no payload")
+        results = await self._query_all(session, url)
+        log.info(f"Writing snapshot/greek data for {o_ticker} to file")
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                under_ticker + "/" + clean_ticker,
+                str(timestamp_now()),
+            ),
+        )
 
 
 class HistoricalQuotes(PolygonPaginator):
