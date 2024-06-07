@@ -10,6 +10,7 @@ from db_tools.schemas import (
     StockPricesRaw,
     StockTickers,
     TickerModel,
+    OptionSnapshotModel,
 )
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -204,6 +205,12 @@ async def update_options_prices(
         ),
     )
     return await session.execute(stmt)
+
+@Session
+async def update_options_snapshot(
+    session: AsyncSession,
+    data: list[OptionSnapshotModel]
+)
 
 
 @Session

@@ -3,13 +3,17 @@ from data_pipeline.path_runner import (
     MetaDataRunner,
     OptionsContractsRunner,
     OptionsPricesRunner,
+    OptionsQuoteRunner,
+    OptionsSnapshotRunner,
     PathRunner,
     StockPricesRunner,
 )
-from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import log
 from option_bot.utils import pool_kwarg_config
+
+# TODO: all the "upload_xyz() function below can be abstracted to accept
+# a runner, input_args, and pool_kwargs for the etl_pool_uploader"
 
 
 async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_input_args: list[str] = []):
@@ -22,8 +26,7 @@ async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_inp
         These input args will likely be a list of tickers or something similar.
 
     """
-    # NOTE: uploader was originally a linear class. It can't handle concurrency. Need to change
-    # uploader = Uploader(upload_func, expected_args, record_size)
+
     log.info(f"generating the path args to be uploaded -- {runner.runner_type}")
     path_args = (
         runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
@@ -73,9 +76,13 @@ async def upload_options_prices(o_tickers: dict):
     await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_snapshots(o_tickers: dict[str, OptionTicker]):
-    pass
+async def upload_options_snapshots(o_tickers: dict):
+    snap_runner = OptionsSnapshotRunner()
+    pool_kwargs = {"childconcurrency": 3}
+    await etl_pool_uploader(snap_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_quotes(o_tickers: dict[str, OptionTicker]):
-    pass
+async def upload_options_quotes(o_tickers: dict):
+    quote_runner = OptionsQuoteRunner()
+    pool_kwargs = {"childconcurrency": 3}
+    await etl_pool_uploader(quote_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
