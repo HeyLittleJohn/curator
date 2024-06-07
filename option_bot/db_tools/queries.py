@@ -4,13 +4,14 @@ from data_pipeline.exceptions import InvalidArgs
 from db_tools.schemas import (
     OptionPriceModel,
     OptionsPricesRaw,
+    OptionsSnapshot,
+    OptionsSnapshotModel,
     OptionsTickerModel,
     OptionsTickers,
     StockPriceModel,
     StockPricesRaw,
     StockTickers,
     TickerModel,
-    OptionSnapshotModel,
 )
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -166,7 +167,7 @@ async def update_stock_prices(
 
 
 @Session
-async def update_options_tickers(session: AsyncSession, data: list[dict]):
+async def update_options_tickers(session: AsyncSession, data: list[OptionsTickerModel]):
     stmt = insert(OptionsTickers).values(data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["options_ticker"],
@@ -206,11 +207,24 @@ async def update_options_prices(
     )
     return await session.execute(stmt)
 
+
 @Session
-async def update_options_snapshot(
-    session: AsyncSession,
-    data: list[OptionSnapshotModel]
-)
+async def update_options_snapshot(session: AsyncSession, data: list[OptionsSnapshotModel]):
+    stmt = insert(OptionsSnapshot).values(data)
+    stmt.on_conflict_do_update(
+        constraint="uq_options_snapshot",
+        set_=dict(
+            as_of_date=stmt.excluded.as_of_date,
+            implied_volatility=stmt.excluded.implied_volatility,
+            delta=stmt.excluded.delta,
+            gamma=stmt.excluded.gamma,
+            theta=stmt.excluded.theta,
+            vega=stmt.excluded.vega,
+            open_interest=stmt.excluded.open_interest,
+            is_overwritten=True,
+        ),
+    )
+    return await session.execute(stmt)
 
 
 @Session

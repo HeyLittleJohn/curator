@@ -9,11 +9,11 @@ from data_pipeline.orchestrator import (
     remove_tickers_from_universe,
 )
 
-from option_bot.utils import two_years_ago
+from option_bot.utils import months_ago
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
-DEFAULT_START_DATE = two_years_ago()
+DEFAULT_START_DATE = months_ago()
 
 
 # async def add_ticker(args: Namespace):

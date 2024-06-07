@@ -13,7 +13,7 @@ from db_tools.queries import (
 from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
-from option_bot.utils import read_data_from_file, timestamp_to_datetime, two_years_ago
+from option_bot.utils import months_ago, read_data_from_file, timestamp_now, timestamp_to_datetime
 
 
 class PathRunner(ABC):
@@ -76,7 +76,7 @@ class PathRunner(ABC):
     async def upload(self, file_path: str, ticker_data: tuple = ()):
         """This function will read the file, clean the data, and upload to the database
 
-        Every self.upload_func needs to require args in this format:
+        Every self.upload_func requires args in this format:
             upload_func(data: list[dict])
 
         Args:
@@ -218,7 +218,7 @@ class OptionsContractsRunner(PathRunner):
         if date_str:
             date = datetime.strptime(date_str, "%Y-%m-%d")
         else:
-            date = two_years_ago()
+            date = months_ago()
         return date.strftime("%Y-%m-01")
 
     async def upload_func(self, data: list[dict]):
@@ -297,15 +297,15 @@ class OptionsPricesRunner(PathRunner):
     async def upload_func(self, data: list[dict]):
         return await update_options_prices(data)
 
-    def generate_path_args(self, o_tickers_lookup: dict) -> list[tuple[str, tuple[str, int, str, str]]]:
+    def generate_path_args(self, o_tickers_lookup: dict[str, OptionTicker]) -> list[tuple[str, OptionTicker]]:
         """This function will generate the arguments to be passed to the pool. Requires the o_tickers_lookup.
 
         Args:
-            o_tickers_lookup (dict): dict(o_ticker: OptionsTicker namedtuple)
+            o_tickers_lookup (dict): dict(o_ticker: OptionTicker namedtuple)
            (OptionTicker namedtuple containing o_ticker, id, expiration_date, underlying_ticker).
 
         Returns:
-            path_args
+            path_args: list of tuples containing the file path and the OptionTicker namedtuple to be passed to the pool.
         """
         if not os.path.exists(self.base_directory):
             log.warning("no options contracts found. Download options contracts first!")
@@ -362,6 +362,28 @@ class OptionsSnapshotRunner(OptionsPricesRunner):
 
     def __init__(self):
         super().__init__()
+
+    def clean_data(self, results: dict, o_ticker: OptionTicker) -> list[dict]:
+        """This function will clean the data and return a list of dicts to be uploaded to the db
+
+        Args:
+            results dict: raw snapshot data from the file
+            o_ticker (tuple[str, int, str, str]):
+            OptionTicker named tuple containing o_ticker, id, expiration_date, underlying_ticker.
+        """
+        clean_results = {}
+        if isinstance(results, dict) and results.get("results"):
+            clean_results["option_ticker_id"] = o_ticker.id
+            clean_results["as_of_date"] = timestamp_to_datetime(
+                results.get("last_quote", {}).get("last_updated", timestamp_now())
+            )
+            clean_results["implied_volatility"] = results.get("implied_volatility", 0.0)
+            clean_results["delta"] = results.get("greeks", {}).get("delta", 0.0)
+            clean_results["gamma"] = results.get("greeks", {}).get("gamma", 0.0)
+            clean_results["theta"] = results.get("greeks", {}).get("theta", 0.0)
+            clean_results["vega"] = results.get("greeks", {}).get("vega", 0.0)
+            clean_results["open_interest"] = results.get("open_interest", 0)
+        return [clean_results]
 
     async def upload_func(self, data: list[dict]):
         return await update_options_snapshot(data)

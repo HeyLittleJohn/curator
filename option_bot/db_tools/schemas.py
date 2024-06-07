@@ -1,3 +1,4 @@
+import datetime as dt
 import enum
 from datetime import date, datetime
 from decimal import Decimal
@@ -46,7 +47,7 @@ class StockTickers(Base):
     currency_name = Column(String)
     cik = Column(String)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
 
 
 class TickerModel(BaseModel):
@@ -82,7 +83,7 @@ class StockPricesRaw(Base):
     number_of_transactions = Column(Integer)
     otc = Column(Boolean)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
@@ -129,7 +130,7 @@ class OptionsPricesRaw(Base):
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
@@ -159,7 +160,7 @@ class OptionPriceModel(PriceModel):
     option_ticker_id: int
 
 
-class OptionSnapshotModel(BaseModel()):
+class OptionsSnapshotModel(BaseModel()):
     model_config = ConfigDict(from_attributes=True)
 
     options_ticker_id: int
@@ -173,9 +174,9 @@ class OptionSnapshotModel(BaseModel()):
     id: Optional[int]
 
 
-class OptionSnapshot(Base):
-    __tablename__ = "option_snapshots"
-    __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_price"),)
+class OptionsSnapshot(Base):
+    __tablename__ = "options_snapshots"
+    __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_snapshot"),)
 
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
     options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
@@ -186,3 +187,4 @@ class OptionSnapshot(Base):
     theta = Column(DECIMAL(24, 20), nullable=False)
     vega = Column(DECIMAL(24, 20), nullable=False)
     open_interest = Column(BigInteger, nullable=False)
+    is_overwritten = Column(Boolean, server_default=expression.false())

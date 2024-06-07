@@ -1,3 +1,5 @@
+from typing import Any
+
 from aiomultiprocess import Pool
 from data_pipeline.path_runner import (
     MetaDataRunner,
@@ -16,7 +18,7 @@ from option_bot.utils import pool_kwarg_config
 # a runner, input_args, and pool_kwargs for the etl_pool_uploader"
 
 
-async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_input_args: list[str] = []):
+async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_input_args: list[Any] = []):
     """This function will create a process pool to concurrently upload the downloaded json to the db
 
     Args:
