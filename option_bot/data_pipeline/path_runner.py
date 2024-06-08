@@ -21,11 +21,11 @@ class PathRunner(ABC):
     This class will be inherited by the specific runners for each data type"""
 
     runner_type = "Generic"
-    base_directory = BASE_DOWNLOAD_PATH
 
     def __init__(self):
         self.record_size = 0
         self.batch_size = 0
+        self.base_directory = f"{BASE_DOWNLOAD_PATH}/{self.runner_type}"
 
     def _determine_most_recent_file(self, directory_path: str) -> str:
         """This function will determine the most recent file in a directory based on the file name.
@@ -94,7 +94,6 @@ class MetaDataRunner(PathRunner):
     """Runner for stock metadata local data"""
 
     runner_type = "StockMetaData"
-    base_directory = f"{BASE_DOWNLOAD_PATH}/StockMetaData"
 
     def __init__(self, tickers: list[str] = [], all_: bool = False):
         self.all_ = all_
@@ -147,7 +146,6 @@ class StockPricesRunner(PathRunner):
     """Runner for stock prices local data"""
 
     runner_type = "StockPrices"
-    base_directory = f"{BASE_DOWNLOAD_PATH}/StockPrices"
 
     def __init__(self):
         super().__init__()
@@ -199,7 +197,6 @@ class OptionsContractsRunner(PathRunner):
     """Runner for options contracts local data"""
 
     runner_type = "OptionsContracts"
-    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsContracts"
 
     def __init__(self, months_hist: int, hist_limit_date: str = ""):
         self.months_hist = months_hist
@@ -281,7 +278,6 @@ class OptionsPricesRunner(PathRunner):
     """Runner for options prices local data"""
 
     runner_type = "OptionsPrices"
-    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsPrices"
 
     def __init__(self):
         super().__init__()
@@ -357,26 +353,27 @@ class OptionsPricesRunner(PathRunner):
 class OptionsSnapshotRunner(OptionsPricesRunner):
     """Runner for options snapshot data"""
 
-    runner_type = "OptionsSnapshots"
-    base_directory = f"{BASE_DOWNLOAD_PATH}/OptionsSnapshots"
+    runner_type = "ContractSnapshot"
 
     def __init__(self):
         super().__init__()
 
-    def clean_data(self, results: dict, o_ticker: OptionTicker) -> list[dict]:
+    def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
         """This function will clean the data and return a list of dicts to be uploaded to the db
 
         Args:
-            results dict: raw snapshot data from the file
+            results list[dict]: raw snapshot data from the file
             o_ticker (tuple[str, int, str, str]):
             OptionTicker named tuple containing o_ticker, id, expiration_date, underlying_ticker.
         """
+        results = results[0]
         clean_results = {}
         if isinstance(results, dict) and results.get("results"):
-            clean_results["option_ticker_id"] = o_ticker.id
+            results = results.get("results")
+            clean_results["options_ticker_id"] = o_ticker.id
             clean_results["as_of_date"] = timestamp_to_datetime(
-                results.get("last_quote", {}).get("last_updated", timestamp_now())
-            )
+                results.get("last_quote", {}).get("last_updated", timestamp_now() * 1000000) / 1000000,
+            ).date()
             clean_results["implied_volatility"] = results.get("implied_volatility", 0.0)
             clean_results["delta"] = results.get("greeks", {}).get("delta", 0.0)
             clean_results["gamma"] = results.get("greeks", {}).get("gamma", 0.0)
