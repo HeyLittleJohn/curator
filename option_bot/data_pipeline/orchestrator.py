@@ -99,7 +99,7 @@ async def import_partial(
     if 5 in partial:  # snapshots
         if not o_tickers:
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
-        # await download_options_snapshots(list(o_tickers.values()))
+        await download_options_snapshots(list(o_tickers.values()))
         await upload_options_snapshots(o_tickers)
 
 
