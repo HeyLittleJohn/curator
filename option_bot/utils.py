@@ -8,8 +8,7 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.proj_constants import async_session_maker, log, POOL_DEFAULT_KWARGS, o_cal, e_cal
-
+from option_bot.proj_constants import POOL_DEFAULT_KWARGS, async_session_maker, e_cal, log, o_cal
 
 _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
 
@@ -26,8 +25,8 @@ def string_to_date(date_string: str, date_format: str = "%Y-%m-%d") -> datetime.
     return datetime.strptime(date_string, date_format).date()
 
 
-def two_years_ago():
-    return datetime.now() - relativedelta(months=24)
+def months_ago(months=24) -> datetime:
+    return datetime.now() - relativedelta(months=months)
 
 
 def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
@@ -102,7 +101,6 @@ def Session(func):
             if session_passed is True:
                 func_return = await func(*args, **kwargs)
             else:
-
                 session: AsyncSession = _async_session_maker()
                 try:
                     func_return = await _session_work(session, args, kwargs)
@@ -125,6 +123,7 @@ def Session(func):
 
 def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
     """Write api data to a json file"""
+
     os.makedirs(file_path, exist_ok=True)
     with open(file_path + file_name, "w") as f:
         json.dump(data, f)

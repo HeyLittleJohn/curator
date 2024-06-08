@@ -1,19 +1,23 @@
+from datetime import datetime
+
 from data_pipeline.exceptions import InvalidArgs
 from db_tools.schemas import (
+    OptionPriceModel,
     OptionsPricesRaw,
+    OptionsSnapshot,
+    OptionsSnapshotModel,
     OptionsTickerModel,
     OptionsTickers,
+    StockPriceModel,
     StockPricesRaw,
     StockTickers,
     TickerModel,
-    StockPriceModel,
-    OptionPriceModel,
 )
 from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.utils import Session, two_years_ago
+from option_bot.utils import Session, months_ago
 
 
 @Session
@@ -57,7 +61,12 @@ async def lookup_multi_ticker_ids(session: AsyncSession, ticker_list: list[str],
 
 @Session
 async def query_options_tickers(
-    session: AsyncSession, stock_tickers: list[str], batch: list[dict] | None = None, all_=False
+    session: AsyncSession,
+    stock_tickers: list[str],
+    batch: list[dict] | None = None,
+    months_hist: int = 24,
+    all_=False,
+    unexpired=False,
 ) -> list[OptionsTickerModel]:
     """
     This is to pull all options contracts for a given underlying ticker.
@@ -68,22 +77,32 @@ async def query_options_tickers(
         raise InvalidArgs("Can't have query all_ and a batch")
 
     stmt = (
-        select(OptionsTickers.options_ticker, OptionsTickers.id, OptionsTickers.expiration_date, StockTickers.ticker)
+        select(
+            OptionsTickers.options_ticker,
+            OptionsTickers.id,
+            OptionsTickers.expiration_date,
+            StockTickers.ticker,
+        )
         .join(StockTickers)
         .where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
-        .where(OptionsTickers.expiration_date > two_years_ago())
     )
     if not all_:
         stmt = stmt.where(StockTickers.ticker.in_(stock_tickers))
     if batch:
         batch_tickers = [x["options_ticker"] for x in batch]
         stmt = stmt.where(OptionsTickers.options_ticker.in_(batch_tickers))
+    if unexpired:
+        stmt = stmt.where(OptionsTickers.expiration_date >= datetime.now().date())
+    else:
+        stmt = stmt.where(OptionsTickers.expiration_date > months_ago(months_hist))
 
     return (await session.execute(stmt)).all()
 
 
 @Session
-async def query_stock_tickers(session: AsyncSession, all_: bool = True, tickers: list[str] = []) -> list[TickerModel]:
+async def query_stock_tickers(
+    session: AsyncSession, all_: bool = True, tickers: list[str] = []
+) -> list[TickerModel]:
     """only returns tickers likely to have options contracts"""
     stmt = select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
     if not all_:
@@ -99,9 +118,7 @@ async def ticker_imported(session: AsyncSession, ticker_id: int):
         ticker_id: int
         The pk_id of the ticker that has been imported"""
     return await session.execute(
-        update(StockTickers)
-        .where(StockTickers.id == ticker_id)
-        .values(imported=True)
+        update(StockTickers).where(StockTickers.id == ticker_id).values(imported=True)
         # .returning(StockTickers.ticker, StockTickers.imported)
     )  # .one()
 
@@ -150,7 +167,7 @@ async def update_stock_prices(
 
 
 @Session
-async def update_options_tickers(session: AsyncSession, data: list[dict]):
+async def update_options_tickers(session: AsyncSession, data: list[OptionsTickerModel]):
     stmt = insert(OptionsTickers).values(data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["options_ticker"],
@@ -173,7 +190,6 @@ async def update_options_prices(
     session: AsyncSession,
     data: list[OptionPriceModel],
 ):
-
     stmt = insert(OptionsPricesRaw).values(data)
     stmt = stmt.on_conflict_do_update(
         constraint="uq_options_price",
@@ -186,6 +202,25 @@ async def update_options_prices(
             volume_weight_price=stmt.excluded.volume_weight_price,
             volume=stmt.excluded.volume,
             number_of_transactions=stmt.excluded.number_of_transactions,
+            is_overwritten=True,
+        ),
+    )
+    return await session.execute(stmt)
+
+
+@Session
+async def update_options_snapshot(session: AsyncSession, data: list[OptionsSnapshotModel]):
+    stmt = insert(OptionsSnapshot).values(data)
+    stmt.on_conflict_do_update(
+        constraint="uq_options_snapshot",
+        set_=dict(
+            as_of_date=stmt.excluded.as_of_date,
+            implied_volatility=stmt.excluded.implied_volatility,
+            delta=stmt.excluded.delta,
+            gamma=stmt.excluded.gamma,
+            theta=stmt.excluded.theta,
+            vega=stmt.excluded.vega,
+            open_interest=stmt.excluded.open_interest,
             is_overwritten=True,
         ),
     )

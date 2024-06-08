@@ -1,14 +1,15 @@
+import datetime as dt
 import enum
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import ConfigDict, BaseModel
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import (
+    DECIMAL,
     BigInteger,
     Boolean,
     Column,
-    DECIMAL,
     Enum,
     ForeignKey,
     Integer,
@@ -18,7 +19,6 @@ from sqlalchemy import (
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import expression, func
 from sqlalchemy.types import Date, DateTime
-
 
 Base = declarative_base()
 
@@ -47,7 +47,7 @@ class StockTickers(Base):
     currency_name = Column(String)
     cik = Column(String)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
 
 
 class TickerModel(BaseModel):
@@ -83,7 +83,7 @@ class StockPricesRaw(Base):
     number_of_transactions = Column(Integer)
     otc = Column(Boolean)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
@@ -130,7 +130,7 @@ class OptionsPricesRaw(Base):
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
     created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
 
@@ -158,3 +158,33 @@ class OptionPriceModel(PriceModel):
     model_config = ConfigDict(from_attributes=True)
 
     option_ticker_id: int
+
+
+class OptionsSnapshotModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    options_ticker_id: int
+    as_of_date: datetime
+    implied_volatility: Decimal
+    delta: Decimal
+    gamma: Decimal
+    theta: Decimal
+    vega: Decimal
+    open_interest: int
+    id: Optional[int]
+
+
+class OptionsSnapshot(Base):
+    __tablename__ = "options_snapshots"
+    __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_snapshot"),)
+
+    id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
+    options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
+    as_of_date = Column(DateTime, nullable=False)
+    implied_volatility = Column(DECIMAL(24, 20), nullable=False)
+    delta = Column(DECIMAL(24, 20), nullable=False)
+    gamma = Column(DECIMAL(24, 20), nullable=False)
+    theta = Column(DECIMAL(24, 20), nullable=False)
+    vega = Column(DECIMAL(24, 20), nullable=False)
+    open_interest = Column(BigInteger, nullable=False)
+    is_overwritten = Column(Boolean, server_default=expression.false())
