@@ -11,11 +11,15 @@
             "program": "~/option_bot/option_bot/data_pipeline/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["AB", "ACN","ABBV","ABC","ABCB","ABCL","ABCM","ABEO","SPY","AAPL","MSFT","TSLA","F","GM","ABT","AC","ACA","ACAB","ACAC","ACAD","ACAH","HOOD","META","ACB","ADC","ADCT","AES","AGO","AGR","AJX","AKA","ALRM","ARKF",],
+            "args": [
+                "add",
+                "SPY",
+                "--partial",
+                "5"
+            ],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
             }
-
         },
         {
             "name": "Generic Python Debug",
@@ -46,7 +50,12 @@
             "program": "~/option_bot/option_bot/rl_agent/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args":["train", "SPY", "2023-01-01", "1"],
+            "args": [
+                "train",
+                "SPY",
+                "2023-01-01",
+                "1"
+            ],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
             }

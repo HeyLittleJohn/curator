@@ -32,11 +32,7 @@ async def generate_o_ticker_lookup(
         o_ticker_lookup: dict[str, OptionTicker]
         A dict of o_tickers to OptionTicker tuple objects
     """
-    if all_:
-        if unexpired:
-            o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True, unexpired=True)
-        else:
-            o_tickers = await query_options_tickers(stock_tickers=["all_"], all_=True)
-    else:
-        o_tickers = await query_options_tickers(stock_tickers=tickers)
+
+    o_tickers = await query_options_tickers(stock_tickers=tickers, all_=all_, unexpired=unexpired)
+
     return {x[0]: OptionTicker(*x) for x in o_tickers}
