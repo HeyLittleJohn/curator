@@ -1,149 +1,134 @@
-import argparse
 import asyncio
 from datetime import datetime
 
-from data_pipeline.exceptions import InvalidArgs
+import typer
 from data_pipeline.orchestrator import (
     import_all,
     import_partial,
     remove_tickers_from_universe,
 )
 
-from option_bot.utils import two_years_ago
+from option_bot.utils import months_ago
 
 DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
-DEFAULT_START_DATE = two_years_ago()
+DEFAULT_START_DATE = months_ago()
+
+app = typer.Typer(
+    help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data"
+)
 
 
-# async def add_ticker(args: Namespace):
-#     await add_tickers_to_universe(
-#         [
-#             {
-#                 "ticker": ticker,
-#                 "start_date": args.startdate,
-#                 "end_date": args.enddate,
-#                 "months_hist": args.monthhist,
-#             }
-#             for ticker in args.tickers
-#         ]
-#     )
+def validate_partial(ctx, param, value: list[int]):
+    if not all(1 <= i <= 6 for i in value):
+        raise typer.BadParameter("All values must be between 1 and 6")
+    return value
 
 
-async def remove_tickers(args):
-    tickers = list(args.tickers) if isinstance(args.tickers, list) else args.tickers
+@app.command(name="add")
+def add(
+    tickers: list[str] = typer.Argument(
+        help="Underlying tickers to add to the data universe or to include in the pull"
+    ),
+    all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
+    partial: list[int] = typer.Option(
+        [5],
+        "--partial",
+        "-p",
+        callback=validate_partial,
+        help=(
+            "Components to pull (import/refresh):"
+            " 1: stock metadata,"
+            " 2: stock prices,"
+            " 3: options contracts,"
+            " 4: options prices,"
+            " 5: options snapshots,"
+            # " 6: options quotes"
+        ),
+    ),
+    start_date: datetime = typer.Option(
+        DEFAULT_START_DATE,
+        "--start-date",
+        "-s",
+        formats=["%Y-%m"],
+        help="Start date of data pull (YYYY-MM)",
+    ),
+    end_date: datetime = typer.Option(
+        datetime.now(), "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
+    ),
+    months_hist: int = typer.Option(
+        DEFAULT_MONTHS_HIST,
+        "--months-hist",
+        "-m",
+        help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
+    ),
+):
+    if all_tickers:
+        tickers = []
+    if partial:
+        asyncio.run(import_partial(partial, tickers, start_date, end_date, months_hist))
+    else:
+        asyncio.run(import_all(tickers, start_date, end_date, months_hist))
+
+
+@app.command(name="refresh")
+def refresh(
+    tickers: list[str] = typer.Argument(
+        help="Underlying tickers to add to the data universe or to include in the pull"
+    ),
+    all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
+    partial: list[int] = typer.Option(
+        [5],
+        "--partial",
+        "-p",
+        callback=validate_partial,
+        help=(
+            "Components to pull (import/refresh):"
+            " 1: stock metadata,"
+            " 2: stock prices,"
+            " 3: options contracts,"
+            " 4: options prices,"
+            " 5: options snapshots,"
+            # " 6: options quotes"
+        ),
+    ),
+    start_date: datetime = typer.Option(
+        DEFAULT_START_DATE,
+        "--start-date",
+        "-s",
+        formats=["%Y-%m"],
+        help="Start date of data pull (YYYY-MM)",
+    ),
+    end_date: datetime = typer.Option(
+        datetime.now(), "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
+    ),
+    months_hist: int = typer.Option(
+        DEFAULT_MONTHS_HIST,
+        "--months-hist",
+        "-m",
+        help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
+    ),
+):
+    # TODO: a logic to look up the date of the most recent pull and set as start date
+    pass
+
+
+@app.command(name="remove")
+def remove(
+    tickers: list[str] = typer.Argument(help="Underlying tickers to remove from the data universe"),
+):
+    typer.echo(f"Removing tickers: {tickers}")
+    asyncio.run(remove_tickers(tickers))
+    typer.echo(f"Completed removing tickers: {tickers}")
+
+
+async def remove_tickers(tickers: list[str]):
     await remove_tickers_from_universe(tickers)
 
 
-async def refresh_tickers(args):
-    pass
-
-
-async def refresh_all_tickers(args):
-    pass
-
-
 def main():
-    """primary CLI for adding underlying stocks to our data universe, and specifying how far back to pull data"""
-
-    parser = argparse.ArgumentParser(
-        description="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data"
-    )
-
-    parser.add_argument(
-        "tickers",
-        type=str,
-        nargs="*",
-        metavar="underlying tickers",
-        help="Adds underlying tickers to our options data pull universe",
-    )
-
-    parser.add_argument(
-        "-s",
-        "--startdate",
-        type=str,
-        nargs=1,
-        default=DEFAULT_START_DATE.strftime("%Y-%m"),
-        metavar="YYYY-MM",
-        help="YYYY-MM formatted date str indicating start of data pull for ticker stock price",
-    )
-
-    parser.add_argument(
-        "-e",
-        "--enddate",
-        type=str,
-        nargs=1,
-        default=datetime.now().strftime("%Y-%m"),
-        metavar="YYYY-MM",
-        help="YYYY-MM formatted date str indicating end date of for ticker stock price",
-    )
-
-    parser.add_argument(
-        "-m",
-        "--monthhist",
-        type=str,
-        nargs=1,
-        default=DEFAULT_MONTHS_HIST,
-        metavar="int: Months of historical data",
-        help="The number of months of historical options contracts you are going to pull",
-    )
-
-    parser.add_argument(
-        "-r",
-        "--remove",
-        action="store_true",
-        help="Removes the specified underlying ticker(s) from our options data pull universe",
-    )
-
-    parser.add_argument(
-        "-at",
-        "--all-tickers",
-        default=False,
-        action="store_true",
-        help="Adds all stocks tickers to the command. This works with refresh, or adding tickers",
-    )
-
-    parser.add_argument(
-        "-ref",
-        "--refresh",
-        default=False,
-        action="store_true",
-        help="Removes the specified underlying ticker(s) from our options data pull universe",
-    )
-
-    parser.add_argument(
-        "-p",
-        "--partial",
-        type=int,
-        nargs="+",
-        help=(
-            "Components to pull (import/refresh):"
-            "1: stock metadata, "
-            "2: stock prices, "
-            "3: options contracts, "
-            "4: options prices"
-        ),
-    )
-
-    args = parser.parse_args()
-    args.startdate = datetime.strptime(args.startdate, "%Y-%m")
-    args.enddate = datetime.strptime(args.enddate, "%Y-%m")
-
-    if args.remove:
-        if args.all_tickers:
-            raise InvalidArgs(
-                "Can't --remove and --all-tickers at the same time. Remove explicit tickers via CLI"
-            )
-        asyncio.run(remove_tickers(args))
-
-    # elif args.refresh:
-    #     asyncio.run(refresh_tickers(args))
-
-    elif args.partial:
-        asyncio.run(import_partial(args))
-
-    else:
-        asyncio.run(import_all(args))
+    """Run the Typer CLI"""
+    app()
 
 
 if __name__ == "__main__":

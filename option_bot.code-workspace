@@ -5,9 +5,6 @@
 		},
 		{
 			"path": "../aiomultiprocess"
-		},
-		{
-			"path": "../otto"
 		}
 	],
 	"settings": {
@@ -27,7 +24,6 @@
 		"python.analysis.importFormat": "absolute",
 		"python.analysis.extraPaths": [
 			"/home/jhirschi/option_bot",
-			"/home/jhirschi/otto"
 		],
 		"python.languageServer": "Pylance",
 		"ruff.enable": true,
@@ -36,8 +32,7 @@
 			"ALL"
 		],
 		"ruff.path": [
-			"/home/jhirschi/.pyenv/versions/3.11.4/envs/option_bot/bin/ruff",
-			"/home/jhirschi/.pyenv/versions/3.11.4/envs/otto/bin/ruff"
+			"/home/jhirschi/.pyenv/versions/3.11.4/envs/option_bot/bin/ruff"
 		]
 	}
 }

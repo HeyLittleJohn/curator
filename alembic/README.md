@@ -8,7 +8,8 @@ schema files.
 
 The primary way to interact with alembic is via `Make` commands defined in the `Makefile`. Below is the main command for updates.
 
-```make update_db DESCRIPTION="<input your description>"```
+```make update_db DESCRIPTION="'input your description'"```
+(NOTE: the double quotes and then the single quote)
 
 This will generate a script based on the schema - db diff. And will then apply those changes to the db. The make commands are built using the below commands.
 
