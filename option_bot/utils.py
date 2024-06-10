@@ -13,8 +13,14 @@ from option_bot.proj_constants import POOL_DEFAULT_KWARGS, async_session_maker, 
 _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
 
 
-def timestamp_to_datetime(timestamp: int, msec_units: bool = True) -> datetime:
-    return datetime.fromtimestamp(timestamp / 1000) if msec_units else datetime.fromtimestamp(timestamp)
+def timestamp_to_datetime(timestamp: int, msec_units: bool = True, nano_sec: bool = False) -> datetime:
+    if nano_sec:
+        dem = 1000000
+    elif msec_units:
+        dem = 1000
+    else:
+        dem = 1
+    return datetime.fromtimestamp(timestamp / dem)
 
 
 def string_to_datetime(date_string: str, date_format: str = "%Y-%m-%d") -> datetime:
@@ -36,14 +42,14 @@ def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
     # NOTE: may need to add info for market holidays
 
 
-def trading_days_in_range(start_date: str, end_date: str, cal_type="e_cal") -> int:
+def trading_days_in_range(start_date: str, end_date: str, cal_type="e_cal", count: bool = True) -> int:
     if cal_type == "e_cal":
         cal = e_cal
     elif cal_type == "o_cal":
         cal = o_cal
     else:
         raise ValueError(f"cal_type must be 'e_cal' or 'o_cal', not {cal_type}")
-    return cal[start_date:end_date].shape[0]
+    return cal[start_date:end_date].shape[0] if count else cal[start_date:end_date]
 
 
 def timestamp_now(msec_units: bool = True):
