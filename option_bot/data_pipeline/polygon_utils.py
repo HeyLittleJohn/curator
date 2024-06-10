@@ -516,8 +516,9 @@ class HistoricalQuotes(HistoricalOptionsPrices):
     def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
         """converts market dates to timestamps occurring every hour from 9am to 5pm based on market tz"""
         dates = dates.tz_localize("US/Eastern")
-        for i in range(9):
-            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
+        for i in range(8):
+            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
+            dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+            dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].apply(lambda x: x[:-2] + ":" + x[-2:])
         dates.drop(columns=["market_open", "market_close"], inplace=True)
-        # dates = dates.astype("int64") / 1000
         return dates.values.flatten().tolist()
