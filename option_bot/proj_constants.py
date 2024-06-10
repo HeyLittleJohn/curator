@@ -145,7 +145,7 @@ log.addHandler(file_handler)
 
 # market calendar
 o_cal = mcal.get_calendar("CBOE_Equity_Options")
-o_cal = o_cal.schedule(start_date="2020-01-01", end_date="2025-01-01")
+o_cal = o_cal.schedule(start_date="2022-01-01", end_date="2026-01-01")
 
 e_cal = mcal.get_calendar("NYSE")
-e_cal = e_cal.schedule(start_date="2020-01-01", end_date="2025-01-01")
+e_cal = e_cal.schedule(start_date="2022-01-01", end_date="2026-01-01")

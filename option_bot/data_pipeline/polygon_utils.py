@@ -4,6 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
+import pandas as pd
 from aiohttp import ClientSession
 from aiohttp.client_exceptions import (
     ClientConnectionError,
@@ -17,7 +18,9 @@ from db_tools.utils import OptionTicker
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
     first_weekday_of_month,
+    string_to_date,
     timestamp_now,
+    trading_days_in_range,
     write_api_data_to_file,
 )
 
@@ -469,10 +472,52 @@ class CurrentContractSnapshot(PolygonPaginator):
         )
 
 
-class HistoricalQuotes(PolygonPaginator):
+class HistoricalQuotes(HistoricalOptionsPrices):
     """Object to query Polygon API and retrieve historical quotes for the options chain for a given ticker"""
 
     paginator_type = "OptionsQuotes"
 
     def __init__(self):
-        super().__init__()
+        super().__init__(timespan=Timespans.hour)
+
+    def _construct_url(self, o_ticker: str) -> str:
+        return f"/v3/quotes/{o_ticker}"
+
+    def generate_request_args(self, args_data: list[OptionTicker]):
+        start_date, close_date = self._determine_start_end_dates(string_to_date("2040-01-01"))
+        dates = trading_days_in_range(str(start_date), str(close_date), count=False)
+        dates = self._prepare_timestamps(dates)
+
+        args = []
+        for o_ticker in args_data:
+            for i in range(len(dates), len(dates) - 1, step=9):
+                payload = {
+                    "limit": 1,
+                    "sort": "timestamp",
+                    "order": "asc",
+                }
+                for _ in range(9):
+                    payload["timestamp.gte"] = dates[i + _]
+                    payload["timestamp.lte"] = dates[i + _ + 1]
+                    if _ == 8:
+                        payload["order"] = "desc"
+
+                    args.append(
+                        (
+                            self._construct_url(o_ticker.o_ticker),
+                            payload,
+                            o_ticker.o_ticker,
+                            o_ticker.underlying_ticker,
+                            self._clean_o_ticker(o_ticker.o_ticker),
+                        )
+                    )
+
+    @staticmethod
+    def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
+        """converts market dates to timestamps occurring every hour from 9am to 5pm based on market tz"""
+        dates = dates.tz_localize("US/Eastern")
+        for i in range(9):
+            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
+        dates.drop(columns=["market_open", "market_close"], inplace=True)
+        # dates = dates.astype("int64") / 1000
+        return dates.values.flatten().tolist()
