@@ -5,6 +5,7 @@ from typing import Any, Generator
 
 from db_tools.queries import (
     update_options_prices,
+    update_options_quotes,
     update_options_snapshot,
     update_options_tickers,
     update_stock_metadata,
@@ -386,5 +387,32 @@ class OptionsSnapshotRunner(OptionsPricesRunner):
         return await update_options_snapshot(data)
 
 
-class OptionsQuoteRunner(PathRunner):
-    pass
+class OptionsQuoteRunner(OptionsPricesRunner):
+    """Runner for options quote data"""
+
+    runner_type = "OptionsQuotes"
+
+    def __init__(self):
+        super().__init__()
+
+    async def upload_func(self, data: list[dict]):
+        return await update_options_quotes(data)
+
+    def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
+        """This function will clean the data and return a list of dicts to be uploaded to the db
+
+        Args:
+            results list[dict]: raw quote data from the file
+            o_ticker (tuple[str, int, str, str]):
+            OptionTicker named tuple containing o_ticker, id, expiration_date, underlying_ticker.
+        """
+        clean_results = []
+
+        if isinstance(results, list):
+            for record in results:
+                record["as_of_date"] = timestamp_to_datetime(
+                    record.get("sip_timestamp", timestamp_now() * 1000000) / 1000, nano_sec=True
+                )
+                record["options_ticker_id"] = o_ticker.id
+                clean_results.append(record)
+        return clean_results

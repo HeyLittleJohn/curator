@@ -4,10 +4,12 @@ from data_pipeline.exceptions import InvalidArgs
 from db_tools.schemas import (
     OptionPriceModel,
     OptionsPricesRaw,
+    OptionsQuotesRaw,
     OptionsSnapshot,
     OptionsSnapshotModel,
     OptionsTickerModel,
     OptionsTickers,
+    QuoteModel,
     StockPriceModel,
     StockPricesRaw,
     StockTickers,
@@ -224,6 +226,12 @@ async def update_options_snapshot(session: AsyncSession, data: list[OptionsSnaps
             is_overwritten=True,
         ),
     )
+    return await session.execute(stmt)
+
+
+@Session
+async def update_options_quotes(session: AsyncSession, data: list[QuoteModel]):
+    stmt = insert(OptionsQuotesRaw).values(data)
     return await session.execute(stmt)
 
 
