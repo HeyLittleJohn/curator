@@ -485,7 +485,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     def generate_request_args(
         self, args_data: list[OptionTicker]
-    ) -> dict[tuple[list[tuple[str, dict]], str, str]]:
+    ) -> list[str, tuple[list[tuple[str, dict]], str, str]]:
         """Generate the urls to query the options quotes endpoint.
         Inputs should be OptionTickers. We then generate the date ranges.
         To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
@@ -493,7 +493,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         Only create args if the option has not yet expired during the dates in the time range.
 
         Outputs:
-            output_args: dict of {o_ticker: tuple(
+            output_args: list of (o_ticker: str, tuple(
                 list(tuple(url, payload)), underlying_ticker, clean_ticker)
             }
         """
@@ -503,7 +503,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         dates = trading_days_in_range(str(start_date), str(close_date), count=False)
         dates = self._prepare_timestamps(dates)
 
-        output_args = {}
+        output_args = []
         for o_ticker in args_data:
             not_exp = True
             args = []
@@ -529,10 +529,13 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                                 payload,
                             )
                         )
-            output_args[o_ticker.o_ticker] = (
-                args,
-                o_ticker.underlying_ticker,
-                self._clean_o_ticker(o_ticker.o_ticker),
+            output_args.append(
+                (
+                    o_ticker.o_ticker,
+                    args,
+                    o_ticker.underlying_ticker,
+                    self._clean_o_ticker(o_ticker.o_ticker),
+                )
             )
         return output_args
 
@@ -549,9 +552,8 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     async def download_data(
         self,
-        url: str,
-        payload: dict,
         o_ticker: str,
+        request_args: tuple[list[tuple[str, dict]]],
         under_ticker: str,
         clean_ticker: str,
         session: ClientSession = None,
@@ -559,16 +561,23 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         """Overwriting inherited download_data().
         Creates a file per options ticker with all available quote date in the time range
 
+        args:
+            o_ticker: str,
+            request_args: tuple(list(tuple(url, payload)),
+            under_ticker: str,
+            clean_ticker: str,
+
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
+        o_ticker
         log.info(f"Downloading quote data for {o_ticker}")
-        log.debug(f"Downloading data for {o_ticker} with url: {url} and payload: {payload}")
+        log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
 
-        # TODO: group prices for a ticker and a day together. Only one file written per o_ticker
-
-        results = await self._query_all(session, url, payload)
+        tasks = [self._query_all(session, url, payload) for url, payload in request_args]
+        results = await asyncio.gather(*tasks)
         log.info(f"Writing quote data for {o_ticker} to file")
+
         write_api_data_to_file(
             results,
             *self._download_path(
