@@ -527,7 +527,9 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                                     "limit": 1,
                                     "sort": "timestamp",
                                     "order": order,
-                                    "timestamp.gte": dates[i + _],
+                                    "timestamp.gte": dates[i + _]
+                                    if _ != 7
+                                    else dates[i + _][:-11] + "0" + dates[i + _][-10:],
                                     "timestamp.lte": dates[i + _ + 1],
                                 },
                             )
