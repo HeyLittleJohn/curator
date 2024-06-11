@@ -117,7 +117,7 @@ class OptionsTickerModel(BaseModel):
 
 
 class OptionsPricesRaw(Base):
-    __tablename__ = "options_prices"
+    __tablename__ = "option_prices"
     __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_price"),)
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
     options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)

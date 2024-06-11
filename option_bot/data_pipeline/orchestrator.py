@@ -64,7 +64,7 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
 
     # Download and upload quotes
     await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
-    # await upload_options_quotes(o_tickers)
+    await upload_options_quotes(o_tickers)
 
 
 async def import_partial(
