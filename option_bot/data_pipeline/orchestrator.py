@@ -11,6 +11,7 @@ from data_pipeline.download import (
 from data_pipeline.uploader import (
     upload_options_contracts,
     upload_options_prices,
+    upload_options_quotes,
     upload_options_snapshots,
     upload_stock_metadata,
     upload_stock_prices,
@@ -107,7 +108,7 @@ async def import_partial(
         if not o_tickers:
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
         await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
-        # await upload_options_quotes(o_tickers)
+        await upload_options_quotes(o_tickers)
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
