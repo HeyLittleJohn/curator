@@ -12,6 +12,7 @@ from data_pipeline.exceptions import (
 from data_pipeline.polygon_utils import (
     CurrentContractSnapshot,
     HistoricalOptionsPrices,
+    HistoricalQuotes,
     HistoricalStockPrices,
     OptionsContracts,
     PolygonPaginator,
@@ -48,7 +49,7 @@ async def api_pool_downloader(
         args_data: list of data args to be used to generate pool args
         pool_kwargs: kwargs to be passed to the process pool
 
-
+    url_args: list of tuples, each tuple contains the args for the paginator's download_data method
     """
     log.info("generating urls to be queried")
     url_args = paginator.generate_request_args(args_data)
@@ -129,7 +130,7 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
         month_hist: number of months of history to pull
     """
     pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
-    op_quotes = HistoricalOptionsPrices(months_hist=months_hist)
+    op_quotes = HistoricalQuotes(months_hist=months_hist)
     await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
