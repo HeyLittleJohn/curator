@@ -38,6 +38,7 @@ async def api_pool_downloader(
     paginator: PolygonPaginator,
     args_data: list = None,
     pool_kwargs: dict = {},
+    batch_num: int = None,
 ):
     """This function creates a process pool to download data from the polygon api and store it in json files.
     It is the base module co-routine for all our data pulls.
@@ -53,14 +54,16 @@ async def api_pool_downloader(
     """
     log.info("generating urls to be queried")
     url_args = paginator.generate_request_args(args_data)
+    if url_args:
+        log.info("fetching data from polygon api")
+        pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
+        pool_kwargs = pool_kwarg_config(pool_kwargs)
+        async with Pool(**pool_kwargs) as pool:
+            await pool.starmap(paginator.download_data, url_args)
 
-    log.info("fetching data from polygon api")
-    pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
-    pool_kwargs = pool_kwarg_config(pool_kwargs)
-    async with Pool(**pool_kwargs) as pool:
-        await pool.starmap(paginator.download_data, url_args)
-
-    log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
+        log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
+    elif batch_num:
+        log.info(f"no data to download for {paginator.paginator_type} batch: {batch_num}")
 
 
 async def download_stock_metadata(tickers: list[str], all_: bool = True):
@@ -131,12 +134,10 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
     """
     pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
     op_quotes = HistoricalQuotes(months_hist=months_hist)
-    await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=o_tickers)
-
-
-# async def main():
-# await download_options_prices(["SPY"], all_=True)
-
-
-# if __name__ == "__main__":
-#     asyncio.run(main())
+    step = 1000
+    batch_num = 1
+    for i in range(0, len(o_tickers), step):
+        log.info(f"downloading options quotes for batch {batch_num}: total o_tickers: {i}/{len(o_tickers)}")
+        batch = o_tickers[i : i + step]
+        batch_num += 1
+        await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=batch)
