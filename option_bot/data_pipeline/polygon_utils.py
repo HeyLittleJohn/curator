@@ -4,6 +4,7 @@ from datetime import date, datetime
 from enum import Enum
 
 import numpy as np
+import pandas as pd
 from aiohttp import ClientSession
 from aiohttp.client_exceptions import (
     ClientConnectionError,
@@ -17,7 +18,9 @@ from db_tools.utils import OptionTicker
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
     first_weekday_of_month,
+    string_to_date,
     timestamp_now,
+    trading_days_in_range,
     write_api_data_to_file,
 )
 
@@ -95,12 +98,15 @@ class PolygonPaginator(ABC):
             json_response = await response.json() if status_code == 200 else {}
             return (status_code, json_response)
 
-    async def _query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
+    async def _query_all(
+        self, session: ClientSession, url: str, payload: dict = {}, limit: bool = False
+    ) -> list[dict]:
         """Query the API until all results have been returned
         Args:
             session: aiohttp ClientSession
             url: url to query
             payload: dict of query params
+            limit: bool to determine if query should be limited to the first page of results. Default set to false
 
         Returns:
             list of dicts of the json response
@@ -140,7 +146,7 @@ class PolygonPaginator(ABC):
             finally:
                 if status == 200:
                     results.append(response)
-                    if response.get("next_url"):
+                    if response.get("next_url") and not limit:
                         url = self._clean_url(response["next_url"])
                         payload = {}
                         status = 0
@@ -469,10 +475,128 @@ class CurrentContractSnapshot(PolygonPaginator):
         )
 
 
-class HistoricalQuotes(PolygonPaginator):
+class HistoricalQuotes(HistoricalOptionsPrices):
     """Object to query Polygon API and retrieve historical quotes for the options chain for a given ticker"""
 
     paginator_type = "OptionsQuotes"
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, months_hist: int = 24):
+        super().__init__(months_hist=months_hist, timespan=Timespans.hour)
+
+    def _construct_url(self, o_ticker: str) -> str:
+        return f"/v3/quotes/{o_ticker}"
+
+    def generate_request_args(
+        self, args_data: list[OptionTicker]
+    ) -> list[str, tuple[list[tuple[str, dict]], str, str]]:
+        """Generate the urls to query the options quotes endpoint.
+        Inputs should be OptionTickers. We then generate the date ranges.
+        To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
+        Except for the final pair, we get the newest as "closing" quote.
+        Only create args if the option has not yet expired during the dates in the time range.
+
+        Outputs:
+            output_args: list of (o_ticker: str, tuple(
+                list(tuple(url, payload)), underlying_ticker, clean_ticker)
+            }
+        """
+        start_date, close_date = self._determine_start_end_dates(
+            string_to_date("2040-01-01")
+        )  # NOTE: magic number meant to always trigger the newest date (today)
+        dates = trading_days_in_range(str(start_date), str(close_date), count=False)
+        dates = self._prepare_timestamps(dates)
+
+        output_args = []
+        for o_ticker in args_data:
+            not_exp = True
+            args = []
+            while not_exp:
+                for i in range(0, len(dates), 9):
+                    if dates[i][:10] > str(o_ticker.expiration_date):
+                        not_exp = False
+                        break
+                    order = "asc"
+                    for _ in range(8):
+                        if _ == 7:
+                            order = "desc"
+
+                        args.append(
+                            (
+                                self._construct_url(o_ticker.o_ticker),
+                                {
+                                    "limit": 1,
+                                    "sort": "timestamp",
+                                    "order": order,
+                                    "timestamp.gte": dates[i + _],
+                                    "timestamp.lte": dates[i + _ + 1],
+                                },
+                            )
+                        )
+                break
+            if args:
+                output_args.append(
+                    (
+                        o_ticker.o_ticker,
+                        args,
+                        o_ticker.underlying_ticker,
+                        self._clean_o_ticker(o_ticker.o_ticker),
+                    )
+                )
+        return output_args
+
+    @staticmethod
+    def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
+        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz"""
+        dates = dates.tz_localize("US/Eastern")
+        for i in range(9):
+            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
+            dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+            dates[f"{i+9}_oclock"] = (
+                dates[f"{i+9}_oclock"].astype(str).str.slice(stop=-2)
+                + ":"
+                + dates[f"{i+9}_oclock"].astype(str).str.slice(start=-2)
+            )
+        dates.drop(columns=["market_open", "market_close"], inplace=True)
+        return dates.values.flatten().tolist()
+
+    async def download_data(
+        self,
+        o_ticker: str,
+        request_args: tuple[list[tuple[str, dict]]],
+        under_ticker: str,
+        clean_ticker: str,
+        session: ClientSession = None,
+    ):
+        """Overwriting inherited download_data().
+        Creates a file per options ticker with all available quote date in the time range
+
+        args:
+            o_ticker: str,
+            request_args: tuple(list(tuple(url, payload)),
+            under_ticker: str,
+            clean_ticker: str,
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
+        """
+        o_ticker
+        log.info(f"Downloading quote data for {o_ticker}")
+        log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
+
+        tasks = [self._query_all(session, url, payload, limit=True) for url, payload in request_args]
+        results = await asyncio.gather(*tasks)
+
+        if results:
+            log.info(f"Writing quote data for {o_ticker} to file")
+
+            results = [x[0].get("results")[0] for x in results if x[0].get("results")]
+
+            write_api_data_to_file(
+                results,
+                *self._download_path(
+                    under_ticker + "/" + clean_ticker,
+                    str(timestamp_now()),
+                ),
+            )
+        else:
+            log.info(f"No quote data for {o_ticker} in the time range")

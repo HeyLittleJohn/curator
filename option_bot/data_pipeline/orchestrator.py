@@ -3,6 +3,7 @@ from datetime import datetime
 from data_pipeline.download import (
     download_options_contracts,
     download_options_prices,
+    download_options_quotes,
     download_options_snapshots,
     download_stock_metadata,
     download_stock_prices,
@@ -61,7 +62,7 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     await upload_options_prices(o_tickers)
 
     # Download and upload quotes
-    # await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
+    await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
     # await upload_options_quotes(o_tickers)
 
 
@@ -101,6 +102,12 @@ async def import_partial(
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
         await download_options_snapshots(list(o_tickers.values()))
         await upload_options_snapshots(o_tickers)
+
+    if 6 in partial:  # quotes
+        if not o_tickers:
+            o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+        await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
+        # await upload_options_quotes(o_tickers)
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
