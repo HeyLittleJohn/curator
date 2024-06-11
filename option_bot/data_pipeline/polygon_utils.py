@@ -98,12 +98,15 @@ class PolygonPaginator(ABC):
             json_response = await response.json() if status_code == 200 else {}
             return (status_code, json_response)
 
-    async def _query_all(self, session: ClientSession, url: str, payload: dict = {}) -> list[dict]:
+    async def _query_all(
+        self, session: ClientSession, url: str, payload: dict = {}, limit: bool = False
+    ) -> list[dict]:
         """Query the API until all results have been returned
         Args:
             session: aiohttp ClientSession
             url: url to query
             payload: dict of query params
+            limit: bool to determine if query should be limited to the first page of results. Default set to false
 
         Returns:
             list of dicts of the json response
@@ -143,7 +146,7 @@ class PolygonPaginator(ABC):
             finally:
                 if status == 200:
                     results.append(response)
-                    if response.get("next_url"):
+                    if response.get("next_url") and not limit:
                         url = self._clean_url(response["next_url"])
                         payload = {}
                         status = 0
@@ -509,34 +512,36 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             args = []
             while not_exp:
                 for i in range(0, len(dates), 9):
-                    if dates[i][:10] > str(o_ticker):
+                    if dates[i][:10] > str(o_ticker.expiration_date):
                         not_exp = False
                         break
-                    payload = {
-                        "limit": 1,
-                        "sort": "timestamp",
-                        "order": "asc",
-                    }
+                    order = "asc"
                     for _ in range(8):
-                        payload["timestamp.gte"] = dates[i + _]
-                        payload["timestamp.lte"] = dates[i + _ + 1]
                         if _ == 7:
-                            payload["order"] = "desc"
+                            order = "desc"
 
                         args.append(
                             (
                                 self._construct_url(o_ticker.o_ticker),
-                                payload,
+                                {
+                                    "limit": 1,
+                                    "sort": "timestamp",
+                                    "order": order,
+                                    "timestamp.gte": dates[i + _],
+                                    "timestamp.lte": dates[i + _ + 1],
+                                },
                             )
                         )
-            output_args.append(
-                (
-                    o_ticker.o_ticker,
-                    args,
-                    o_ticker.underlying_ticker,
-                    self._clean_o_ticker(o_ticker.o_ticker),
+                break
+            if args:
+                output_args.append(
+                    (
+                        o_ticker.o_ticker,
+                        args,
+                        o_ticker.underlying_ticker,
+                        self._clean_o_ticker(o_ticker.o_ticker),
+                    )
                 )
-            )
         return output_args
 
     @staticmethod
@@ -546,7 +551,11 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         for i in range(9):
             dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
             dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-            dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].apply(lambda x: x[:-2] + ":" + x[-2:])
+            dates[f"{i+9}_oclock"] = (
+                dates[f"{i+9}_oclock"].astype(str).str.slice(stop=-2)
+                + ":"
+                + dates[f"{i+9}_oclock"].astype(str).str.slice(start=-2)
+            )
         dates.drop(columns=["market_open", "market_close"], inplace=True)
         return dates.values.flatten().tolist()
 
@@ -574,14 +583,20 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         log.info(f"Downloading quote data for {o_ticker}")
         log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
 
-        tasks = [self._query_all(session, url, payload) for url, payload in request_args]
+        tasks = [self._query_all(session, url, payload, limit=True) for url, payload in request_args]
         results = await asyncio.gather(*tasks)
-        log.info(f"Writing quote data for {o_ticker} to file")
 
-        write_api_data_to_file(
-            results,
-            *self._download_path(
-                under_ticker + "/" + clean_ticker,
-                str(timestamp_now()),
-            ),
-        )
+        if results:
+            log.info(f"Writing quote data for {o_ticker} to file")
+
+            results = [x[0].get("results")[0] for x in results if x[0].get("results")]
+
+            write_api_data_to_file(
+                results,
+                *self._download_path(
+                    under_ticker + "/" + clean_ticker,
+                    str(timestamp_now()),
+                ),
+            )
+        else:
+            log.info(f"No quote data for {o_ticker} in the time range")
