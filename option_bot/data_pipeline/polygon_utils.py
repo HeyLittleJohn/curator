@@ -477,48 +477,102 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     paginator_type = "OptionsQuotes"
 
-    def __init__(self):
-        super().__init__(timespan=Timespans.hour)
+    def __init__(self, months_hist: int = 24):
+        super().__init__(months_hist=months_hist, timespan=Timespans.hour)
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
 
-    def generate_request_args(self, args_data: list[OptionTicker]):
-        start_date, close_date = self._determine_start_end_dates(string_to_date("2040-01-01"))
+    def generate_request_args(
+        self, args_data: list[OptionTicker]
+    ) -> dict[tuple[list[tuple[str, dict]], str, str]]:
+        """Generate the urls to query the options quotes endpoint.
+        Inputs should be OptionTickers. We then generate the date ranges.
+        To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
+        Except for the final pair, we get the newest as "closing" quote.
+        Only create args if the option has not yet expired during the dates in the time range.
+
+        Outputs:
+            output_args: dict of {o_ticker: tuple(
+                list(tuple(url, payload)), underlying_ticker, clean_ticker)
+            }
+        """
+        start_date, close_date = self._determine_start_end_dates(
+            string_to_date("2040-01-01")
+        )  # NOTE: magic number meant to always trigger the newest date (today)
         dates = trading_days_in_range(str(start_date), str(close_date), count=False)
         dates = self._prepare_timestamps(dates)
 
-        args = []
+        output_args = {}
         for o_ticker in args_data:
-            for i in range(len(dates), len(dates) - 1, step=9):
-                payload = {
-                    "limit": 1,
-                    "sort": "timestamp",
-                    "order": "asc",
-                }
-                for _ in range(9):
-                    payload["timestamp.gte"] = dates[i + _]
-                    payload["timestamp.lte"] = dates[i + _ + 1]
-                    if _ == 8:
-                        payload["order"] = "desc"
+            not_exp = True
+            args = []
+            while not_exp:
+                for i in range(0, len(dates), 9):
+                    if dates[i][:10] > str(o_ticker):
+                        not_exp = False
+                        break
+                    payload = {
+                        "limit": 1,
+                        "sort": "timestamp",
+                        "order": "asc",
+                    }
+                    for _ in range(8):
+                        payload["timestamp.gte"] = dates[i + _]
+                        payload["timestamp.lte"] = dates[i + _ + 1]
+                        if _ == 7:
+                            payload["order"] = "desc"
 
-                    args.append(
-                        (
-                            self._construct_url(o_ticker.o_ticker),
-                            payload,
-                            o_ticker.o_ticker,
-                            o_ticker.underlying_ticker,
-                            self._clean_o_ticker(o_ticker.o_ticker),
+                        args.append(
+                            (
+                                self._construct_url(o_ticker.o_ticker),
+                                payload,
+                            )
                         )
-                    )
+            output_args[o_ticker.o_ticker] = (
+                args,
+                o_ticker.underlying_ticker,
+                self._clean_o_ticker(o_ticker.o_ticker),
+            )
+        return output_args
 
     @staticmethod
     def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
-        """converts market dates to timestamps occurring every hour from 9am to 5pm based on market tz"""
+        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz"""
         dates = dates.tz_localize("US/Eastern")
-        for i in range(8):
+        for i in range(9):
             dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
             dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
             dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].apply(lambda x: x[:-2] + ":" + x[-2:])
         dates.drop(columns=["market_open", "market_close"], inplace=True)
         return dates.values.flatten().tolist()
+
+    async def download_data(
+        self,
+        url: str,
+        payload: dict,
+        o_ticker: str,
+        under_ticker: str,
+        clean_ticker: str,
+        session: ClientSession = None,
+    ):
+        """Overwriting inherited download_data().
+        Creates a file per options ticker with all available quote date in the time range
+
+        NOTE: session = None prevents the function from crashing without a session input initially.
+        This lets us wait for the process pool to insert the session into the args.
+        """
+        log.info(f"Downloading quote data for {o_ticker}")
+        log.debug(f"Downloading data for {o_ticker} with url: {url} and payload: {payload}")
+
+        # TODO: group prices for a ticker and a day together. Only one file written per o_ticker
+
+        results = await self._query_all(session, url, payload)
+        log.info(f"Writing quote data for {o_ticker} to file")
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                under_ticker + "/" + clean_ticker,
+                str(timestamp_now()),
+            ),
+        )
