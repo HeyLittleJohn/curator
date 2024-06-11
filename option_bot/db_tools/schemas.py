@@ -46,7 +46,7 @@ class StockTickers(Base):
     primary_exchange = Column(String)
     currency_name = Column(String)
     cik = Column(String)
-    created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
+    created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
 
 
@@ -82,7 +82,7 @@ class StockPricesRaw(Base):
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
     otc = Column(Boolean)
-    created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
+    created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
@@ -117,7 +117,7 @@ class OptionsTickerModel(BaseModel):
 
 
 class OptionsPricesRaw(Base):
-    __tablename__ = "option_prices"
+    __tablename__ = "options_prices"
     __table_args__ = (UniqueConstraint("options_ticker_id", "as_of_date", name="uq_options_price"),)
     id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
     options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
@@ -129,7 +129,7 @@ class OptionsPricesRaw(Base):
     volume_weight_price = Column(DECIMAL(19, 4), nullable=False)
     volume = Column(DECIMAL(19, 4), nullable=False)
     number_of_transactions = Column(Integer)
-    created_at = Column(DateTime, server_default=func.now())  # make sure this is UTCNow
+    created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
 
@@ -187,4 +187,38 @@ class OptionsSnapshot(Base):
     theta = Column(DECIMAL(24, 20), nullable=False)
     vega = Column(DECIMAL(24, 20), nullable=False)
     open_interest = Column(BigInteger, nullable=False)
+    is_overwritten = Column(Boolean, server_default=expression.false())
+
+
+class QuoteModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ask_exchange: Optional[int]
+    ask_price: Decimal
+    ask_size: int
+    bid_exchange: Optional[int]
+    bid_price: Decimal
+    bid_size: int
+    sequence_number: Optional[int]
+    sip_timestamp: int
+
+
+class OptionsQuotesRaw(Base):
+    __tablename__ = "options_quotes"
+    # NOTE: no unique constraint on this table
+    # But there will be a transformation to connect this and the OptionsRaw and that will have a constraint
+
+    id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True)
+    options_ticker_id = Column(BigInteger, ForeignKey("options_tickers.id", ondelete="CASCADE"), nullable=False)
+    as_of_date = Column(DateTime, nullable=False)
+    ask_exchange = Column(Integer)
+    ask_price = Column(DECIMAL(19, 4), nullable=False)
+    ask_size = Column(Integer, nullable=False)
+    bid_exchange = Column(Integer)
+    bid_price = Column(DECIMAL(19, 4), nullable=False)
+    bid_size = Column(Integer, nullable=False)
+    sequence_number = Column(Integer)
+    sip_timestamp = Column(Integer, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
