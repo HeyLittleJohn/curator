@@ -43,10 +43,6 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     # Get ticker_id_lookup from db
     ticker_lookup = await pull_tickers_from_db(tickers, all_=all_)
 
-    # Download and upload underlying stock prices
-    await download_stock_prices(ticker_lookup, start_date, end_date)
-    await upload_stock_prices(ticker_lookup)
-
     # Download and upload options contract data
     await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=months_hist)
     await upload_options_contracts(ticker_lookup, months_hist=months_hist)
@@ -66,6 +62,11 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     # Download and upload quotes
     await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
     await upload_options_quotes(o_tickers)
+
+    # Download and upload underlying stock prices
+    # NOTE: at the end due to it being the free api
+    await download_stock_prices(ticker_lookup, start_date, end_date)
+    await upload_stock_prices(ticker_lookup)
 
 
 async def import_partial(
