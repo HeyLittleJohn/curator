@@ -243,7 +243,7 @@ class HistoricalStockPrices(PolygonPaginator):
         start_date: datetime,
         end_date: datetime,
         multiplier: int = 1,
-        timespan: Timespans = Timespans.day,
+        timespan: Timespans = Timespans.hour,
         adjusted: bool = True,
     ):
         self.multiplier = multiplier
@@ -408,14 +408,19 @@ class HistoricalOptionsPrices(PolygonPaginator):
         log.info(f"Downloading price data for {o_ticker}")
         log.debug(f"Downloading data for {o_ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
-        log.info(f"Writing price data for {o_ticker} to file")
-        write_api_data_to_file(
-            results,
-            *self._download_path(
-                under_ticker + "/" + clean_ticker,
-                str(timestamp_now()),
-            ),
-        )
+        results = [x.get("results") for x in results if x.get("results")]
+
+        if results:
+            log.info(f"Writing price data for {o_ticker} to file")
+            write_api_data_to_file(
+                results,
+                *self._download_path(
+                    under_ticker + "/" + clean_ticker,
+                    str(timestamp_now()),
+                ),
+            )
+        else:
+            log.info(f"No price data for {o_ticker} in the time range")
 
 
 class CurrentContractSnapshot(PolygonPaginator):
@@ -448,6 +453,7 @@ class CurrentContractSnapshot(PolygonPaginator):
             )
             for o_ticker in args_data
             if o_ticker.expiration_date >= datetime.now().date()
+            # NOTE: this filters is redundant since o_tickers passed in should be unexpired
         ]
 
     async def download_data(
