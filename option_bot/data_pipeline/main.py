@@ -10,9 +10,8 @@ from data_pipeline.orchestrator import (
 
 from option_bot.utils import months_ago
 
-DEFAULT_DAYS = 500
 DEFAULT_MONTHS_HIST = 24
-DEFAULT_START_DATE = months_ago()
+DEFAULT_START_DATE = months_ago(months=DEFAULT_MONTHS_HIST)
 
 app = typer.Typer(
     help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data"
@@ -32,7 +31,7 @@ def add(
     ),
     all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
     partial: list[int] = typer.Option(
-        [5],
+        None,
         "--partial",
         "-p",
         callback=validate_partial,
@@ -43,21 +42,21 @@ def add(
             " 3: options contracts,"
             " 4: options prices,"
             " 5: options snapshots,"
-            # " 6: options quotes"
+            " 6: options quotes"
         ),
     ),
     start_date: datetime = typer.Option(
-        DEFAULT_START_DATE,
+        None,
         "--start-date",
         "-s",
         formats=["%Y-%m"],
         help="Start date of data pull (YYYY-MM)",
     ),
     end_date: datetime = typer.Option(
-        datetime.now(), "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
+        None, "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
     ),
     months_hist: int = typer.Option(
-        DEFAULT_MONTHS_HIST,
+        None,
         "--months-hist",
         "-m",
         help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
@@ -65,6 +64,24 @@ def add(
 ):
     if all_tickers:
         tickers = []
+
+    if months_hist:
+        if end_date and start_date:
+            raise typer.BadParameter("You can't specify a start/end date and months_hist")
+        elif end_date:
+            start_date = months_ago(months=months_hist, end_date=end_date)
+        else:
+            start_date = months_ago(months=months_hist)
+            end_date = datetime.now()
+    else:
+        months_hist = DEFAULT_MONTHS_HIST
+
+    if not start_date:
+        start_date = DEFAULT_START_DATE
+
+    if not end_date:
+        end_date = datetime.now()
+
     if partial:
         asyncio.run(import_partial(partial, tickers, start_date, end_date, months_hist))
     else:

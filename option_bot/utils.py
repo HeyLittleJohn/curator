@@ -31,8 +31,12 @@ def string_to_date(date_string: str, date_format: str = "%Y-%m-%d") -> datetime.
     return datetime.strptime(date_string, date_format).date()
 
 
-def months_ago(months=24) -> datetime:
-    return datetime.now() - relativedelta(months=months)
+def months_ago(months=24, end_date: datetime = None) -> datetime:
+    return (
+        datetime.now() - relativedelta(months=months)
+        if not end_date
+        else end_date - relativedelta(months=months)
+    )
 
 
 def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
