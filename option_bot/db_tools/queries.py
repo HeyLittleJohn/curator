@@ -217,10 +217,9 @@ async def update_options_prices(
 @Session
 async def update_options_snapshot(session: AsyncSession, data: list[OptionsSnapshotModel]):
     stmt = insert(OptionsSnapshot).values(data)
-    stmt.on_conflict_do_update(
+    stmt = stmt.on_conflict_do_update(
         constraint="uq_options_snapshot",
         set_=dict(
-            as_of_date=stmt.excluded.as_of_date,
             implied_volatility=stmt.excluded.implied_volatility,
             delta=stmt.excluded.delta,
             gamma=stmt.excluded.gamma,
@@ -241,4 +240,4 @@ async def update_options_quotes(session: AsyncSession, data: list[QuoteModel]):
 
 @Session
 async def delete_stock_ticker(session: AsyncSession, ticker: str):
-    session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))
+    await session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))

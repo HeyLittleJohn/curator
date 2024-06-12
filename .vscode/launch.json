@@ -14,10 +14,12 @@
             "args": [
                 "add",
                 "SPY",
+                "--months-hist",
+                "2",
+                "--partial",
+                "5",
                 "--partial",
                 "6",
-                "--months-hist",
-                "1",
             ],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"
