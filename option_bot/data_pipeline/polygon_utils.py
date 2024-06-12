@@ -447,6 +447,7 @@ class CurrentContractSnapshot(PolygonPaginator):
                 self._clean_o_ticker(o_ticker.o_ticker),
             )
             for o_ticker in args_data
+            if o_ticker.expiration_date >= datetime.now().date()
         ]
 
     async def download_data(
