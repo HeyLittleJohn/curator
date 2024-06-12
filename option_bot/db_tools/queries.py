@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pandas as pd
 from data_pipeline.exceptions import InvalidArgs
 from db_tools.schemas import (
     OptionPriceModel,
@@ -127,6 +128,9 @@ async def ticker_imported(session: AsyncSession, ticker_id: int):
 
 @Session
 async def update_stock_metadata(session: AsyncSession, data: list[TickerModel]):
+    df = pd.DataFrame(data)
+    df = df.drop_duplicates(subset=["ticker"], keep="last")
+    data = df.to_dict(orient="records")
     stmt = insert(StockTickers).values(data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],

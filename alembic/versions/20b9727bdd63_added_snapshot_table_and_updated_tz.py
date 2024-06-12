@@ -31,7 +31,7 @@ def upgrade() -> None:
     sa.Column('is_overwritten', sa.Boolean(), server_default=sa.text('false'), nullable=True),
     sa.ForeignKeyConstraint(['options_ticker_id'], ['options_tickers.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('id'),
+    sa.UniqueConstraint('id', name='uq_snapshot_id'),
     sa.UniqueConstraint('options_ticker_id', 'as_of_date', name='uq_options_snapshot')
     )
     # ### end Alembic commands ###

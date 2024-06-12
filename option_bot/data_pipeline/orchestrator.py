@@ -34,13 +34,14 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     May add toggle if "refreshing" the data or pulling everything fresh.
     As of now, refreshing won't change anything. Pull all history everytime.
     """
+    all_ = True if len(tickers) == 0 else False
     # Download and upload metadata
 
-    await download_stock_metadata(tickers=[], all_=True)
-    await upload_stock_metadata(tickers=[], all_=True)
+    await download_stock_metadata(tickers=tickers, all_=all_)
+    await upload_stock_metadata(tickers=tickers, all_=all_)
 
     # Get ticker_id_lookup from db
-    ticker_lookup = await pull_tickers_from_db(tickers, all_=True)
+    ticker_lookup = await pull_tickers_from_db(tickers, all_=all_)
 
     # Download and upload underlying stock prices
     await download_stock_prices(ticker_lookup, start_date, end_date)
@@ -51,13 +52,13 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     await upload_options_contracts(ticker_lookup, months_hist=months_hist)
 
     # Download and upload current snapshot of options contracts
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=True, unexpired=True)
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_, unexpired=True)
 
     await download_options_snapshots(list(o_tickers.values()))
     await upload_options_snapshots(o_tickers)
 
     # Download and upload options prices data
-    o_tickers = await generate_o_ticker_lookup(tickers, all_=True)
+    o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
 
     await download_options_prices(o_tickers=list(o_tickers.values()), months_hist=months_hist)
     await upload_options_prices(o_tickers)

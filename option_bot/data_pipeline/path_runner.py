@@ -324,7 +324,14 @@ class OptionsPricesRunner(PathRunner):
                 + "/"
                 + self._clean_o_ticker(o_ticker)
             )
-            path_args.append((self._determine_most_recent_file(temp_path), o_tickers_lookup[o_ticker]))
+
+            try:
+                file = self._determine_most_recent_file(temp_path)
+                path_args.append((file, o_tickers_lookup[o_ticker]))
+            except FileNotFoundError:
+                log.info(f"file not found at: {temp_path} for {self.runner_type}, with ticker: {o_ticker}")
+                continue
+
         return path_args
 
     def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
