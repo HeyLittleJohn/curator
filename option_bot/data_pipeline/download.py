@@ -120,7 +120,7 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     Args:
         o_tickers: list of OptionTicker tuples
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 200, "maxtasksperchild": 50000}
     op_snapshots = CurrentContractSnapshot()
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
@@ -132,7 +132,7 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 250}
     op_quotes = HistoricalQuotes(months_hist=months_hist)
     step = 1000
     batch_num = 1
