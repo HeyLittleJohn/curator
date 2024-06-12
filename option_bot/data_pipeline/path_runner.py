@@ -84,11 +84,17 @@ class PathRunner(ABC):
             file_path (str): path to the file to be uploaded
         """
         log.info(f"uploading data from {file_path}")
-        raw_data = read_data_from_file(file_path)
-        clean_data = self.clean_data(raw_data, ticker_data)
-        if len(clean_data) > 0:
-            for batch in self._make_batch_generator(clean_data):
-                await self.upload_func(batch)
+        try:
+            raw_data = read_data_from_file(file_path)
+        except FileNotFoundError:
+            log.warning(f"file not found at: {file_path} for {self.runner_type}, with ticker: {ticker_data}")
+            raw_data = None
+
+        if raw_data:
+            clean_data = self.clean_data(raw_data, ticker_data)
+            if len(clean_data) > 0:
+                for batch in self._make_batch_generator(clean_data):
+                    await self.upload_func(batch)
 
 
 class MetaDataRunner(PathRunner):
@@ -342,12 +348,11 @@ class OptionsPricesRunner(PathRunner):
         }
         if isinstance(results, list):
             for page in results:
-                if page.get("results"):
-                    for record in page.get("results"):
-                        t = {key_mapping[key]: record.get(key) for key in key_mapping}
-                        t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
-                        t["options_ticker_id"] = o_ticker.id
-                        clean_results.append(t)
+                for record in page:
+                    t = {key_mapping[key]: record.get(key) for key in key_mapping}
+                    t["as_of_date"] = timestamp_to_datetime(t["as_of_date"], msec_units=True)
+                    t["options_ticker_id"] = o_ticker.id
+                    clean_results.append(t)
         return clean_results
 
 
