@@ -489,6 +489,11 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     def __init__(self, months_hist: int = 24):
         super().__init__(months_hist=months_hist, timespan=Timespans.hour)
+        self.start_date, self.close_date = self._determine_start_end_dates(
+            string_to_date("2040-01-01")
+        )  # NOTE: magic number meant to always trigger the newest date (today)
+        self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
+        self.dates = self._prepare_timestamps(self.dates)
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
@@ -507,50 +512,23 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 list(tuple(url, payload)), underlying_ticker, clean_ticker)
             }
         """
-        start_date, close_date = self._determine_start_end_dates(
-            string_to_date("2040-01-01")
-        )  # NOTE: magic number meant to always trigger the newest date (today)
-        dates = trading_days_in_range(str(start_date), str(close_date), count=False)
-        dates = self._prepare_timestamps(dates)
-
-        output_args = []
+        args = []
         for o_ticker in args_data:
-            not_exp = True
-            args = []
-            while not_exp:
-                for i in range(0, len(dates), 9):
-                    if dates[i][:10] > str(o_ticker.expiration_date):
-                        not_exp = False
-                        break
-                    order = "asc"
-                    for _ in range(8):
-                        if _ == 7:
-                            order = "desc"
-
-                        args.append(
-                            (
-                                self._construct_url(o_ticker.o_ticker),
-                                {
-                                    "limit": 1,
-                                    "sort": "timestamp",
-                                    "order": order,
-                                    "timestamp.gte": dates[i + _]
-                                    if _ != 7
-                                    else dates[i + _][:-11] + "0" + dates[i + _][-10:],
-                                    "timestamp.lte": dates[i + _ + 1],
-                                },
-                            )
-                        )
-                break
-            if args:
-                output_args.append(
+            payloads = self.dates.loc[self.dates["timestamp.gte"] <= str(o_ticker.expiration_date)].to_dict(
+                "records"
+            )
+            if payloads:
+                url = self._construct_url(o_ticker.o_ticker)
+                clean_ticker = self._clean_o_ticker(o_ticker.o_ticker)
+                args = [(url, payload) for payload in payloads]
+                output_args = [
                     (
                         o_ticker.o_ticker,
                         args,
                         o_ticker.underlying_ticker,
-                        self._clean_o_ticker(o_ticker.o_ticker),
+                        clean_ticker,
                     )
-                )
+                ]
         return output_args
 
     @staticmethod
@@ -558,7 +536,10 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz"""
         dates = dates.tz_localize("US/Eastern")
         for i in range(9):
-            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
+            if i >= 7:
+                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
+            else:
+                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
             dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
             dates[f"{i+9}_oclock"] = (
                 dates[f"{i+9}_oclock"].astype(str).str.slice(stop=-2)
@@ -566,7 +547,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 + dates[f"{i+9}_oclock"].astype(str).str.slice(start=-2)
             )
         dates.drop(columns=["market_open", "market_close"], inplace=True)
-        return dates.values.flatten().tolist()
+        dates = pd.DataFrame({"timestamp.gte": dates.values.flatten()})
+        dates["timestamp.lte"] = dates["timestamp.gte"].shift(-1)
+        dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index()
+        dates["limit"] = 1
+        dates["sort"] = "timestamp"
+        dates["order"] = np.tile(["asc"] * 7 + ["desc"], int(np.ceil(len(dates) / 8)))[: len(dates)]
+
+        return dates
 
     async def download_data(
         self,
@@ -588,7 +576,6 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        o_ticker
         log.info(f"Downloading quote data for {o_ticker}")
         log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
 
