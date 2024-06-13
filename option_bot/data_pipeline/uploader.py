@@ -11,7 +11,7 @@ from data_pipeline.path_runner import (
     StockPricesRunner,
 )
 
-from option_bot.proj_constants import log
+from option_bot.proj_constants import CPUS, log
 from option_bot.utils import pool_kwarg_config
 
 # TODO: all the "upload_xyz() function below can be abstracted to accept
@@ -74,7 +74,7 @@ async def upload_options_prices(o_tickers: dict):
     Args:
         o_tickers: dict(o_ticker_id: OptionsTicker tuple)"""
     opt_price_runner = OptionsPricesRunner()
-    pool_kwargs = {"childconcurrency": 3}
+    pool_kwargs = {"childconcurrency": 1, "queuecount": int(CPUS / 3)}
     await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
@@ -86,5 +86,5 @@ async def upload_options_snapshots(o_tickers: dict):
 
 async def upload_options_quotes(o_tickers: dict):
     quote_runner = OptionsQuoteRunner()
-    pool_kwargs = {"childconcurrency": 3}
+    pool_kwargs = {"childconcurrency": 2, "queuecount": int(CPUS / 3)}
     await etl_pool_uploader(quote_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)

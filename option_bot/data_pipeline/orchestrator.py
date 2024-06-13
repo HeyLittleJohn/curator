@@ -119,3 +119,8 @@ async def remove_tickers_from_universe(tickers: list[str]):
         log.info(f"deleting ticker {ticker}")
         await delete_stock_ticker(ticker)
         log.info(f"ticker {ticker} successfully deleted")
+
+
+# if __name__ == "__main__":
+#     o_tickers = asyncio.run(generate_o_ticker_lookup(tickers=[], all_=True))
+#     asyncio.run(upload_options_prices(o_tickers))

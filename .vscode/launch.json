@@ -14,10 +14,9 @@
             "args": [
                 "add",
                 "SPY",
+                "-A",
                 "--months-hist",
-                "2",
-                "--partial",
-                "5",
+                "36",
                 "--partial",
                 "6",
             ],

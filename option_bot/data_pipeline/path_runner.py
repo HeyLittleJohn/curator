@@ -329,7 +329,7 @@ class OptionsPricesRunner(PathRunner):
                 file = self._determine_most_recent_file(temp_path)
                 path_args.append((file, o_tickers_lookup[o_ticker]))
             except FileNotFoundError:
-                log.info(f"file not found at: {temp_path} for {self.runner_type}, with ticker: {o_ticker}")
+                log.debug(f"file not found at: {temp_path} for {self.runner_type}, with ticker: {o_ticker}")
                 continue
 
         return path_args

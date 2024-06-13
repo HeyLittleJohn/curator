@@ -132,9 +132,9 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 250}
+    pool_kwargs = {"childconcurrency": 500}
     op_quotes = HistoricalQuotes(months_hist=months_hist)
-    step = 1000
+    step = 300
     batch_num = 1
     for i in range(0, len(o_tickers), step):
         log.info(f"downloading options quotes for batch {batch_num}: total o_tickers: {i}/{len(o_tickers)}")
