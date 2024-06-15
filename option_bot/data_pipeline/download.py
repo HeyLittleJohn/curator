@@ -125,7 +125,7 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: int = 24):
+async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTicker], months_hist: int = 24):
     """This function downloads options quotes from polygon and stores it as local json.
 
     Args:
@@ -134,12 +134,47 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
     """
     pool_kwargs = {"childconcurrency": 500}
     op_quotes = HistoricalQuotes(months_hist=months_hist)
-    # step = 50
-    # batch_num = 1
-    # for i in range(0, len(o_tickers), step):
-    #     log.info(
-    #         f"downloading options quotes for batch {batch_num}: total o_tickers: {i+step}/{len(o_tickers)}"
-    #     )
-    #     batch = o_tickers[i : i + step]
-    #     batch_num += 1
-    #     await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=batch)
+    ticker_counter = 0
+    BATCH_SIZE_OTICKERS = 10000
+    for ticker in tickers:
+        ticker_counter += 1
+        batch_o_tickers = [x for x in o_tickers if x.underlying_ticker == ticker]
+        for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
+            small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
+        log.info(
+            f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
+            with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
+        )
+        await api_quote_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch)
+
+
+async def api_quote_downloader(
+    paginator: PolygonPaginator,
+    args_data: list = None,
+    pool_kwargs: dict = {},
+    batch_num: int = None,
+):
+    """This function creates a process pool to download data from the polygon api and store it in json files.
+    It is the base module co-routine for all our data pulls.
+    It generates the urls to be queried, creates and runs a process pool to perform the I/O queries.
+    The results for each request are returned via PoolResults generator.
+
+    Args:
+        paginator: PolygonPaginator object, specific to the endpoint being queried,
+        args_data: list of data args to be used to generate pool args
+        pool_kwargs: kwargs to be passed to the process pool
+
+    url_args: list of tuples, each tuple contains the args for the paginator's download_data method
+    """
+    log.info("generating urls to be queried")
+    url_args = paginator.generate_request_args(args_data)
+    if url_args:
+        log.info("fetching data from polygon api")
+        pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
+        pool_kwargs = pool_kwarg_config(pool_kwargs)
+        async with Pool(**pool_kwargs) as pool:
+            await pool.starmap(paginator.download_data, url_args)
+
+        log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
+    elif batch_num:
+        log.info(f"no data to download for {paginator.paginator_type} batch: {batch_num}")

@@ -513,22 +513,20 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             }
         """
         output_args = []
+        log.info(f"Generating request args for {len(args_data)} option tickers")
+        count = 0
         for o_ticker in args_data:
+            if count % 500 == 0:
+                log.info(f"Generating request args for {count}/{len(args_data)} option tickers")
+            count += 1
             payloads = self.dates.loc[self.dates["timestamp.gte"] <= str(o_ticker.expiration_date)].to_dict(
                 "records"
             )
             if payloads:
                 url = self._construct_url(o_ticker.o_ticker)
-                clean_ticker = self._clean_o_ticker(o_ticker.o_ticker)
-                args = [(url, payload) for payload in payloads]
-                output_args.append(
-                    (
-                        o_ticker.o_ticker,
-                        args,
-                        o_ticker.underlying_ticker,
-                        clean_ticker,
-                    )
-                )
+                args = [(url, payload, o_ticker.underlying_ticker) for payload in payloads]
+                output_args.extend(args)
+
         return output_args
 
     @staticmethod
@@ -549,19 +547,18 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         dates.drop(columns=["market_open", "market_close"], inplace=True)
         dates = pd.DataFrame({"timestamp.gte": dates.values.flatten()})
         dates["timestamp.lte"] = dates["timestamp.gte"].shift(-1)
-        dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index()
+        dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index(drop=True)
         dates["limit"] = 1
         dates["sort"] = "timestamp"
         dates["order"] = np.tile(["asc"] * 7 + ["desc"], int(np.ceil(len(dates) / 8)))[: len(dates)]
 
-        return dates
+        return dates.sort_index(ascending=False).reset_index(drop=True)
 
     async def download_data(
         self,
-        o_ticker: str,
-        request_args: tuple[list[tuple[str, dict]]],
+        url: str,
+        payload: dict,
         under_ticker: str,
-        clean_ticker: str,
         session: ClientSession = None,
     ):
         """Overwriting inherited download_data().
@@ -576,23 +573,22 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
+        o_ticker = url.split(":")[1]
         log.info(f"Downloading quote data for {o_ticker}")
-        log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
 
-        tasks = [self._query_all(session, url, payload, limit=True) for url, payload in request_args]
-        results = await asyncio.gather(*tasks)
+        return await self._query_all(session, url, payload, limit=True)
 
-        if results:
-            log.info(f"Writing quote data for {o_ticker} to file")
+        # if results:
+        #     log.info(f"Writing quote data for {o_ticker} to file")
 
-            results = [x[0].get("results")[0] for x in results if x[0].get("results")]
+        #     results = [x[0].get("results")[0] for x in results if x[0].get("results")]
 
-            write_api_data_to_file(
-                results,
-                *self._download_path(
-                    under_ticker + "/" + clean_ticker,
-                    str(timestamp_now()),
-                ),
-            )
-        else:
-            log.info(f"No quote data for {o_ticker} in the time range")
+        #     write_api_data_to_file(
+        #         results,
+        #         *self._download_path(
+        #             under_ticker + "/" + o_ticker,
+        #             str(timestamp_now()),
+        #         ),
+        #     )
+        # else:
+        #     log.info(f"No quote data for {o_ticker} in the time range")
