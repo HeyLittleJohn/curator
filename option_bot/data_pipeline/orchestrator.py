@@ -60,7 +60,7 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     await upload_options_prices(o_tickers)
 
     # Download and upload quotes
-    await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
+    await download_options_quotes(tickers=tickers, o_tickers=list(o_tickers.values()), months_hist=months_hist)
     await upload_options_quotes(o_tickers)
 
     # Download and upload underlying stock prices
@@ -107,9 +107,13 @@ async def import_partial(
         await upload_options_snapshots(o_tickers)
 
     if 6 in partial:  # quotes
+        if not ticker_lookup:
+            ticker_lookup = await pull_tickers_from_db(tickers, all_)
         if not o_tickers:
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
-        await download_options_quotes(o_tickers=list(o_tickers.values()), months_hist=months_hist)
+        await download_options_quotes(
+            tickers=tickers, o_tickers=list(o_tickers.values()), months_hist=months_hist
+        )
         await upload_options_quotes(o_tickers)
 
 
