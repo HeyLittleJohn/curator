@@ -134,10 +134,12 @@ async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: in
     """
     pool_kwargs = {"childconcurrency": 500}
     op_quotes = HistoricalQuotes(months_hist=months_hist)
-    step = 300
-    batch_num = 1
-    for i in range(0, len(o_tickers), step):
-        log.info(f"downloading options quotes for batch {batch_num}: total o_tickers: {i}/{len(o_tickers)}")
-        batch = o_tickers[i : i + step]
-        batch_num += 1
-        await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=batch)
+    # step = 50
+    # batch_num = 1
+    # for i in range(0, len(o_tickers), step):
+    #     log.info(
+    #         f"downloading options quotes for batch {batch_num}: total o_tickers: {i+step}/{len(o_tickers)}"
+    #     )
+    #     batch = o_tickers[i : i + step]
+    #     batch_num += 1
+    #     await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=batch)
