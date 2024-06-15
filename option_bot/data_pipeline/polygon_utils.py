@@ -512,7 +512,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 list(tuple(url, payload)), underlying_ticker, clean_ticker)
             }
         """
-        args = []
+        output_args = []
         for o_ticker in args_data:
             payloads = self.dates.loc[self.dates["timestamp.gte"] <= str(o_ticker.expiration_date)].to_dict(
                 "records"
@@ -521,14 +521,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 url = self._construct_url(o_ticker.o_ticker)
                 clean_ticker = self._clean_o_ticker(o_ticker.o_ticker)
                 args = [(url, payload) for payload in payloads]
-                output_args = [
+                output_args.append(
                     (
                         o_ticker.o_ticker,
                         args,
                         o_ticker.underlying_ticker,
                         clean_ticker,
                     )
-                ]
+                )
         return output_args
 
     @staticmethod
