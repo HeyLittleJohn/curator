@@ -30,8 +30,6 @@ from aiomultiprocess.types import (
 from option_bot.data_pipeline.exceptions import PoolResultException
 from option_bot.utils import clean_o_ticker
 
-# from option_bot.utils import extract_underlying_from_o_ticker
-
 
 class QuoteScheduler(RoundRobin):
     """This scheduler is for use in the QuotePool for the Options Quotes downloader.
@@ -216,55 +214,6 @@ class QuoteWorker(PoolWorker):
             if all((tid + 1) in num_set for i in range(k)):
                 return True
         return False
-
-    # async def wait_pending_results(self, tids: Sequence[TaskID]) -> Sequence[R]:
-    #     """
-    #     Wait for all tasks to complete, and return results, preserving order.
-
-    #     :meta private:
-    #     """
-    #     pending = set(tids)
-    #     ready: Dict[TaskID, R] = {}
-
-    #     while pending:
-    #         for tid in pending.copy():
-    #             if tid in self._results:
-    #                 result, tb = self._results.pop(tid)
-    #                 if tb is not None:
-    #                     raise ProxyException(tb)
-    #                 ready[tid] = result
-    #                 pending.remove(tid)
-
-    #         await asyncio.sleep(0.005)
-
-    #     return [ready[tid] for tid in tids]
-
-
-# class QuoteWorkerResult(Awaitable[Sequence[_T]], AsyncIterable[_T]):
-#     """
-#     Asynchronous proxy for map/starmap results. Can be awaited or used with `async for`.
-#     """
-
-#     def __init__(self, worker: "QuoteWorker", task_ids: Sequence[TaskID]):
-#         self.worker = worker
-#         self.task_ids = task_ids
-
-#     def __await__(self) -> Generator[Any, None, Sequence[_T]]:
-#         """Wait for all results and return them as a sequence"""
-#         return self.results().__await__()
-
-#     async def results(self) -> Sequence[_T]:
-#         """Wait for all results and return them as a sequence"""
-#         return await self.worker.results(self.task_ids)
-
-#     def __aiter__(self) -> AsyncIterator[_T]:
-#         """Return results one-by-one as they are ready"""
-#         return self.results_generator()
-
-#     async def results_generator(self) -> AsyncIterator[_T]:
-#         """Return results one-by-one as they are ready"""
-#         for task_id in self.task_ids:
-#             yield (await self.worker.results([task_id]))[0]
 
 
 class QuotePool(Pool):
