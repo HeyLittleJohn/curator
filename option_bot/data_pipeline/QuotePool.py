@@ -3,12 +3,10 @@ import queue
 import traceback
 from typing import (
     Any,
-    AsyncIterable,
-    AsyncIterator,
     Awaitable,
     Callable,
     Dict,
-    Generator,
+    List,
     Optional,
     Sequence,
     Tuple,
@@ -16,9 +14,18 @@ from typing import (
 
 from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiomultiprocess.core import Process
-from aiomultiprocess.pool import _T, CHILD_CONCURRENCY, MAX_TASKS_PER_CHILD, Pool, PoolWorker
+from aiomultiprocess.pool import CHILD_CONCURRENCY, MAX_TASKS_PER_CHILD, Pool, PoolWorker
 from aiomultiprocess.scheduler import RoundRobin
-from aiomultiprocess.types import LoopInitializer, PoolTask, ProxyException, Queue, QueueID, R, T, TaskID
+from aiomultiprocess.types import (
+    LoopInitializer,
+    PoolTask,
+    Queue,
+    QueueID,
+    R,
+    T,
+    TaskID,
+    TracebackStr,
+)
 
 from option_bot.data_pipeline.exceptions import PoolResultException
 from option_bot.utils import clean_o_ticker
@@ -71,8 +78,8 @@ class QuoteWorker(PoolWorker):
         self,
         tx: Queue,
         rx: Queue,
-        ttl: int = MAX_TASKS_PER_CHILD,
         concurrency: int = CHILD_CONCURRENCY,
+        ttl: int = MAX_TASKS_PER_CHILD,
         *,
         initializer: Optional[Callable] = None,
         initargs: Sequence[Any] = (),
@@ -97,13 +104,15 @@ class QuoteWorker(PoolWorker):
         self.o_ticker_count_mapping = o_ticker_count_mapping
         self.o_ticker: str = ""
         self.underlying_ticker: str = ""
-        self._results: Dict[TaskID, Tuple[R, Optional[str]]] = {}
+        self._results: Dict[TaskID, Tuple[Any, Optional[TracebackStr]]] = {}
 
     def clean_up_queue(self):
         pass
 
-    def save_results(self):
-        pass
+    def save_results(self, func: Callable):
+        """save the results to disc"""
+        results = [x[0] for x in self._results.values() if x[0] is not None]
+        func(results, self.o_ticker, self.underlying_ticker)
 
     async def run(self):
         if self.init_client_session:
@@ -113,7 +122,9 @@ class QuoteWorker(PoolWorker):
                 base_url=self.session_base_url if self.session_base_url else None,
             ) as client_session:
                 pending: Dict[asyncio.Future, TaskID] = {}
-                completed = 0
+                pulled_tids: List[TaskID] = []
+                completed: int = 0
+                empty_tids: List[TaskID] = []
                 running = True
                 while running or pending:
                     # TTL, Tasks To Live, determines how many tasks to execute before dying
@@ -132,13 +143,35 @@ class QuoteWorker(PoolWorker):
                             break
 
                         tid, func, args, kwargs = task
+                        pulled_tids.append(tid)
 
-                        args = [
-                            *args,
-                            client_session,
-                        ]  # NOTE: adds client session to the args list
-                        future = asyncio.ensure_future(func(*args, **kwargs))
-                        pending[future] = tid
+                        # set worker o_ticker value
+                        if self.o_ticker == "":
+                            self.o_ticker = args[0]
+                            self.underlying_ticker = clean_o_ticker(self.o_ticker)
+                            self.ttl = self.o_ticker_count_mapping[self.o_ticker]
+
+                        # start work on task, add to pending
+                        if args[0] == self.o_ticker:
+                            args = [
+                                *args,
+                                client_session,
+                            ]  # NOTE: adds client session to the args list
+                            future = asyncio.ensure_future(func(*args, **kwargs))
+                            pending[future] = tid
+
+                        else:
+                            raise PoolResultException(
+                                "Quote Worker can't working on more than one o_ticker",
+                                extra={
+                                    "context": f"trying {args[0]} while current o_ticker is {self.o_ticker}"
+                                },
+                            )
+
+                        # poison pill 1: all o_ticker args have been processed
+                        if args[0] is None and args[1] is None:
+                            running = False
+                            break
 
                     if not pending:
                         await asyncio.sleep(0.005)
@@ -163,57 +196,75 @@ class QuoteWorker(PoolWorker):
 
                             tb = traceback.format_exc()
 
-                        self.rx.put_nowait((tid, result, tb))
                         completed += 1
+                        if result is not None:
+                            if result.get("results"):
+                                self._results[tid] = (result, tb)
+                            else:
+                                empty_tids.append(tid)
 
-    async def results(self, tids: Sequence[TaskID]) -> Sequence[R]:
-        """
-        Wait for all tasks to complete, and return results, preserving order.
+                    # poison pill 2: o_ticker args are returning no results
+                    if self.has_consecutive_sequence(empty_tids):
+                        running = False
 
-        :meta private:
-        """
-        pending = set(tids)
-        ready: Dict[TaskID, R] = {}
+                self.save_results()
 
-        while pending:
-            for tid in pending.copy():
-                if tid in self._results:
-                    result, tb = self._results.pop(tid)
-                    if tb is not None:
-                        raise ProxyException(tb)
-                    ready[tid] = result
-                    pending.remove(tid)
+    def has_consecutive_sequence(self, tids: List[TaskID], k=16) -> bool:
+        """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
+        num_set = set(tids)
+        for tid in tids:
+            if all((tid + 1) in num_set for i in range(k)):
+                return True
+        return False
 
-            await asyncio.sleep(0.005)
+    # async def wait_pending_results(self, tids: Sequence[TaskID]) -> Sequence[R]:
+    #     """
+    #     Wait for all tasks to complete, and return results, preserving order.
 
-        return [ready[tid] for tid in tids]
+    #     :meta private:
+    #     """
+    #     pending = set(tids)
+    #     ready: Dict[TaskID, R] = {}
+
+    #     while pending:
+    #         for tid in pending.copy():
+    #             if tid in self._results:
+    #                 result, tb = self._results.pop(tid)
+    #                 if tb is not None:
+    #                     raise ProxyException(tb)
+    #                 ready[tid] = result
+    #                 pending.remove(tid)
+
+    #         await asyncio.sleep(0.005)
+
+    #     return [ready[tid] for tid in tids]
 
 
-class QuoteWorkerResult(Awaitable[Sequence[_T]], AsyncIterable[_T]):
-    """
-    Asynchronous proxy for map/starmap results. Can be awaited or used with `async for`.
-    """
+# class QuoteWorkerResult(Awaitable[Sequence[_T]], AsyncIterable[_T]):
+#     """
+#     Asynchronous proxy for map/starmap results. Can be awaited or used with `async for`.
+#     """
 
-    def __init__(self, worker: "QuoteWorker", task_ids: Sequence[TaskID]):
-        self.worker = worker
-        self.task_ids = task_ids
+#     def __init__(self, worker: "QuoteWorker", task_ids: Sequence[TaskID]):
+#         self.worker = worker
+#         self.task_ids = task_ids
 
-    def __await__(self) -> Generator[Any, None, Sequence[_T]]:
-        """Wait for all results and return them as a sequence"""
-        return self.results().__await__()
+#     def __await__(self) -> Generator[Any, None, Sequence[_T]]:
+#         """Wait for all results and return them as a sequence"""
+#         return self.results().__await__()
 
-    async def results(self) -> Sequence[_T]:
-        """Wait for all results and return them as a sequence"""
-        return await self.worker.results(self.task_ids)
+#     async def results(self) -> Sequence[_T]:
+#         """Wait for all results and return them as a sequence"""
+#         return await self.worker.results(self.task_ids)
 
-    def __aiter__(self) -> AsyncIterator[_T]:
-        """Return results one-by-one as they are ready"""
-        return self.results_generator()
+#     def __aiter__(self) -> AsyncIterator[_T]:
+#         """Return results one-by-one as they are ready"""
+#         return self.results_generator()
 
-    async def results_generator(self) -> AsyncIterator[_T]:
-        """Return results one-by-one as they are ready"""
-        for task_id in self.task_ids:
-            yield (await self.worker.results([task_id]))[0]
+#     async def results_generator(self) -> AsyncIterator[_T]:
+#         """Return results one-by-one as they are ready"""
+#         for task_id in self.task_ids:
+#             yield (await self.worker.results([task_id]))[0]
 
 
 class QuotePool(Pool):
@@ -268,6 +319,22 @@ class QuotePool(Pool):
     async def results(self, tids):
         """overwrites the inherited results so it's not called accidentally"""
         raise PoolResultException("no results stored in QuotePool, check QuoteWorker instead")
+
+    async def loop(self) -> None:
+        """
+        Maintain the pool of workers while open.
+
+        :meta private:
+        """
+        while self.processes or self.running:
+            # clean up workers that reached TTL
+            for process in list(self.processes):
+                if not process.is_alive():
+                    qid = self.processes.pop(process)
+                    if self.running:
+                        self.processes[self.create_worker(qid)] = qid
+            # let someone else do some work for once
+            await asyncio.sleep(0.005)
 
     def starmap(
         self,
