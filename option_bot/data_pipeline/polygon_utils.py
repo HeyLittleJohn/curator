@@ -17,6 +17,8 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
+    clean_o_ticker,
+    extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
@@ -500,7 +502,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     def generate_request_args(
         self, args_data: list[OptionTicker]
-    ) -> list[str, tuple[list[tuple[str, dict]], str, str]]:
+    ) -> tuple[list[tuple[str, dict]], dict[str, int]]:
         """Generate the urls to query the options quotes endpoint.
         Inputs should be OptionTickers. We then generate the date ranges.
         To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
@@ -508,11 +510,12 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         Only create args if the option has not yet expired during the dates in the time range.
 
         Outputs:
-            output_args: list of (o_ticker: str, tuple(
-                list(tuple(url, payload)), underlying_ticker, clean_ticker)
+            output_args: list of (o_ticker: str, payload:dict)
+            o_ticker_count_mapping: dict of o_ticker: count of payloads
             }
         """
         output_args = []
+        o_ticker_count_mapping = {}
         log.info(f"Generating request args for {len(args_data)} option tickers")
         count = 0
         for o_ticker in args_data:
@@ -523,11 +526,11 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 "records"
             )
             if payloads:
-                url = self._construct_url(o_ticker.o_ticker)
-                args = [(url, payload, o_ticker.underlying_ticker) for payload in payloads]
+                args = [(o_ticker.o_ticker, payload) for payload in payloads]
                 output_args.extend(args)
+                o_ticker_count_mapping[o_ticker.o_ticker] = len(payloads)
 
-        return output_args
+        return output_args, o_ticker_count_mapping
 
     @staticmethod
     def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
@@ -548,17 +551,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         dates = pd.DataFrame({"timestamp.gte": dates.values.flatten()})
         dates["timestamp.lte"] = dates["timestamp.gte"].shift(-1)
         dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index(drop=True)
-        dates["limit"] = 1
-        dates["sort"] = "timestamp"
         dates["order"] = np.tile(["asc"] * 7 + ["desc"], int(np.ceil(len(dates) / 8)))[: len(dates)]
 
         return dates.sort_index(ascending=False).reset_index(drop=True)
 
     async def download_data(
         self,
-        url: str,
+        o_ticker: str,
         payload: dict,
-        under_ticker: str,
         session: ClientSession = None,
     ):
         """Overwriting inherited download_data().
@@ -566,29 +566,26 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
         args:
             o_ticker: str,
-            request_args: tuple(list(tuple(url, payload)),
-            under_ticker: str,
-            clean_ticker: str,
+            payload: dict(timestamp.gte, timestamp.lte, order)
 
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        o_ticker = url.split(":")[1]
+
         log.info(f"Downloading quote data for {o_ticker}")
 
-        return await self._query_all(session, url, payload, limit=True)
+        return await self._query_all(
+            session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
+        )
 
-        # if results:
-        #     log.info(f"Writing quote data for {o_ticker} to file")
-
-        #     results = [x[0].get("results")[0] for x in results if x[0].get("results")]
-
-        #     write_api_data_to_file(
-        #         results,
-        #         *self._download_path(
-        #             under_ticker + "/" + o_ticker,
-        #             str(timestamp_now()),
-        #         ),
-        #     )
-        # else:
-        #     log.info(f"No quote data for {o_ticker} in the time range")
+    async def save_data(self, o_ticker: str, results: list[dict]):
+        """This function will save to file all results stored within the QuoteWorker"""
+        log.info(f"Writing quote data for {o_ticker} to file")
+        o_ticker = clean_o_ticker(o_ticker)
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                extract_underlying_from_o_ticker(o_ticker) + "/" + o_ticker,
+                str(timestamp_now()),
+            ),
+        )
