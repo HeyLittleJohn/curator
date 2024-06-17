@@ -18,7 +18,6 @@ from db_tools.utils import OptionTicker
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
     clean_o_ticker,
-    extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
@@ -578,14 +577,16 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )
 
-    async def save_data(self, o_ticker: str, results: list[dict]):
+    async def save_data(self, o_ticker: str, under_ticker: str, results: list[dict]):
         """This function will save to file all results stored within the QuoteWorker"""
         log.info(f"Writing quote data for {o_ticker} to file")
         o_ticker = clean_o_ticker(o_ticker)
+        clean_results = [x.get("results") for x in results if x.get("results")]
+
         write_api_data_to_file(
-            results,
+            clean_results,
             *self._download_path(
-                extract_underlying_from_o_ticker(o_ticker) + "/" + o_ticker,
+                under_ticker + "/" + o_ticker,
                 str(timestamp_now()),
             ),
         )
