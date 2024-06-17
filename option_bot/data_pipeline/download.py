@@ -167,13 +167,13 @@ async def api_quote_downloader(
     url_args: list of tuples, each tuple contains the args for the paginator's download_data method
     """
     log.info("generating urls to be queried")
-    url_args = paginator.generate_request_args(args_data)
+    url_args, o_ticker_count_mapping = paginator.generate_request_args(args_data)
     if url_args:
         log.info("fetching data from polygon api")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
-        async with Pool(**pool_kwargs) as pool:
-            await pool.starmap(paginator.download_data, url_args)
+        async with Pool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
+            await pool.starmap(paginator.download_data, paginator.save_data, url_args)
 
         log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
     elif batch_num:

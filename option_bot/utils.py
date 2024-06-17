@@ -66,6 +66,20 @@ def chunk_iter_generator(data: list, size=250000):
         yield data[i : i + size]
 
 
+def clean_o_ticker(o_ticker: str) -> str:
+    return o_ticker.split(":")[1] if ":" in o_ticker else o_ticker
+
+
+def extract_underlying_from_o_ticker(o_ticker: str) -> str:
+    clean_o_ticker(o_ticker)
+    underlying = ""
+    for char in o_ticker:
+        if char.isdigit():
+            break
+        underlying += char
+    return underlying
+
+
 def Session(func):
     """
     Decorator that adds a SQLAlchemy AsyncSession to the function passed if the function is not
