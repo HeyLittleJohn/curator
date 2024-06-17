@@ -51,8 +51,8 @@ class QuoteScheduler(RoundRobin):
         _kwargs: Dict[str, Any],
     ) -> QueueID:
         """required:args needs to have the OptionTicker tuple be the first arg in the tuple"""
-        if self.get_o_ticker_from_url(args[0]) != self.current_o_ticker:
-            self.current_o_ticker = self.get_o_ticker_from_url(args[0])
+        if clean_o_ticker(args[0]) != self.current_o_ticker:
+            self.current_o_ticker = clean_o_ticker(args[0])
             self.current_queue = self.cycle_queue(queues)
         return self.current_queue
 
@@ -60,10 +60,6 @@ class QuoteScheduler(RoundRobin):
         """cycles the queue with the fewest tasks"""
         queue_vals = {qid: len(queues[qid][0]) for qid in self.qids}
         return min(queue_vals, key=queue_vals.get)
-
-    @staticmethod
-    def get_o_ticker_from_url(url: str) -> str:
-        return clean_o_ticker(url)
 
 
 class QuoteWorker(PoolWorker):
@@ -196,7 +192,7 @@ class QuoteWorker(PoolWorker):
 
                         completed += 1
                         if result is not None:
-                            if result.get("results"):
+                            if len(result.get("results")) > 0:
                                 self._results[tid] = (result, tb)
                             else:
                                 empty_tids.append(tid)

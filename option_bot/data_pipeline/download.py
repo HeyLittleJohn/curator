@@ -18,6 +18,7 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
+from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
@@ -120,7 +121,7 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     Args:
         o_tickers: list of OptionTicker tuples
     """
-    pool_kwargs = {"childconcurrency": 200, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
     op_snapshots = CurrentContractSnapshot()
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
@@ -141,11 +142,11 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
         batch_o_tickers = [x for x in o_tickers if x.underlying_ticker == ticker]
         for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
             small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
-        log.info(
-            f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
-            with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
-        )
-        await api_quote_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch)
+            log.info(
+                f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
+                with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
+            )
+            await api_quote_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch)
 
 
 async def api_quote_downloader(
@@ -172,7 +173,7 @@ async def api_quote_downloader(
         log.info("fetching data from polygon api")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
-        async with Pool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
+        async with QuotePool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
             await pool.starmap(paginator.download_data, paginator.save_data, url_args)
 
         log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
