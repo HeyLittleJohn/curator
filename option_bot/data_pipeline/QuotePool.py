@@ -28,6 +28,7 @@ from aiomultiprocess.types import (
 )
 
 from option_bot.data_pipeline.exceptions import PoolResultException
+from option_bot.proj_constants import log
 from option_bot.utils import clean_o_ticker
 
 
@@ -37,10 +38,13 @@ class QuoteScheduler(RoundRobin):
     Requires that all tasks add to the pool are ordered by option ticker.
     When the same option ticker is no longer"""
 
-    def __init__(self) -> None:
+    def __init__(self, o_ticker_mapping: Dict[str, int]) -> None:
         super().__init__()
         self.current_o_ticker: str = ""
         self.current_queue: QueueID = 0
+        self.queue_size: Dict[QueueID, int] = {}
+        self.o_ticker_mapping = o_ticker_mapping
+        self.counter = 0
 
     def schedule_task(
         self,
@@ -49,17 +53,29 @@ class QuoteScheduler(RoundRobin):
         _func: Callable[..., Awaitable[R]],
         args: Sequence[Any],
         _kwargs: Dict[str, Any],
+        pill: bool = False,
     ) -> QueueID:
         """required:args needs to have the OptionTicker tuple be the first arg in the tuple"""
-        if clean_o_ticker(args[0]) != self.current_o_ticker:
+        self.counter += 1
+        if pill:
+            self.queue_size[self.current_queue] += self.counter
+            self.counter = 0
+            self.current_o_ticker = ""
+        elif clean_o_ticker(args[0]) != self.current_o_ticker:
             self.current_o_ticker = clean_o_ticker(args[0])
             self.current_queue = self.cycle_queue(queues)
         return self.current_queue
 
     def cycle_queue(self, queues: Dict[QueueID, Tuple[Queue, Queue]]) -> QueueID:
-        """cycles the queue with the fewest tasks"""
-        queue_vals = {qid: len(queues[qid][0]) for qid in self.qids}
-        return min(queue_vals, key=queue_vals.get)
+        """cycles the queue with the fewest tasks added to it"""
+
+        return min(self.queue_size, key=self.queue_size.get)
+
+    def complete_task(self, task_id):
+        """removes number of tasks from queue_size dict based on o_ticker and self.o_ticker_mapping
+        Unsure if it needs task_id, queue_id, o_ticker, or all of them"""
+        # NOTE: as of now, no way to pass the o_ticker from the worker to the pool to the scheduler.
+        pass
 
 
 class QuoteWorker(PoolWorker):
@@ -100,8 +116,12 @@ class QuoteWorker(PoolWorker):
         self.underlying_ticker: str = ""
         self._results: Dict[TaskID, Tuple[Any, Optional[TracebackStr]]] = {}
 
-    def clean_up_queue(self):
-        pass
+    def clean_up_queue(self, completed: int):
+        wont_do = self.o_ticker_count_mapping[self.o_ticker] - completed
+        if wont_do > 0:
+            log.info(f"cleaning up {wont_do} tasks from the queue")
+            for _ in range(wont_do):
+                self.tx.get_nowait()
 
     def save_results(self, func: Callable):
         """save the results to disc"""
@@ -193,7 +213,7 @@ class QuoteWorker(PoolWorker):
                         completed += 1
                         if result is not None:
                             if len(result.get("results")) > 0:
-                                self._results[tid] = (result, tb)
+                                self._results[tid] = (result.get("results"), tb)
                             else:
                                 empty_tids.append(tid)
 
@@ -202,6 +222,10 @@ class QuoteWorker(PoolWorker):
                         running = False
 
                 self.save_results()
+                if completed != len(pulled_tids):
+                    log.warning("completed != pulled_tids...check why or you can trust the queue cleaner")
+
+                self.clean_up_queue(completed)
 
     def has_consecutive_sequence(self, tids: List[TaskID], k=16) -> bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
@@ -228,6 +252,8 @@ class QuotePool(Pool):
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
     ) -> None:
+        self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
+        scheduler = QuoteScheduler(self.o_ticker_count_mapping)
         super().__init__(
             processes,
             initializer,
@@ -241,13 +267,13 @@ class QuotePool(Pool):
             init_client_session,
             session_base_url,
         )
-        self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
 
     def queue_work(
         self,
         func: Callable[..., Awaitable[R]],
         args: Sequence[Any],
         kwargs: Dict[str, Any],
+        pill: bool = False,
     ):
         """
         pass the queues themselves to the scheduler enabling scheduling based on load.
@@ -257,7 +283,14 @@ class QuotePool(Pool):
         self.last_id += 1
         task_id = TaskID(self.last_id)
 
-        qid = self.scheduler.schedule_task(self.queues, task_id, func, args, kwargs)
+        qid = self.scheduler.schedule_task(
+            self.queues,
+            task_id,
+            func,
+            args,
+            kwargs,
+            pill,
+        )
         tx, _ = self.queues[qid]
         tx.put_nowait((task_id, func, args, kwargs))
 
@@ -297,56 +330,27 @@ class QuotePool(Pool):
                 self.queue_work(func, args, {})
             else:
                 # passes poison pill to worker to save results and die
-                self.queue_work(func_2, (None, None), {})
+                self.queue_work(func_2, (None, None), {}, pill=True)
                 current_o_ticker = args[0]
 
+    def create_worker(self, qid: QueueID, o_ticker: str, ttl: int) -> Process:
+        """
+        Create a worker process attached to the given transmit and receive queues.
 
-def create_worker(self, qid: QueueID, o_ticker: str, ttl: int) -> Process:
-    """
-    Create a worker process attached to the given transmit and receive queues.
-
-    :meta private:
-    """
-    tx, rx = self.queues[qid]
-    process = QuoteWorker(
-        tx,
-        rx,
-        self.childconcurrency,
-        initializer=self.initializer,
-        initargs=self.initargs,
-        loop_initializer=self.loop_initializer,
-        exception_handler=self.exception_handler,
-        init_client_session=self.init_client_session,
-        session_base_url=self.session_base_url,
-        o_ticker_count_mapping=self.o_ticker_count_mapping,
-    )
-    process.start()
-    return process
-
-
-async def loop(self) -> None:
-    """
-    Maintain the pool of workers while open. Map workers to o_tickers.
-
-    :meta private:
-    """
-    while self.processes or self.running:
-        # clean up workers that reached TTL
-        for process in list(self.processes):
-            if not process.is_alive():
-                qid = self.processes.pop(process)
-                if self.running:
-                    self.processes[self.create_worker(qid)] = qid
-
-        # pull results into a shared dictionary for later retrieval
-        for _, rx in self.queues.values():
-            while True:
-                try:
-                    task_id, value, tb = rx.get_nowait()
-                    self.finish_work(task_id, value, tb)
-
-                except queue.Empty:
-                    break
-
-        # let someone else do some work for once
-        await asyncio.sleep(0.005)
+        :meta private:
+        """
+        tx, rx = self.queues[qid]
+        process = QuoteWorker(
+            tx,
+            rx,
+            self.childconcurrency,
+            initializer=self.initializer,
+            initargs=self.initargs,
+            loop_initializer=self.loop_initializer,
+            exception_handler=self.exception_handler,
+            init_client_session=self.init_client_session,
+            session_base_url=self.session_base_url,
+            o_ticker_count_mapping=self.o_ticker_count_mapping,
+        )
+        process.start()
+        return process
