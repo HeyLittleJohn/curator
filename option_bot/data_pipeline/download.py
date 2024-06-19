@@ -173,7 +173,9 @@ async def api_quote_downloader(
         log.info("fetching data from polygon api")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
+        log.info("creating quote pool")
         async with QuotePool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
+            log.info("deploying QuoteWorkers in Pool")
             await pool.starmap(paginator.download_data, paginator.save_data, url_args)
 
         log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")

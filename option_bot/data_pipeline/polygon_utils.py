@@ -571,8 +571,6 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         This lets us wait for the process pool to insert the session into the args.
         """
 
-        log.info(f"Downloading quote data for {o_ticker}")
-
         return await self._query_all(
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )
