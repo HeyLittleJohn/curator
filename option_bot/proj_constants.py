@@ -20,7 +20,7 @@ sentry_sdk.init(
 )
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
-DEBUG = False
+DEBUG = True
 
 
 # NOTE: use this function if pass variables to env via docker .env file. Otherwise use .pgpass
