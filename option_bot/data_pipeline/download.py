@@ -18,7 +18,6 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
-from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
@@ -133,8 +132,9 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 500}
-    op_quotes = HistoricalQuotes(months_hist=months_hist)
+    pool_kwargs = {"childconcurrency": 1000, "maxtasksperchild": 50000}
+    o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
+    op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     ticker_counter = 0
     BATCH_SIZE_OTICKERS = 10000
     for ticker in tickers:
@@ -146,14 +146,17 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
                 f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
                 with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
             )
-            await api_quote_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch)
+            await api_quote_downloader(
+                paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch, under_ticker=ticker
+            )
 
 
 async def api_quote_downloader(
-    paginator: PolygonPaginator,
+    paginator: HistoricalQuotes,
     args_data: list = None,
     pool_kwargs: dict = {},
     batch_num: int = None,
+    under_ticker: str = None,
 ):
     """This function creates a process pool to download data from the polygon api and store it in json files.
     It is the base module co-routine for all our data pulls.
@@ -164,6 +167,7 @@ async def api_quote_downloader(
         paginator: PolygonPaginator object, specific to the endpoint being queried,
         args_data: list of data args to be used to generate pool args
         pool_kwargs: kwargs to be passed to the process pool
+        under_ticker: the ticker of the underlying stock for the options
 
     url_args: list of tuples, each tuple contains the args for the paginator's download_data method
     """
@@ -171,12 +175,13 @@ async def api_quote_downloader(
     url_args, o_ticker_count_mapping = paginator.generate_request_args(args_data)
     if url_args:
         log.info("fetching data from polygon api")
+        log.debug(f"tasks: {len(url_args)}")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
         log.info("creating quote pool")
-        async with QuotePool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
+        async with Pool(**pool_kwargs) as pool:
             log.info("deploying QuoteWorkers in Pool")
-            await pool.starmap(paginator.download_data, paginator.save_data, url_args)
+            await pool.starmap(paginator.download_data, url_args)
 
         log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
     elif batch_num:
