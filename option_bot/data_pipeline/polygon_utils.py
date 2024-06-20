@@ -2,6 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
+from typing import Generator
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,6 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
-    clean_o_ticker,
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
@@ -488,13 +488,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     paginator_type = "OptionsQuotes"
 
-    def __init__(self, months_hist: int = 24):
+    def __init__(self, o_ticker_lookup: dict[str, int], months_hist: int = 24):
         super().__init__(months_hist=months_hist, timespan=Timespans.hour)
         self.start_date, self.close_date = self._determine_start_end_dates(
             string_to_date("2040-01-01")
         )  # NOTE: magic number meant to always trigger the newest date (today)
         self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
         self.dates = self._prepare_timestamps(self.dates)
+        self.o_ticker_lookup = o_ticker_lookup
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
@@ -571,20 +572,47 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         This lets us wait for the process pool to insert the session into the args.
         """
 
-        return await self._query_all(
+        results = await self._query_all(
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )
+        if results:
+            results = (
+                {**{"options_ticker_id": self.o_ticker_lookup[o_ticker]}, **results[0]["results"][0]}
+                if results[0].get("results")
+                else {}
+            )
+        else:
+            results = {}
+        return results
 
-    async def save_data(self, o_ticker: str, under_ticker: str, results: list[dict]):
+    def save_data(self, under_ticker: str, results: Generator):
         """This function will save to file all results stored within the QuoteWorker"""
-        log.info(f"Writing quote data for {o_ticker} to file")
-        o_ticker = clean_o_ticker(o_ticker)
-        clean_results = [x.get("results") for x in results if x.get("results")]
-
-        write_api_data_to_file(
-            clean_results,
-            *self._download_path(
-                under_ticker + "/" + o_ticker,
-                str(timestamp_now()),
-            ),
-        )
+        batch_results = []
+        batch_size = 100000
+        counter = 0
+        today_date = datetime.now().date()
+        for result in results:
+            if counter % 1000 == 0:
+                log.debug(f"counter: {counter}")
+            if result:
+                batch_results.append(result)
+                counter += 1
+            if counter == batch_size:
+                log.info(f"Writing quote data for {under_ticker} to file")
+                write_api_data_to_file(
+                    batch_results,
+                    *self._download_path(
+                        under_ticker + "/" + str(today_date) + "_months_hist_" + str(self.months_hist),
+                        str(timestamp_now()),
+                    ),
+                )
+                batch_results = []
+                counter = 0
+        if batch_results:
+            write_api_data_to_file(
+                batch_results,
+                *self._download_path(
+                    under_ticker + "/" + str(today_date),
+                    str(timestamp_now()),
+                ),
+            )

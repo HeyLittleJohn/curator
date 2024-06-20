@@ -121,25 +121,6 @@ class QuoteWorker(PoolWorker):
         self._results: Dict[TaskID, Tuple[Any, Optional[TracebackStr]]] = {}
         self.empty_tids: List[TaskID] = []
 
-    def clean_up_queue(self, completed: int):
-        wont_do = self.o_ticker_count_mapping[self.o_ticker] - completed
-        if wont_do > 0:
-            log.info(f"cleaning up {wont_do} tasks from the queue")
-            for _ in range(wont_do):
-                try:
-                    self.tx.get_nowait()
-                except queue.Empty:
-                    log.info(f"queue is empty, removed {_} tasks, while expecting to remove {wont_do} tasks")
-
-    def save_results(self, func: Callable):
-        """save the results to disc"""
-        log.info(f"pulling results for {self.o_ticker}")
-        results = [x[0] for x in self._results.values() if x[0] is not None]
-        log.debug(
-            f"calling paginator function: save_data() with args: results_count{len(results)}, {self.o_ticker}, {self.underlying_ticker}"  # noqa E501
-        )
-        func(results, self.o_ticker, self.underlying_ticker)
-
     async def run(self):
         if self.init_client_session:
             async with ClientSession(
@@ -225,20 +206,24 @@ class QuoteWorker(PoolWorker):
                         self.add_results(tid, result, tb)
 
                     # poison pill 2: o_ticker args are returning no results
-                    if self.has_consecutive_sequence():
-                        running = False
+                    k = 16  # indicator that we've passed the listing date for the option
+                    if len(self.empty_tids) > k:
+                        if self.has_consecutive_sequence(k=k):
+                            running = False
 
                 self.save_results(func)
                 if completed != len(pulled_tids):
                     log.warning("completed != pulled_tids...check why or you can trust the queue cleaner")
 
-                self.clean_up_queue(completed)
+                await self.clean_up_queue(completed)
 
     def has_consecutive_sequence(self, k=16) -> bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
         num_set = set(self.empty_tids)
         for tid in self.empty_tids:
-            if all((tid + 1) in num_set for i in range(k)):
+            if all((tid + i) in num_set for i in range(k)):
+                log.info(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
+                log.debug(f"empty tids: {self.empty_tids}")
                 return True
         return False
 
@@ -251,6 +236,26 @@ class QuoteWorker(PoolWorker):
                     self.empty_tids.append(tid)
             else:
                 log.warning(f"no response for {tid}, with this tb: {tb}")
+
+    async def clean_up_queue(self, completed: int):
+        wont_do = self.o_ticker_count_mapping[self.o_ticker] - completed
+        if wont_do > 0:
+            log.info(f"cleaning up {wont_do} tasks from the queue")
+            for _ in range(wont_do):
+                try:
+                    self.tx.get_nowait()
+                except queue.Empty:
+                    log.info(f"queue is empty, removed {_} tasks, while expecting to remove {wont_do} tasks")
+                    await asyncio.sleep(0.05)
+
+    def save_results(self, func: Callable):
+        """save the results to disc"""
+        log.info(f"pulling results for {self.o_ticker}")
+        results = [x[0] for x in self._results.values() if x[0] is not None]
+        log.debug(
+            f"calling paginator function: save_data() with args: results_count{len(results)}, {self.o_ticker}, {self.underlying_ticker}"  # noqa E501
+        )
+        func(self.o_ticker, self.underlying_ticker, results)
 
 
 class QuotePool(Pool):
