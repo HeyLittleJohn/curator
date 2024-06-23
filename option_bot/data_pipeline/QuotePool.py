@@ -27,7 +27,6 @@ from aiomultiprocess.types import (
     TracebackStr,
 )
 
-from option_bot.data_pipeline.exceptions import PoolResultException
 from option_bot.proj_constants import log
 from option_bot.utils import clean_o_ticker
 
@@ -44,7 +43,7 @@ class QuoteScheduler(RoundRobin):
         self.current_queue: QueueID = 0
         self.o_ticker_mapping = o_ticker_mapping
         self.counter = 0
-        self.queue_size: Dict[QueueID, int] = {}
+        self.queue_size: Dict[QueueID, int] = {}  # number of tasks in each queue
 
     def initialize_queue_size(self):
         self.queue_size: Dict[QueueID, int] = {qid: 0 for qid in self.qids}
@@ -61,12 +60,17 @@ class QuoteScheduler(RoundRobin):
         if not self.queue_size:
             self.initialize_queue_size()
         if pill:
-            self.queue_size[self.current_queue] += self.counter
+            if self.o_ticker_mapping[self.current_o_ticker] == self.counter:
+                self.queue_size[self.current_queue] += self.counter
+            else:
+                raise ValueError(
+                    "incorrect number of tasks made for the o_ticker than were expected."
+                    f"Expected: {self.o_ticker_mapping[self.current_o_ticker]}, Actual: {self.counter}"
+                )
             self.counter = 0
-            self.current_o_ticker = ""
-        elif clean_o_ticker(args[0]) != self.current_o_ticker:
             self.current_o_ticker = clean_o_ticker(args[0])
             self.current_queue = self.cycle_queue()
+
         self.counter += 1
         return self.current_queue
 
@@ -79,6 +83,7 @@ class QuoteScheduler(RoundRobin):
         """removes number of tasks from queue_size dict based on o_ticker and self.o_ticker_mapping
         Unsure if it needs task_id, queue_id, o_ticker, or all of them"""
         # NOTE: as of now, no way to pass the o_ticker from the worker to the pool to the scheduler.
+        # Don't want to pass results to the rx queue
         pass
 
 
@@ -102,6 +107,7 @@ class QuoteWorker(PoolWorker):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
+        save_func: Callable = None,
     ) -> None:
         super().__init__(
             tx=tx,
@@ -116,10 +122,13 @@ class QuoteWorker(PoolWorker):
             session_base_url=session_base_url,
         )
         self.o_ticker_count_mapping = o_ticker_count_mapping
+        self.o_ticker_queue_progress: Dict[str, list[int]] = {}  # list of tids per o_ticker pulled
         self.o_ticker: str = ""
-        self.underlying_ticker: str = ""
         self._results: Dict[TaskID, Tuple[Any, Optional[TracebackStr]]] = {}
         self.empty_tids: List[TaskID] = []
+        self.cleaning_queue: bool = False
+        self.SAVE_BATCH_SIZE = 50000
+        self.save_func = save_func
 
     async def run(self):
         if self.init_client_session:
@@ -129,10 +138,10 @@ class QuoteWorker(PoolWorker):
                 base_url=self.session_base_url if self.session_base_url else None,
             ) as client_session:
                 pending: Dict[asyncio.Future, TaskID] = {}
-                pulled_tids: List[TaskID] = []
                 completed: int = 0
                 running = True
                 while running or pending:
+                    self.cleaning_queue = False
                     # TTL, Tasks To Live, determines how many tasks to execute before dying
                     if self.ttl and completed >= self.ttl:
                         running = False
@@ -149,36 +158,22 @@ class QuoteWorker(PoolWorker):
                             break
 
                         tid, func, args, kwargs = task
-                        pulled_tids.append(tid)
-
-                        # set worker o_ticker value
-                        if self.o_ticker == "":
-                            self.o_ticker = args[0]
-                            self.underlying_ticker = clean_o_ticker(self.o_ticker)
-                            self.ttl = self.o_ticker_count_mapping[self.o_ticker]
+                        self.o_ticker = clean_o_ticker(args[0])
+                        if self.o_ticker not in self.o_ticker_queue_progress:
+                            self.o_ticker_queue_progress[self.o_ticker] = [tid]
+                        else:
+                            self.o_ticker_queue_progress[self.o_ticker].append(tid)
 
                         # start work on task, add to pending
-                        if args[0] == self.o_ticker:
-                            args = [
-                                *args,
-                                client_session,
-                            ]  # NOTE: adds client session to the args list
-                            future = asyncio.ensure_future(func(*args, **kwargs))
-                            pending[future] = tid
 
-                        else:
-                            raise PoolResultException(
-                                "Quote Worker can't working on more than one o_ticker",
-                                extra={
-                                    "context": f"trying {args[0]} while current o_ticker is {self.o_ticker}"
-                                },
-                            )
+                        args = [
+                            *args,
+                            client_session,
+                        ]  # NOTE: adds client session to the args list
+                        future = asyncio.ensure_future(func(*args, **kwargs))
+                        pending[future] = tid
 
-                        # poison pill 1: all o_ticker args have been processed
-                        if args[0] is None and args[1] is None:
-                            running = False
-                            break
-
+                    # NOTE: this won't initially start processing "pending" until pending is as big as concurrency limit
                     if not pending:
                         await asyncio.sleep(0.005)
                         continue
@@ -190,7 +185,7 @@ class QuoteWorker(PoolWorker):
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     for future in done:
-                        tid = pending.pop(future)
+                        ftid = pending.pop(future)
 
                         result = None
                         tb = None
@@ -203,31 +198,29 @@ class QuoteWorker(PoolWorker):
                             tb = traceback.format_exc()
 
                         completed += 1
-                        self.add_results(tid, result, tb)
+                        self.add_results(ftid, result, tb)
 
-                    # poison pill 2: o_ticker args are returning no results
                     k = 16  # indicator that we've passed the listing date for the option
                     if len(self.empty_tids) > k:
-                        if self.has_consecutive_sequence(k=k):
-                            running = False
+                        seq_start = self.has_consecutive_sequence(k=k)
+                        if seq_start:
+                            await self.clean_up_queue(seq_start)
 
-                self.save_results(func)
-                if completed != len(pulled_tids):
-                    log.warning("completed != pulled_tids...check why or you can trust the queue cleaner")
+                    if len(self._results) == self.SAVE_BATCH_SIZE:
+                        self.save_results(func)
 
-                await self.clean_up_queue(completed)
-
-    def has_consecutive_sequence(self, k=16) -> bool:
+    def has_consecutive_sequence(self, k=16) -> int | bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
         num_set = set(self.empty_tids)
         for tid in self.empty_tids:
             if all((tid + i) in num_set for i in range(k)):
                 log.info(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
                 log.debug(f"empty tids: {self.empty_tids}")
-                return True
+                return tid
         return False
 
     def add_results(self, tid: TaskID, result: Any, tb: Optional[TracebackStr]) -> None:
+        """add results to self._results."""
         if result is not None:
             if len(result) > 0:
                 if len(result[0].get("results")) > 0:
@@ -237,25 +230,14 @@ class QuoteWorker(PoolWorker):
             else:
                 log.warning(f"no response for {tid}, with this tb: {tb}")
 
-    async def clean_up_queue(self, completed: int):
-        wont_do = self.o_ticker_count_mapping[self.o_ticker] - completed
-        if wont_do > 0:
-            log.info(f"cleaning up {wont_do} tasks from the queue")
-            for _ in range(wont_do):
-                try:
-                    self.tx.get_nowait()
-                except queue.Empty:
-                    log.info(f"queue is empty, removed {_} tasks, while expecting to remove {wont_do} tasks")
-                    await asyncio.sleep(0.05)
+    async def clean_up_queue(self, tid: int):
+        pass
 
     def save_results(self, func: Callable):
-        """save the results to disc"""
-        log.info(f"pulling results for {self.o_ticker}")
+        """save the results to disc using paginator function"""
+        log.info("writing batch results to file")
         results = [x[0] for x in self._results.values() if x[0] is not None]
-        log.debug(
-            f"calling paginator function: save_data() with args: results_count{len(results)}, {self.o_ticker}, {self.underlying_ticker}"  # noqa E501
-        )
-        func(self.o_ticker, self.underlying_ticker, results)
+        self.save_func(results)
 
 
 class QuotePool(Pool):
@@ -273,9 +255,11 @@ class QuotePool(Pool):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
+        save_func: Callable = None,
     ) -> None:
         self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
         scheduler = QuoteScheduler(self.o_ticker_count_mapping)
+        self.save_func = save_func
         super().__init__(
             processes,
             initializer,
@@ -312,8 +296,9 @@ class QuotePool(Pool):
             kwargs,
             pill,
         )
-        tx, _ = self.queues[qid]
-        tx.put_nowait((task_id, func, args, kwargs))
+        if not pill:
+            tx, _ = self.queues[qid]
+            tx.put_nowait((task_id, func, args, kwargs))
         return qid
 
     async def results(self, tids: List[TaskID]):
@@ -322,22 +307,6 @@ class QuotePool(Pool):
         return tids
 
         # raise PoolResultException("no results stored in QuotePool, check QuoteWorker instead")
-
-    async def loop(self) -> None:
-        """
-        Maintain the pool of workers while open.
-
-        :meta private:
-        """
-        while self.processes or self.running:
-            # clean up workers that reached TTL
-            for process in list(self.processes):
-                if not process.is_alive():
-                    qid = self.processes.pop(process)
-                    if self.running:
-                        self.processes[self.create_worker(qid)] = qid
-            # let someone else do some work for once
-            await asyncio.sleep(0.005)
 
     def starmap(
         self,
@@ -352,12 +321,13 @@ class QuotePool(Pool):
         current_o_ticker = iterable[0][0]
         qids = []
         for args in iterable:
-            if args[0] == current_o_ticker:
-                qid = self.queue_work(func, args, {})
-            else:
-                # passes poison pill to worker to save results and die
-                qid = self.queue_work(func_2, (None, None), {}, pill=True)
+            pill = False
+            if not args[0] == current_o_ticker:
+                # passes pill to scheduler to cycle queues
+                pill = True
                 current_o_ticker = args[0]
+
+            qid = self.queue_work(func, args, {}, pill=pill)
             qids.append(qid)
         return PoolResult(self, qids)
 
@@ -382,6 +352,7 @@ class QuotePool(Pool):
             init_client_session=self.init_client_session,
             session_base_url=self.session_base_url,
             o_ticker_count_mapping=self.o_ticker_count_mapping,
+            save_func=self.save_func,
         )
         process.start()
         return process

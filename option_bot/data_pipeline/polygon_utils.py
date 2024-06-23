@@ -2,7 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
-from typing import Generator
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -18,6 +18,7 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
+    extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
@@ -571,7 +572,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-
+        log.debug(f"Downloading data for {o_ticker} with payload: {payload}")
         results = await self._query_all(
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )
@@ -585,34 +586,22 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             results = {}
         return results
 
-    def save_data(self, under_ticker: str, results: Generator):
+    def save_data(self, results: list[tuple[Any, Any]]):  # (self, under_ticker: str, results: Generator):
         """This function will save to file all results stored within the QuoteWorker"""
-        batch_results = []
-        batch_size = 100000
-        counter = 0
-        today_date = datetime.now().date()
-        for result in results:
-            if counter % 1000 == 0:
-                log.debug(f"counter: {counter}")
-            if result:
-                batch_results.append(result)
-                counter += 1
-            if counter == batch_size:
-                log.info(f"Writing quote data for {under_ticker} to file")
-                write_api_data_to_file(
-                    batch_results,
-                    *self._download_path(
-                        under_ticker + "/" + str(today_date) + "_months_hist_" + str(self.months_hist),
-                        str(timestamp_now()),
-                    ),
-                )
-                batch_results = []
-                counter = 0
-        if batch_results:
-            write_api_data_to_file(
-                batch_results,
-                *self._download_path(
-                    under_ticker + "/" + str(today_date),
-                    str(timestamp_now()),
-                ),
-            )
+        i = 0
+        o_ticker = ""
+        while not o_ticker:
+            try:
+                o_ticker = results[i][0].get("options_ticker_id")
+            except Exception:
+                i += 1
+        underlying = extract_underlying_from_o_ticker(o_ticker)
+        results = [x[0] for x in results if x[0]]
+        log.info(f"Writing batch of quotes for {underlying} to file")
+        write_api_data_to_file(
+            results,
+            *self._download_path(
+                underlying + "/" + str(datetime.now().date()),
+                str(timestamp_now()),
+            ),
+        )
