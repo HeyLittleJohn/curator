@@ -572,7 +572,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        log.debug(f"Downloading data for {o_ticker} with payload: {payload}")
+        # log.debug(f"Downloading data for {o_ticker} with payload: {payload}")
         results = await self._query_all(
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )

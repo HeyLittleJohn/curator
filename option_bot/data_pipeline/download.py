@@ -134,7 +134,7 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 1000, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 500, "maxtasksperchild": 50000}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     ticker_counter = 0
@@ -149,7 +149,9 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
                 with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
             )
             await api_quote_downloader(
-                paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=small_batch, under_ticker=ticker
+                paginator=op_quotes,
+                pool_kwargs=pool_kwargs,
+                args_data=small_batch,
             )
 
 
@@ -157,7 +159,6 @@ async def api_quote_downloader(
     paginator: HistoricalQuotes,
     args_data: list = None,
     pool_kwargs: dict = {},
-    batch_num: int = None,
 ):
     """This function creates a process pool to download data from the polygon api and store it in json files.
     It is the base module co-routine for all our data pulls.
@@ -186,5 +187,3 @@ async def api_quote_downloader(
             await pool.starmap(paginator.download_data, url_args)
 
         log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")
-    elif batch_num:
-        log.info(f"no data to download for {paginator.paginator_type} batch: {batch_num}")
