@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import queue
 import traceback
 from typing import (
@@ -6,10 +7,8 @@ from typing import (
     Awaitable,
     Callable,
     Dict,
-    List,
     Optional,
     Sequence,
-    Tuple,
 )
 
 from aiohttp import ClientSession, ClientTimeout, TCPConnector
@@ -26,6 +25,7 @@ from aiomultiprocess.types import (
     TaskID,
     TracebackStr,
 )
+from data_pipeline.polygon_utils import HistoricalQuotes
 
 from option_bot.proj_constants import log
 
@@ -110,7 +110,7 @@ class QuoteWorker(PoolWorker):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
-        save_func: Callable = None,
+        paginator: HistoricalQuotes = None,
     ) -> None:
         super().__init__(
             tx=tx,
@@ -127,10 +127,8 @@ class QuoteWorker(PoolWorker):
         self.o_ticker_count_mapping = o_ticker_count_mapping
         self.o_ticker_queue_progress: Dict[str, list[int]] = {}  # list of tids per o_ticker pulled
         self.o_ticker: str = ""
-        self._results: Dict[TaskID, Tuple[Any, Optional[TracebackStr]]] = {}
-        self.empty_tids: List[TaskID] = []
+        self.paginator = paginator
         self.SAVE_BATCH_SIZE = 10000
-        self.save_func = save_func
 
     async def run(self):
         if self.init_client_session:
@@ -159,7 +157,7 @@ class QuoteWorker(PoolWorker):
                             break
 
                         tid, func, args, kwargs = task
-                        # self.o_ticker = clean_o_ticker(args[0])
+
                         self.o_ticker = args[0]
                         if self.o_ticker not in self.o_ticker_queue_progress:
                             self.o_ticker_queue_progress[self.o_ticker] = [tid]
@@ -170,9 +168,10 @@ class QuoteWorker(PoolWorker):
 
                         args = [
                             *args,
+                            tid,
                             client_session,
                         ]  # NOTE: adds client session to the args list
-                        future = asyncio.ensure_future(func(*args, **kwargs))
+                        future = asyncio.ensure_future(self.paginator.download_data(*args, **kwargs))
                         pending[future] = tid
 
                     # NOTE: this won't initially start processing "pending" until pending is as big as concurrency limit
@@ -198,37 +197,29 @@ class QuoteWorker(PoolWorker):
                                 self.exception_handler(e)
 
                             tb = traceback.format_exc()
-
+                        self.rx.put_nowait((tid, result, tb))
                         completed += 1
-                        self.add_results(tid, result, tb)
 
                     k = 16  # indicator that we've passed the listing date for the option
-                    if len(self.empty_tids) > k:
+                    if len(self.paginator.empty_tids) > k:
                         seq_start = self.has_consecutive_sequence(k=k)
                         if seq_start:
                             await self.clean_up_queue(seq_start)
 
-                    if len(self._results) >= self.SAVE_BATCH_SIZE or running is False:
+                    if len(self.paginator._results) >= self.SAVE_BATCH_SIZE or running is False:
                         self.save_results()
                 self.save_results()
         log.debug(f"worker finished: processed {completed} tasks")
 
     def has_consecutive_sequence(self, k=16) -> int | bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
-        num_set = set(self.empty_tids)
-        for tid in self.empty_tids:
+        num_set = set(self.paginator.empty_tids)
+        for tid in self.paginator.empty_tids:
             if all((tid + i) in num_set for i in range(k)):
-                log.info(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
-                log.debug(f"empty tids: {self.empty_tids}")
+                log.info(f"consecutive sequence found with {len(self.paginator.empty_tids)} empty tids")
+                log.debug(f"empty tids: {self.paginator.empty_tids}")
                 return tid
         return False
-
-    def add_results(self, tid: TaskID, result: Any, tb: Optional[TracebackStr]) -> None:
-        """add results to self._results."""
-        if result:
-            self._results[tid] = (result, tb)
-        else:
-            self.empty_tids.append(tid)
 
     async def clean_up_queue(self, tid: int):
         """identifies the o_ticker that has the tid with the consecutive sequence.
@@ -248,15 +239,13 @@ class QuoteWorker(PoolWorker):
                         await asyncio.sleep(0.001)
             break
         done_tids = self.o_ticker_queue_progress.pop(otkr)
-        self.empty_tids = list(set(self.empty_tids) - set(done_tids))
+        self.paginator.empty_tids = list(set(self.paginator.empty_tids) - set(done_tids))
 
     def save_results(self):
         """save the results to disc using paginator function"""
-        if self._results:
-            results = [x[0] for x in self._results.values() if x[0] is not None]
+        if self.paginator._results:
             log.info("writing batch results to file")
-            self.save_func(results)
-            self._results.clear()
+            self.paginator.save_data()
 
 
 class QuotePool(Pool):
@@ -274,11 +263,11 @@ class QuotePool(Pool):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
-        save_func: Callable = None,
+        paginator: HistoricalQuotes = None,
     ) -> None:
         self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
         scheduler = QuoteScheduler(self.o_ticker_count_mapping)
-        self.save_func = save_func
+        self.paginator = paginator
         self.tasks_scheduled = 0
         super().__init__(
             processes=processes,
@@ -321,14 +310,14 @@ class QuotePool(Pool):
         tx.put_nowait((task_id, func, args, kwargs))
 
         self.tasks_scheduled += 1
-        if self.tasks_scheduled % 5000 == 0:
+        if self.tasks_scheduled % 100000 == 0:
             log.debug(f"Tasks scheduled: {self.tasks_scheduled}")
 
         return task_id
 
-    async def results(self, tids: List[TaskID]):
-        """overwrites the inherited results so it's not called accidentally"""
-        return tids
+    def finish_work(self, task_id: TaskID, value: Any, tb: Optional[TracebackStr]):
+        """overwriting the inherited function. Not using ._results in the pool"""
+        self.scheduler.complete_task(task_id)
 
     def starmap(
         self,
@@ -361,6 +350,7 @@ class QuotePool(Pool):
 
         :meta private:
         """
+        paginator = copy.deepcopy(self.paginator)
         tx, rx = self.queues[qid]
         process = QuoteWorker(
             tx,
@@ -374,7 +364,7 @@ class QuotePool(Pool):
             init_client_session=self.init_client_session,
             session_base_url=self.session_base_url,
             o_ticker_count_mapping=self.o_ticker_count_mapping,
-            save_func=self.save_func,
+            paginator=paginator,
         )
         process.start()
         return process
