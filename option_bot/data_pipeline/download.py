@@ -181,7 +181,7 @@ async def api_quote_downloader(
         pool_kwargs = pool_kwarg_config(pool_kwargs)
         log.info("creating quote pool")
         async with QuotePool(
-            **pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping, save_func=paginator.save_data
+            **pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping, paginator=paginator
         ) as pool:
             log.info("deploying QuoteWorkers in Pool")
             await pool.starmap(paginator.download_data, url_args)

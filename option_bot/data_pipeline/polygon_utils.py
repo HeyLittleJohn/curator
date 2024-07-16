@@ -2,7 +2,6 @@ import asyncio
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -497,6 +496,8 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
         self.dates = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
+        self._results: list[dict] = []
+        self.empty_tids: list[int] = []
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
@@ -556,12 +557,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
         return dates.sort_index(ascending=False).reset_index(drop=True)
 
-    async def download_data(
-        self,
-        o_ticker: str,
-        payload: dict,
-        session: ClientSession = None,
-    ):
+    async def download_data(self, o_ticker: str, payload: dict, tid: int, session: ClientSession = None):
         """Overwriting inherited download_data().
         Creates a file per options ticker with all available quote date in the time range
 
@@ -582,26 +578,31 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 if results[0].get("results")
                 else {}
             )
+            if results:
+                self._results.append(results)
+            else:
+                self.empty_tids.append(tid)
         else:
-            results = {}
-        return results
+            self.empty_tids.append(tid)
 
-    def save_data(self, results: list[tuple[Any, Any]]):  # (self, under_ticker: str, results: Generator):
-        """This function will save to file all results stored within the QuoteWorker"""
+    def save_data(self):  # , results: list[tuple[Any, Any]]):  # (self, under_ticker: str, results: Generator):
+        # NOTE: results[i][0] if passing in results because of (result, tb)
+        """This function will save to file all results stored within the self._results attribute"""
         i = 0
         o_ticker = ""
         while not o_ticker:
             try:
-                o_ticker = results[i][0].get("options_ticker_id")
+                o_ticker = self._results[i].get("options_ticker_id")
             except Exception:
                 i += 1
         underlying = extract_underlying_from_o_ticker(o_ticker)
-        results = [x[0] for x in results if x[0]]
+
         log.info(f"Writing batch of quotes for {underlying} to file")
         write_api_data_to_file(
-            results,
+            self._results,
             *self._download_path(
                 underlying + "/" + str(datetime.now().date()),
                 str(timestamp_now()),
             ),
         )
+        self._results = []
