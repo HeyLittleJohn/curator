@@ -28,6 +28,15 @@ class ContractType(enum.Enum):
     put = "put"
 
 
+class DividendType(enum.Enum):
+    """Types of dividends: Cash Dividend, Special Cash Dividend, Long-Term, Short-Term"""
+
+    CD = "CD"
+    SC = "SC"
+    LT = "LT"
+    ST = "ST"
+
+
 class UTCNow(expression.FunctionElement):  # type: ignore[name-defined]
     type = DateTime()
 
@@ -222,3 +231,36 @@ class OptionsQuotesRaw(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
+
+
+class DividendData(Base):
+    __tablename__ = "dividends"
+
+    id = Column(BigInteger, primary_key=True, unique=True, autoincrement=True, nullable=False)
+    ticker_id = Column(BigInteger, ForeignKey("stock_tickers.id", ondelete="CASCADE"), nullable=False)
+    cash_amount = Column(DECIMAL(12, 4), nullable=False)
+    currency = Column(String)
+    declaration_date = Column(String)
+    dividend_type = Column(Enum(DividendType), nullable=False)
+    ex_dividend_date = Column(DateTime, nullable=False)
+    frequency = Column(Integer, nullable=False)
+    pay_date = Column(DateTime)
+    record_date = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
+
+
+class DividendDataModel(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    ticker_id: int
+    cash_amount: Decimal
+    currency: Optional[str] = None
+    declaration_date: Optional[str] = None
+    dividend_type: DividendType
+    ex_dividend_date: datetime
+    frequency: int
+    pay_date: Optional[datetime] = None
+    record_date: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None

@@ -273,6 +273,18 @@ class HistoricalStockPrices(PolygonPaginator):
         ]
 
 
+class StockDividends(PolygonPaginator):
+    """Object to query Polygon API and retrieve dividend data for the underlying stock"""
+
+    paginator_type = "StockDividends"
+
+    def __init__(self, start_date: datetime = None):
+        if start_date:
+            self.start_date = start_date.date()
+
+        super().__init__()
+
+
 class OptionsContracts(PolygonPaginator):
     """Object to query options contract tickers for a given underlying ticker based on given dates.
     It will pull all options contracts that exist for each underlying ticker as of the first business day of each month.
