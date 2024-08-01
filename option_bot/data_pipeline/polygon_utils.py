@@ -1,4 +1,6 @@
 import asyncio
+import json
+import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
@@ -17,8 +19,9 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
-    extract_underlying_from_o_ticker,
     first_weekday_of_month,
+    get_ticker_from_oticker,
+    read_data_from_file,
     string_to_date,
     timestamp_now,
     trading_days_in_range,
@@ -496,8 +499,8 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
         self.dates = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
-        self._results: list[dict] = []
         self.empty_tids: list[int] = []
+        self.MAX_SINGLES = 1000
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
@@ -564,6 +567,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         args:
             o_ticker: str,
             payload: dict(timestamp.gte, timestamp.lte, order)
+            tid: int, task id from the scheduler
 
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
@@ -579,30 +583,24 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 else {}
             )
             if results:
-                self._results.append(results)
+                ticker = get_ticker_from_oticker(o_ticker)
+                pid = str(os.getpid())
+                write_api_data_to_file(
+                    results, *self._download_path(ticker + "/" + o_ticker + "/" + pid, str(timestamp_now()))
+                )
+                self.batch_saved_results(ticker, o_ticker)
             else:
                 self.empty_tids.append(tid)
         else:
             self.empty_tids.append(tid)
 
-    def save_data(self):  # , results: list[tuple[Any, Any]]):  # (self, under_ticker: str, results: Generator):
-        # NOTE: results[i][0] if passing in results because of (result, tb)
-        """This function will save to file all results stored within the self._results attribute"""
-        i = 0
-        o_ticker = ""
-        while not o_ticker:
-            try:
-                o_ticker = self._results[i].get("options_ticker_id")
-            except Exception:
-                i += 1
-        underlying = extract_underlying_from_o_ticker(o_ticker)
-
-        log.info(f"Writing batch of quotes for {underlying} to file")
-        write_api_data_to_file(
-            self._results,
-            *self._download_path(
-                underlying + "/" + str(datetime.now().date()),
-                str(timestamp_now()),
-            ),
-        )
-        self._results = []
+    def batch_saved_results(self, ticker: str, o_ticker: str, pid: str):
+        path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{o_ticker}/{pid}"
+        file_names = os.listdir(path)
+        single_files = [fname for fname in file_names if "_" not in fname]
+        if len(single_files) >= self.MAX_SINGLES:
+            combined_results = []
+            for file in single_files:
+                combined_results.append(read_data_from_file(path + "/" + file))
+            with open(path + "/" + str(timestamp_now()) + "_" + "comb.json", "w") as f:
+                json.dump(combined_results, f)
