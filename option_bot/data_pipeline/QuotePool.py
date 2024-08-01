@@ -171,7 +171,7 @@ class QuoteWorker(PoolWorker):
                             tid,
                             client_session,
                         ]  # NOTE: adds client session to the args list
-                        future = asyncio.ensure_future(self.paginator.download_data(*args, **kwargs))
+                        future = asyncio.ensure_future(func(*args, **kwargs))
                         pending[future] = tid
 
                     # NOTE: this won't initially start processing "pending" until pending is as big as concurrency limit

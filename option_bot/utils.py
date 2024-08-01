@@ -161,6 +161,14 @@ def read_data_from_file(file_path: str) -> list[dict]:
     return data
 
 
+def get_ticker_from_oticker(o_ticker: str) -> str:
+    for i, char in enumerate(o_ticker):
+        if not char.isalpha():
+            return o_ticker[:i]
+
+    return o_ticker
+
+
 def pool_kwarg_config(kwargs: dict) -> dict:
     """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
     pool_kwargs = POOL_DEFAULT_KWARGS.copy()
