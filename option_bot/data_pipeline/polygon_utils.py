@@ -572,7 +572,6 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        # log.debug(f"Downloading data for {o_ticker} with payload: {payload}")
         results = await self._query_all(
             session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
         )
@@ -585,22 +584,36 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             if results:
                 ticker = get_ticker_from_oticker(o_ticker)
                 pid = str(os.getpid())
-                write_api_data_to_file(
-                    results, *self._download_path(ticker + "/" + o_ticker + "/" + pid, str(timestamp_now()))
-                )
-                self.batch_saved_results(ticker, o_ticker)
+                path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{o_ticker}/{pid}/"
+                write_api_data_to_file(results, path, str(timestamp_now()) + ".json")
+                self.group_saved_results(ticker, o_ticker)
             else:
                 self.empty_tids.append(tid)
         else:
             self.empty_tids.append(tid)
 
-    def batch_saved_results(self, ticker: str, o_ticker: str, pid: str):
-        path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{o_ticker}/{pid}"
+    def group_saved_results(self, path: str):
+        """function to check in the directory of each process whether there are the MAX number of single files.
+        If so, it reads, aggregates, and deletes each of the single files and writes a `_comb.json`
+        #Note: it should avoid race conditions since it only looks at files written by a single process
+        # and the the function is synchronous unless await http results
+        """
         file_names = os.listdir(path)
         single_files = [fname for fname in file_names if "_" not in fname]
         if len(single_files) >= self.MAX_SINGLES:
-            combined_results = []
-            for file in single_files:
-                combined_results.append(read_data_from_file(path + "/" + file))
-            with open(path + "/" + str(timestamp_now()) + "_" + "comb.json", "w") as f:
+            combined_results = [read_data_from_file(path + file) for file in single_files]
+            with open(path + str(timestamp_now()) + "_comb.json", "w") as f:
                 json.dump(combined_results, f)
+            for file in single_files:
+                try:
+                    os.remove(path + file)
+                except FileNotFoundError as e:
+                    log.exception(
+                        e,
+                        extra={
+                            "context": f"File not found while deleting group files. Must have run into a race condition\
+                                path:{path+file}"
+                        },
+                    )
+                except Exception as e:
+                    log.error(e)
