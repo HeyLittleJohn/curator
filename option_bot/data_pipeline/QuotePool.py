@@ -127,8 +127,7 @@ class QuoteWorker(PoolWorker):
         self.o_ticker_count_mapping = o_ticker_count_mapping
         self.o_ticker_queue_progress: Dict[str, list[int]] = {}  # list of tids per o_ticker pulled
         self.o_ticker: str = ""
-        self.paginator = paginator
-        self.SAVE_BATCH_SIZE = 10000
+        self.empty_tids: list = []
 
     async def run(self):
         if self.init_client_session:
@@ -168,7 +167,6 @@ class QuoteWorker(PoolWorker):
 
                         args = [
                             *args,
-                            tid,
                             client_session,
                         ]  # NOTE: adds client session to the args list
                         future = asyncio.ensure_future(func(*args, **kwargs))
@@ -206,9 +204,6 @@ class QuoteWorker(PoolWorker):
                         if seq_start:
                             await self.clean_up_queue(seq_start)
 
-                    if len(self.paginator._results) >= self.SAVE_BATCH_SIZE or running is False:
-                        self.save_results()
-                self.save_results()
         log.debug(f"worker finished: processed {completed} tasks")
 
     def has_consecutive_sequence(self, k=16) -> int | bool:
