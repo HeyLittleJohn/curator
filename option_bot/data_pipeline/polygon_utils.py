@@ -499,7 +499,6 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
         self.dates = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
-        self.empty_tids: list[int] = []
         self.MAX_SINGLES = 1000
 
     def _construct_url(self, o_ticker: str) -> str:
@@ -560,15 +559,16 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
         return dates.sort_index(ascending=False).reset_index(drop=True)
 
-    async def download_data(self, o_ticker: str, payload: dict, tid: int, session: ClientSession = None):
+    async def download_data(self, o_ticker: str, payload: dict, session: ClientSession = None):
         """Overwriting inherited download_data().
         Creates a file per options ticker with all available quote date in the time range
 
         args:
             o_ticker: str,
             payload: dict(timestamp.gte, timestamp.lte, order)
-            tid: int, task id from the scheduler
 
+        returns:
+            boolean: indicates if there were results or not. Returns `False` if not. Otherwise no return
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
@@ -588,9 +588,9 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 write_api_data_to_file(results, path, str(timestamp_now()) + ".json")
                 self.group_saved_results(ticker, o_ticker)
             else:
-                self.empty_tids.append(tid)
+                return False
         else:
-            self.empty_tids.append(tid)
+            return False
 
     def group_saved_results(self, path: str):
         """function to check in the directory of each process whether there are the MAX number of single files.
