@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime
@@ -21,7 +20,6 @@ from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYG
 from option_bot.utils import (
     first_weekday_of_month,
     get_ticker_from_oticker,
-    read_data_from_file,
     string_to_date,
     timestamp_now,
     trading_days_in_range,
@@ -584,36 +582,36 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             if results:
                 ticker = get_ticker_from_oticker(o_ticker)
                 pid = str(os.getpid())
-                path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{o_ticker}/{pid}/"
-                write_api_data_to_file(results, path, str(timestamp_now()) + ".json")
-                self.group_saved_results(ticker, o_ticker)
+                path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
+                write_api_data_to_file(results, path, str(timestamp_now()) + ".json", append=True)
+                # self.group_saved_results(ticker, o_ticker)
             else:
                 return False
         else:
             return False
 
-    def group_saved_results(self, path: str):
-        """function to check in the directory of each process whether there are the MAX number of single files.
-        If so, it reads, aggregates, and deletes each of the single files and writes a `_comb.json`
-        #Note: it should avoid race conditions since it only looks at files written by a single process
-        # and the the function is synchronous unless await http results
-        """
-        file_names = os.listdir(path)
-        single_files = [fname for fname in file_names if "_" not in fname]
-        if len(single_files) >= self.MAX_SINGLES:
-            combined_results = [read_data_from_file(path + file) for file in single_files]
-            with open(path + str(timestamp_now()) + "_comb.json", "w") as f:
-                json.dump(combined_results, f)
-            for file in single_files:
-                try:
-                    os.remove(path + file)
-                except FileNotFoundError as e:
-                    log.exception(
-                        e,
-                        extra={
-                            "context": f"File not found while deleting group files. Must have run into a race condition\
-                                path:{path+file}"
-                        },
-                    )
-                except Exception as e:
-                    log.error(e)
+    # def group_saved_results(self, path: str):
+    #     """function to check in the directory of each process whether there are the MAX number of single files.
+    #     If so, it reads, aggregates, and deletes each of the single files and writes a `_comb.json`
+    #     #Note: it should avoid race conditions since it only looks at files written by a single process
+    #     # and the the function is synchronous unless await http results
+    #     """
+    #     file_names = os.listdir(path)
+    #     single_files = [fname for fname in file_names if "_" not in fname]
+    #     if len(single_files) >= self.MAX_SINGLES:
+    #         combined_results = [read_data_from_file(path + file) for file in single_files]
+    #         with open(path + str(timestamp_now()) + "_comb.json", "w") as f:
+    #             json.dump(combined_results, f)
+    #         for file in single_files:
+    #             try:
+    #                 os.remove(path + file)
+    #             except FileNotFoundError as e:
+    #                 log.exception(
+    #                     e,
+    #                     extra={
+    #                         "context": f"File not found while deleting group files. Must have run into a race\
+    #                             condition path:{path+file}"
+    #                     },
+    #                 )
+    #             except Exception as e:
+    #                 log.error(e)

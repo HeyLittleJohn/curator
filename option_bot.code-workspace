@@ -33,6 +33,7 @@
 		],
 		"ruff.path": [
 			"/home/jhirschi/.pyenv/versions/3.11.4/envs/option_bot/bin/ruff"
-		]
+		],
+		"makefile.configureOnOpen": false
 	}
 }
