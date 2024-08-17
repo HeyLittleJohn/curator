@@ -145,18 +145,33 @@ def Session(func):
     return wrapper_events
 
 
-def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
+def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: str, append=False):
     """Write api data to a json file"""
-
     os.makedirs(file_path, exist_ok=True)
-    with open(file_path + file_name, "w") as f:
-        json.dump(data, f)
-    log.info(f"Data written to {file_path + file_name}")
+    if not append:
+        with open(file_path + file_name, "w") as f:
+            json.dump(data, f)
+        log.info(f"Data written to {file_path + file_name}")
+    else:
+        with open(file_path + file_name, "+a") as f:
+            if not f.tell() > 0:
+                f.write("[")
+            json.dump(data, f)
+            f.write(",\n")
+
+
+def prep_json_file(file_path: str, file_name: str):
+    with open(file_path + file_name, "a") as file:
+        file.seek(0, 2)
+        s = file.tell()
+        file.seek(s - 2)
+        file.truncate()
+        file.write("]")
 
 
 def read_data_from_file(file_path: str) -> list[dict]:
     """Read api data from a json file"""
-    with open(file_path, "r") as f:
+    with open(file_path, "+ab") as f:
         data = json.load(f)
     return data
 
