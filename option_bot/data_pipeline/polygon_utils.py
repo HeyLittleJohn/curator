@@ -18,8 +18,8 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
+    extract_underlying_from_o_ticker,
     first_weekday_of_month,
-    get_ticker_from_oticker,
     string_to_date,
     timestamp_now,
     trading_days_in_range,
@@ -580,15 +580,15 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 else {}
             )
             if results:
-                ticker = get_ticker_from_oticker(o_ticker)
+                ticker = extract_underlying_from_o_ticker(o_ticker)
                 pid = str(os.getpid())
                 path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
-                write_api_data_to_file(results, path, str(timestamp_now()) + ".json", append=True)
+                write_api_data_to_file(results, path, append=True)
                 # self.group_saved_results(ticker, o_ticker)
-            else:
-                return False
-        else:
-            return False
+        #     else:
+        #         return False
+        # else:
+        #     return False
 
     # def group_saved_results(self, path: str):
     #     """function to check in the directory of each process whether there are the MAX number of single files.
