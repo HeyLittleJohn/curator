@@ -71,7 +71,7 @@ def clean_o_ticker(o_ticker: str) -> str:
 
 
 def extract_underlying_from_o_ticker(o_ticker: str) -> str:
-    clean_o_ticker(o_ticker)
+    o_ticker = clean_o_ticker(o_ticker)
     underlying = ""
     for char in o_ticker:
         if char.isdigit():
@@ -145,7 +145,7 @@ def Session(func):
     return wrapper_events
 
 
-def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: str, append=False):
+def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: str = None, append=False):
     """Write api data to a json file"""
     os.makedirs(file_path, exist_ok=True)
     if not append:
@@ -153,6 +153,8 @@ def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: s
             json.dump(data, f)
         log.info(f"Data written to {file_path + file_name}")
     else:
+        files = os.listdir(file_path)
+        file_name = files[0] if len(files) > 0 else str(timestamp_now()) + ".json"
         with open(file_path + file_name, "+a") as f:
             if not f.tell() > 0:
                 f.write("[")
@@ -169,6 +171,7 @@ def prep_json_file(file_path: str, file_name: str):
         file.write("]")
 
 
+# NOTE: call prep_json_file here with flag
 def read_data_from_file(file_path: str) -> list[dict]:
     """Read api data from a json file"""
     with open(file_path, "+ab") as f:
@@ -176,12 +179,12 @@ def read_data_from_file(file_path: str) -> list[dict]:
     return data
 
 
-def get_ticker_from_oticker(o_ticker: str) -> str:
-    for i, char in enumerate(o_ticker):
-        if not char.isalpha():
-            return o_ticker[:i]
+# def get_ticker_from_oticker(o_ticker: str) -> str:
+#     for i, char in enumerate(o_ticker):
+#         if not char.isalpha():
+#             return o_ticker[:i]
 
-    return o_ticker
+#     return o_ticker
 
 
 def pool_kwarg_config(kwargs: dict) -> dict:

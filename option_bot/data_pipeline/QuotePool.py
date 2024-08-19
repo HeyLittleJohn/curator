@@ -1,5 +1,4 @@
 import asyncio
-import copy
 import queue
 import traceback
 from typing import (
@@ -110,7 +109,6 @@ class QuoteWorker(PoolWorker):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
-        paginator: HistoricalQuotes = None,
     ) -> None:
         super().__init__(
             tx=tx,
@@ -190,6 +188,9 @@ class QuoteWorker(PoolWorker):
                         tb = None
                         try:
                             result = future.result()
+                            if result is False:
+                                self.empty_tids.append(tid)
+                                result = None
                         except BaseException as e:
                             if self.exception_handler is not None:
                                 self.exception_handler(e)
@@ -198,21 +199,21 @@ class QuoteWorker(PoolWorker):
                         self.rx.put_nowait((tid, result, tb))
                         completed += 1
 
-                    k = 16  # indicator that we've passed the listing date for the option
-                    if len(self.paginator.empty_tids) > k:
-                        seq_start = self.has_consecutive_sequence(k=k)
-                        if seq_start:
-                            await self.clean_up_queue(seq_start)
+                    # k = 16  # indicator that we've passed the listing date for the option
+                    # if len(self.empty_tids) > k:
+                    #     seq_start = self.has_consecutive_sequence(k=k)
+                    #     if seq_start:
+                    #         await self.clean_up_queue(seq_start)
 
         log.debug(f"worker finished: processed {completed} tasks")
 
     def has_consecutive_sequence(self, k=16) -> int | bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
-        num_set = set(self.paginator.empty_tids)
-        for tid in self.paginator.empty_tids:
+        num_set = set(self.empty_tids)
+        for tid in self.empty_tids:
             if all((tid + i) in num_set for i in range(k)):
-                log.info(f"consecutive sequence found with {len(self.paginator.empty_tids)} empty tids")
-                log.debug(f"empty tids: {self.paginator.empty_tids}")
+                log.info(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
+                log.debug(f"empty tids: {self.empty_tids}")
                 return tid
         return False
 
@@ -234,13 +235,7 @@ class QuoteWorker(PoolWorker):
                         await asyncio.sleep(0.001)
             break
         done_tids = self.o_ticker_queue_progress.pop(otkr)
-        self.paginator.empty_tids = list(set(self.paginator.empty_tids) - set(done_tids))
-
-    def save_results(self):
-        """save the results to disc using paginator function"""
-        if self.paginator._results:
-            log.info("writing batch results to file")
-            self.paginator.save_data()
+        self.empty_tids = list(set(self.empty_tids) - set(done_tids))
 
 
 class QuotePool(Pool):
@@ -262,7 +257,7 @@ class QuotePool(Pool):
     ) -> None:
         self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
         scheduler = QuoteScheduler(self.o_ticker_count_mapping)
-        self.paginator = paginator
+        # self.paginator = paginator
         self.tasks_scheduled = 0
         super().__init__(
             processes=processes,
@@ -305,7 +300,7 @@ class QuotePool(Pool):
         tx.put_nowait((task_id, func, args, kwargs))
 
         self.tasks_scheduled += 1
-        if self.tasks_scheduled % 100000 == 0:
+        if self.tasks_scheduled % 250000 == 0:
             log.debug(f"Tasks scheduled: {self.tasks_scheduled}")
 
         return task_id
@@ -345,7 +340,7 @@ class QuotePool(Pool):
 
         :meta private:
         """
-        paginator = copy.deepcopy(self.paginator)
+        # paginator = copy.deepcopy(self.paginator)
         tx, rx = self.queues[qid]
         process = QuoteWorker(
             tx,
@@ -359,7 +354,7 @@ class QuotePool(Pool):
             init_client_session=self.init_client_session,
             session_base_url=self.session_base_url,
             o_ticker_count_mapping=self.o_ticker_count_mapping,
-            paginator=paginator,
+            # paginator=paginator,
         )
         process.start()
         return process
