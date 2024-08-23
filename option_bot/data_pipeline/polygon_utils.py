@@ -492,10 +492,12 @@ class HistoricalQuotes(HistoricalOptionsPrices):
     def __init__(self, o_ticker_lookup: dict[str, int], months_hist: int = 24):
         super().__init__(months_hist=months_hist, timespan=Timespans.hour)
         self.start_date, self.close_date = self._determine_start_end_dates(
-            string_to_date("2040-01-01")
+            string_to_date("2060-01-01")
         )  # NOTE: magic number meant to always trigger the newest date (today)
-        self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False)
-        self.dates = self._prepare_timestamps(self.dates)
+        self.dates = trading_days_in_range(
+            str(self.start_date), str(self.close_date), count=False, cal_type="o_cal"
+        )
+        self.dates_stamps = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
         self.MAX_SINGLES = 1000
 
@@ -524,9 +526,13 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             if count % 500 == 0:
                 log.info(f"Generating request args for {count}/{len(args_data)} option tickers")
             count += 1
-            payloads = self.dates.loc[self.dates["timestamp.gte"] <= str(o_ticker.expiration_date)].to_dict(
-                "records"
-            )
+            payloads = [
+                {
+                    "timestamp": x,
+                }
+                for x in self.dates.index[self.dates.index <= str(o_ticker.expiration_date)].astype(str)
+            ]
+
             if payloads:
                 args = [(o_ticker.o_ticker, payload) for payload in payloads]
                 output_args.extend(args)
@@ -536,7 +542,8 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     @staticmethod
     def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
-        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz"""
+        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz
+        Also prepares nanosecond unix timestamps"""
         dates = dates.tz_localize("US/Eastern")
         for i in range(9):
             if i >= 7:
@@ -563,16 +570,17 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
         args:
             o_ticker: str,
-            payload: dict(timestamp.gte, timestamp.lte, order)
-
+            payload: dict(timestamp)
+            # NOTE add the rest of the payload when calling the API to save RAM
         returns:
             boolean: indicates if there were results or not. Returns `False` if not. Otherwise no return
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
         results = await self._query_all(
-            session, self._construct_url(o_ticker), {**{"limit": 1, "sort": "timestamp"}, **payload}, limit=True
+            session, self._construct_url(o_ticker), {**{"limit": 50000, "sort": "timestamp"}, **payload}
         )
+        results = [x.get("results") for x in results if x.get("results")]
         if results:
             results = (
                 {**{"options_ticker_id": self.o_ticker_lookup[o_ticker]}, **results[0]["results"][0]}
@@ -584,34 +592,8 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 pid = str(os.getpid())
                 path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
                 write_api_data_to_file(results, path, append=True)
-                # self.group_saved_results(ticker, o_ticker)
-        #     else:
-        #         return False
-        # else:
-        #     return False
 
-    # def group_saved_results(self, path: str):
-    #     """function to check in the directory of each process whether there are the MAX number of single files.
-    #     If so, it reads, aggregates, and deletes each of the single files and writes a `_comb.json`
-    #     #Note: it should avoid race conditions since it only looks at files written by a single process
-    #     # and the the function is synchronous unless await http results
-    #     """
-    #     file_names = os.listdir(path)
-    #     single_files = [fname for fname in file_names if "_" not in fname]
-    #     if len(single_files) >= self.MAX_SINGLES:
-    #         combined_results = [read_data_from_file(path + file) for file in single_files]
-    #         with open(path + str(timestamp_now()) + "_comb.json", "w") as f:
-    #             json.dump(combined_results, f)
-    #         for file in single_files:
-    #             try:
-    #                 os.remove(path + file)
-    #             except FileNotFoundError as e:
-    #                 log.exception(
-    #                     e,
-    #                     extra={
-    #                         "context": f"File not found while deleting group files. Must have run into a race\
-    #                             condition path:{path+file}"
-    #                     },
-    #                 )
-    #             except Exception as e:
-    #                 log.error(e)
+            else:
+                return False
+        else:
+            return False

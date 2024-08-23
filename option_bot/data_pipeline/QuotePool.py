@@ -199,15 +199,15 @@ class QuoteWorker(PoolWorker):
                         self.rx.put_nowait((tid, result, tb))
                         completed += 1
 
-                    # k = 16  # indicator that we've passed the listing date for the option
-                    # if len(self.empty_tids) > k:
-                    #     seq_start = self.has_consecutive_sequence(k=k)
-                    #     if seq_start:
-                    #         await self.clean_up_queue(seq_start)
+                    k = 10  # indicator that we've passed the listing date for the option
+                    if len(self.empty_tids) > k:
+                        seq_start = self.has_consecutive_sequence(k=k)
+                        if seq_start:
+                            await self.clean_up_queue(seq_start)
 
         log.debug(f"worker finished: processed {completed} tasks")
 
-    def has_consecutive_sequence(self, k=16) -> int | bool:
+    def has_consecutive_sequence(self, k=10) -> int | bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
         num_set = set(self.empty_tids)
         for tid in self.empty_tids:
