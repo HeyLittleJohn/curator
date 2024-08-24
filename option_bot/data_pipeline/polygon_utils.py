@@ -22,6 +22,7 @@ from option_bot.utils import (
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
+    timestamp_to_datetime,
     trading_days_in_range,
     write_api_data_to_file,
 )
@@ -499,7 +500,6 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         )
         self.dates_stamps = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
-        self.MAX_SINGLES = 1000
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
@@ -562,6 +562,9 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index(drop=True)
         dates["order"] = np.tile(["asc"] * 7 + ["desc"], int(np.ceil(len(dates) / 8)))[: len(dates)]
 
+        dates["nanosecond.gte"] = pd.to_datetime(dates["timestamp.gte"], utc=True).astype("int64")
+        dates["nanosecond.lte"] = pd.to_datetime(dates["timestamp.lte"], utc=True).astype("int64")
+
         return dates.sort_index(ascending=False).reset_index(drop=True)
 
     async def download_data(self, o_ticker: str, payload: dict, session: ClientSession = None):
@@ -578,22 +581,60 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         This lets us wait for the process pool to insert the session into the args.
         """
         results = await self._query_all(
-            session, self._construct_url(o_ticker), {**{"limit": 50000, "sort": "timestamp"}, **payload}
+            session,
+            self._construct_url(o_ticker),
+            {**{"limit": 50000, "sort": "timestamp", "order": "desc"}, **payload},
         )
-        results = [x.get("results") for x in results if x.get("results")]
-        if results:
-            results = (
-                {**{"options_ticker_id": self.o_ticker_lookup[o_ticker]}, **results[0]["results"][0]}
-                if results[0].get("results")
-                else {}
-            )
-            if results:
-                ticker = extract_underlying_from_o_ticker(o_ticker)
-                pid = str(os.getpid())
-                path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
-                write_api_data_to_file(results, path, append=True)
 
-            else:
-                return False
+        results = [x.get("results", []) for x in results]
+        if results:
+            results = self.search_for_timestamps(results)
+            results = [{**record, "options_ticker_id": self.o_ticker_lookup[o_ticker]} for record in results]
+
+            ticker = extract_underlying_from_o_ticker(o_ticker)
+            pid = str(os.getpid())
+            path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
+            write_api_data_to_file(results, path, append=True)
+
         else:
             return False
+
+
+def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
+    date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
+    date = date.date
+    return (
+        self.date_stamps["nanosecond.gte"].loc[self.dates_stamps["timestamp.gte"].str.contains(date)].to_list()
+    )
+
+
+# TODO: finish this algorithm
+def search_for_timestamps(self, data: list[dict]) -> list[dict]:
+    """Finds the date from the data timestamps, looks up the desired 9 timestamps for that date.
+    Then returns the 9 records with the closest timestamps to the desired ones.
+    Needs to handle circumstances where there may not be 9 records."""
+
+    record_timestamps = [record["sip_timestamp"] for record in data]
+
+    closest_records = []
+    i, j = len(record_timestamps) - 1, len(timestamps) - 1  # Start pointers at the end
+    n, m = len(record_timestamps), len(timestamps)
+
+    while j >= 0 and i >= 0:
+        # If closest_records list has all 9 records, break out of the loop
+        if len(closest_records) == 9:
+            break
+
+        record_timestamp = record_timestamps[i]
+        timestamp = timestamps[j]
+
+        # Check which timestamp is closer and add it if it is the closest found so far
+        if abs(record_timestamp - timestamp) <= abs(record_timestamps[max(i - 1, 0)] - timestamp):
+            # If the current record is closer to the timestamp, add it to the list
+            closest_records.append(records[i])
+            j -= 1  # Move to the next timestamp since we found a close match
+        else:
+            # Move to the next record timestamp to see if there is a closer one
+            i -= 1
+
+    return closest_records
