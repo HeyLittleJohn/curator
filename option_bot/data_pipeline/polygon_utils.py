@@ -614,27 +614,32 @@ def search_for_timestamps(self, data: list[dict]) -> list[dict]:
     Then returns the 9 records with the closest timestamps to the desired ones.
     Needs to handle circumstances where there may not be 9 records."""
 
-    record_timestamps = [record["sip_timestamp"] for record in data]
+    target_timestamps = self.lookup_date_timestamps_from_record(data[0]["sip_timestamp"])
 
     closest_records = []
-    i, j = len(record_timestamps) - 1, len(timestamps) - 1  # Start pointers at the end
-    n, m = len(record_timestamps), len(timestamps)
+    i, j = len(data) - 1, len(target_timestamps) - 1  # Start pointers at the end
 
+    cur_tgt_timestamp = target_timestamps[j]
     while j >= 0 and i >= 0:
         # If closest_records list has all 9 records, break out of the loop
         if len(closest_records) == 9:
             break
 
-        record_timestamp = record_timestamps[i]
-        timestamp = timestamps[j]
+        record_timestamp = data[i]["sip_timestamp"]
 
-        # Check which timestamp is closer and add it if it is the closest found so far
-        if abs(record_timestamp - timestamp) <= abs(record_timestamps[max(i - 1, 0)] - timestamp):
-            # If the current record is closer to the timestamp, add it to the list
-            closest_records.append(records[i])
-            j -= 1  # Move to the next timestamp since we found a close match
+        # has to be bigger than the target
+        if record_timestamp < cur_tgt_timestamp:
+            i -= 1
+
+        # has to be smaller than the next target
+        elif record_timestamp >= target_timestamps[max(j - 1, 0)]:
+            if j == 0:
+                closest_records.append(data[i])
+            j -= 1
+
         else:
-            # Move to the next record timestamp to see if there is a closer one
+            closest_records.append(data[i])
+            j -= 1
             i -= 1
 
     return closest_records
