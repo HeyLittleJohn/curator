@@ -18,6 +18,7 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
+from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
@@ -121,7 +122,7 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     Args:
         o_tickers: list of OptionTicker tuples
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 250, "maxtasksperchild": 50000}
     op_snapshots = CurrentContractSnapshot()
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
@@ -133,7 +134,7 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 2000, "maxtasksperchild": 50000, "processes": 60}
+    pool_kwargs = {"childconcurrency": 100, "maxtasksperchild": 50000}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     ticker_counter = 0
@@ -179,9 +180,8 @@ async def api_quote_downloader(
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
         log.info("creating quote pool")
-        async with Pool(
-            **pool_kwargs,
-            # o_ticker_count_mapping=o_ticker_count_mapping,  # , paginator=paginator
+        async with QuotePool(
+            **pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping, paginator=paginator
         ) as pool:
             log.info("deploying QuoteWorkers in Pool")
             await pool.starmap(paginator.download_data, url_args)

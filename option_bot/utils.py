@@ -15,7 +15,7 @@ _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a t
 
 def timestamp_to_datetime(timestamp: int, msec_units: bool = True, nano_sec: bool = False) -> datetime:
     if nano_sec:
-        dem = 1000000
+        dem = 1000000000
     elif msec_units:
         dem = 1000
     else:
