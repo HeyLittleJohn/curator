@@ -586,7 +586,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             {**{"limit": 50000, "sort": "timestamp", "order": "desc"}, **payload},
         )
 
-        results = [x.get("results", []) for x in results]
+        results = [record for x in results for record in x.get("results", [])]
         if results:
             results = self.search_for_timestamps(results)
             results = [{**record, "options_ticker_id": self.o_ticker_lookup[o_ticker]} for record in results]
@@ -599,47 +599,47 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         else:
             return False
 
+    def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
+        date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
+        date = str(date.date())
+        return (
+            self.dates_stamps["nanosecond.gte"]
+            .loc[self.dates_stamps["timestamp.gte"].str.contains(date)]
+            .to_list()
+        )
 
-def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
-    date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
-    date = date.date
-    return (
-        self.date_stamps["nanosecond.gte"].loc[self.dates_stamps["timestamp.gte"].str.contains(date)].to_list()
-    )
+    # TODO: finish this algorithm
+    def search_for_timestamps(self, data: list[dict]) -> list[dict]:
+        """Finds the date from the data timestamps, looks up the desired 9 timestamps for that date.
+        Then returns the 9 records with the closest timestamps to the desired ones.
+        Needs to handle circumstances where there may not be 9 records."""
 
+        target_timestamps = self.lookup_date_timestamps_from_record(data[0]["sip_timestamp"])
 
-# TODO: finish this algorithm
-def search_for_timestamps(self, data: list[dict]) -> list[dict]:
-    """Finds the date from the data timestamps, looks up the desired 9 timestamps for that date.
-    Then returns the 9 records with the closest timestamps to the desired ones.
-    Needs to handle circumstances where there may not be 9 records."""
+        closest_records = []
+        i, j = len(data) - 1, len(target_timestamps) - 1  # Start pointers at the end
 
-    target_timestamps = self.lookup_date_timestamps_from_record(data[0]["sip_timestamp"])
+        cur_tgt_timestamp = target_timestamps[j]
+        while j >= 0 and i >= 0:
+            # If closest_records list has all 9 records, break out of the loop
+            if len(closest_records) == 9:
+                break
 
-    closest_records = []
-    i, j = len(data) - 1, len(target_timestamps) - 1  # Start pointers at the end
+            record_timestamp = data[i]["sip_timestamp"]
 
-    cur_tgt_timestamp = target_timestamps[j]
-    while j >= 0 and i >= 0:
-        # If closest_records list has all 9 records, break out of the loop
-        if len(closest_records) == 9:
-            break
+            # has to be bigger than the target
+            if record_timestamp < cur_tgt_timestamp:
+                i -= 1
 
-        record_timestamp = data[i]["sip_timestamp"]
+            # has to be smaller than the next target
+            elif record_timestamp >= target_timestamps[max(j - 1, 0)]:
+                if j == 0:
+                    closest_records.append(data[i])
+                j -= 1
 
-        # has to be bigger than the target
-        if record_timestamp < cur_tgt_timestamp:
-            i -= 1
-
-        # has to be smaller than the next target
-        elif record_timestamp >= target_timestamps[max(j - 1, 0)]:
-            if j == 0:
+            else:
                 closest_records.append(data[i])
-            j -= 1
+                j -= 1
+                i -= 1
 
-        else:
-            closest_records.append(data[i])
-            j -= 1
-            i -= 1
-
-    return closest_records
+        return closest_records
