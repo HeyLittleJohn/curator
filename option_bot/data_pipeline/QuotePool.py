@@ -123,9 +123,11 @@ class QuoteWorker(PoolWorker):
             session_base_url=session_base_url,
         )
         self.o_ticker_count_mapping = o_ticker_count_mapping
-        self.o_ticker_queue_progress: Dict[str, list[int]] = {}  # list of tids per o_ticker pulled
+        self.o_ticker_queue_progress: Dict[str, set[int]] = {}  # list of tids per o_ticker pulled from queue
+        self.tid_result_progress: set = set()
         self.o_ticker: str = ""
-        self.empty_tids: list = []
+        self.empty_tids: set = set()
+        self.complete_otkrs: set[str] = set()
 
     async def run(self):
         if self.init_client_session:
@@ -157,9 +159,9 @@ class QuoteWorker(PoolWorker):
 
                         self.o_ticker = args[0]
                         if self.o_ticker not in self.o_ticker_queue_progress:
-                            self.o_ticker_queue_progress[self.o_ticker] = [tid]
+                            self.o_ticker_queue_progress[self.o_ticker] = set([tid])
                         else:
-                            self.o_ticker_queue_progress[self.o_ticker].append(tid)
+                            self.o_ticker_queue_progress[self.o_ticker].add(tid)
 
                         # start work on task, add to pending
 
@@ -188,8 +190,9 @@ class QuoteWorker(PoolWorker):
                         tb = None
                         try:
                             result = future.result()
-                            if result is False:
-                                self.empty_tids.append(tid)
+                            if result[0] is False:
+                                if result[1] not in self.complete_otkrs:
+                                    self.empty_tids.add(tid)
                                 result = None
                         except BaseException as e:
                             if self.exception_handler is not None:
@@ -197,49 +200,72 @@ class QuoteWorker(PoolWorker):
 
                             tb = traceback.format_exc()
                         self.rx.put_nowait((tid, result, tb))
+                        self.tid_result_progress.add(tid)
                         completed += 1
 
                     k = 15  # indicator that we've passed the listing date for the option
                     if len(self.empty_tids) > k:
                         seq_start = self.has_consecutive_sequence(k=k)
                         if seq_start:
-                            await self.clean_up_queue(seq_start)
+                            empty_otkr = self.check_completed_otkr(seq_start)
+                            await self.clean_up_queue(empty_otkr)
+                    self.clean_o_ticker_progress()
 
-        log.debug(f"worker finished: processed {completed} tasks")
+        log.info(f"worker finished: processed {completed} tasks")
 
     def has_consecutive_sequence(self, k=15) -> int | bool:
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
-        num_set = set(self.empty_tids)
         for tid in self.empty_tids:
-            if all((tid + i) in num_set for i in range(k)):
-                log.info(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
+            if all((tid + i) in self.empty_tids for i in range(k)):
+                log.debug(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
                 log.debug(f"empty tids: {self.empty_tids}")
                 return tid
         return False
 
-    async def clean_up_queue(self, tid: int):
-        """identifies the o_ticker that has the tid with the consecutive sequence.
-        It calculates the remaining tasks that have to be pulled for the ticker and removes them from the queue.
-        Everything that has already been pulled and is in `pending` will still be processed.
-        It then removes all tids that were processed for that otkr and removes them from the empty_tids list.
-        """
-        otkr = ""
+    def check_completed_otkr(self, tid):
+        """lookup which oticker produced the consecutive sequence of empty tids"""
+        now_empty_otkr = ""
         for otkr in self.o_ticker_queue_progress:
             if tid in self.o_ticker_queue_progress[otkr]:
-                log.info(f"cleaning up queue for {otkr}")
-                break
+                now_empty_otkr = otkr
+        if now_empty_otkr:
+            self.complete_otkrs.add(now_empty_otkr)
+        return now_empty_otkr
 
-        if otkr:
-            remaining_tasks = self.o_ticker_count_mapping[otkr] - len(self.o_ticker_queue_progress[otkr])
-            i = 0
-            while i < remaining_tasks:
-                try:
-                    self.tx.get_nowait()
-                    i += 1
-                except queue.Empty:
-                    await asyncio.sleep(0.001)
-            done_tids = self.o_ticker_queue_progress.pop(otkr)
-            self.empty_tids = list(set(self.empty_tids) - set(done_tids))
+    async def clean_up_queue(self, otkr: str):
+        """identifies the o_ticker that has the tid with the consecutive sequence.
+        It calculates the remaining tasks that have to be pulled from the queue for the oticker and removes them.
+        Everything that has already been pulled and is in `pending` will still be processed.
+        Removes completed
+        """
+        done_tids = self.o_ticker_queue_progress[otkr]
+        remaining_tasks = self.o_ticker_count_mapping[otkr] - len(done_tids)
+        i = 0
+        while i < remaining_tasks:
+            try:
+                self.tx.get_nowait()
+                i += 1
+            except queue.Empty:
+                await asyncio.sleep(0.001)
+
+        self.empty_tids = self.empty_tids - done_tids
+        self.o_ticker_count_mapping[otkr] -= remaining_tasks
+
+    def clean_o_ticker_progress(self):
+        """removes anything"""
+        completely_done_otkrs = []
+        for otkr in self.o_ticker_queue_progress:
+            if otkr in self.complete_otkrs:
+                self.empty_tids = self.empty_tids - self.o_ticker_queue_progress[otkr]
+            if len(self.o_ticker_queue_progress[otkr]) >= self.o_ticker_count_mapping[otkr]:
+                if len(self.o_ticker_queue_progress[otkr] - self.tid_result_progress) == 0:
+                    completely_done_otkrs.append(otkr)
+
+        for otkr in completely_done_otkrs:
+            self.tid_result_progress -= self.o_ticker_queue_progress[otkr]
+            self.o_ticker_queue_progress[otkr].clear()
+            self.o_ticker_queue_progress.pop(otkr)
+        log.info(f"\ncompletely done with otkrs: {completely_done_otkrs}!!")
 
 
 class QuotePool(Pool):

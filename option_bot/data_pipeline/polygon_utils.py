@@ -140,7 +140,7 @@ class PolygonPaginator(ABC):
                 if retry:
                     log.exception(
                         e,
-                        extra={"context": "Connection Lost! Going to sleep for 45 seconds..."},
+                        extra={"context": "Connection Lost AGAGIN! Going to sleep for 45 seconds..."},
                         exc_info=False,
                     )
                 log.debug(e, extra={f"url: {url}, \npayload: {payload}"})
@@ -610,7 +610,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             write_api_data_to_file(results, path, append=True)
 
         else:
-            return False
+            return False, o_ticker
 
     def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
         date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
