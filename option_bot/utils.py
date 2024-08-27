@@ -191,4 +191,6 @@ def pool_kwarg_config(kwargs: dict) -> dict:
     """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
     pool_kwargs = POOL_DEFAULT_KWARGS.copy()
     pool_kwargs.update(kwargs)
+    if pool_kwargs["queuecount"] > pool_kwargs["processes"]:
+        pool_kwargs["queuecount"] = pool_kwargs["processes"]
     return pool_kwargs
