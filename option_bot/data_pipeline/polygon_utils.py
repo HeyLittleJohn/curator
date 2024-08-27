@@ -11,6 +11,7 @@ from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
     ClientResponseError,
+    ServerDisconnectedError,
 )
 from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
@@ -130,8 +131,18 @@ class PolygonPaginator(ABC):
                 log.exception(e)
                 status = 2
 
-            except (ClientConnectionError, ClientConnectorError, ClientResponseError) as e:
-                log.exception(e, extra={"context": "Connection Lost! Going to sleep for 45 seconds..."})
+            except (
+                ClientConnectionError,
+                ClientConnectorError,
+                ClientResponseError,
+                ServerDisconnectedError,
+            ) as e:
+                log.exception(
+                    e,
+                    extra={"context": "Connection Lost! Going to sleep for 45 seconds..."},
+                    exc_info=False,
+                )
+                log.debug(e, extra={f"url: {url}, \npayload: {payload}"})
                 status = 3
 
             except asyncio.TimeoutError as e:

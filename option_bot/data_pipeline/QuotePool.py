@@ -221,7 +221,8 @@ class QuoteWorker(PoolWorker):
         """identifies the o_ticker that has the tid with the consecutive sequence.
         It calculates the remaining tasks that have to be pulled for the ticker and removes them from the queue.
         Everything that has already been pulled and is in `pending` will still be processed.
-        It then removes all tids that were processed for that otkr and removes them from the empty_tids list."""
+        It then removes all tids that were processed for that otkr and removes them from the empty_tids list.
+        Also removes all tids that are smaller (from previous otkrs that are done processing)"""
         for otkr in self.o_ticker_queue_progress:
             if tid in self.o_ticker_queue_progress[otkr]:
                 log.info(f"cleaning up queue for {otkr}")
@@ -233,9 +234,10 @@ class QuoteWorker(PoolWorker):
                         i += 1
                     except queue.Empty:
                         await asyncio.sleep(0.001)
-            break
+                break
         done_tids = self.o_ticker_queue_progress.pop(otkr)
         self.empty_tids = list(set(self.empty_tids) - set(done_tids))
+        self.empty_tids = [x for x in self.empty_tids if x > tid]
 
 
 class QuotePool(Pool):
@@ -257,7 +259,6 @@ class QuotePool(Pool):
     ) -> None:
         self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
         scheduler = QuoteScheduler(self.o_ticker_count_mapping)
-        # self.paginator = paginator
         self.tasks_scheduled = 0
         super().__init__(
             processes=processes,
