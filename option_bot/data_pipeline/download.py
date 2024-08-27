@@ -134,7 +134,7 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 100, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 50, "maxtasksperchild": 50000, "processes": 16}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     ticker_counter = 0
