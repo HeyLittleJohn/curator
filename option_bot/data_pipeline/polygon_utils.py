@@ -137,20 +137,22 @@ class PolygonPaginator(ABC):
                 ClientResponseError,
                 ServerDisconnectedError,
             ) as e:
-                log.exception(
-                    e,
-                    extra={"context": "Connection Lost! Going to sleep for 45 seconds..."},
-                    exc_info=False,
-                )
+                if retry:
+                    log.exception(
+                        e,
+                        extra={"context": "Connection Lost! Going to sleep for 45 seconds..."},
+                        exc_info=False,
+                    )
                 log.debug(e, extra={f"url: {url}, \npayload: {payload}"})
                 status = 3
 
             except asyncio.TimeoutError as e:
-                log.exception(
-                    e,
-                    extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
-                    exc_info=False,
-                )
+                if retry:
+                    log.exception(
+                        e,
+                        extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
+                        exc_info=False,
+                    )
                 status = 4
 
             except Exception as e:
