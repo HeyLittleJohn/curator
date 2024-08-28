@@ -420,7 +420,7 @@ class OptionsQuoteRunner(OptionsPricesRunner):
             raise FileNotFoundError
         ticker_path = self.base_directory + "/" + ticker
         dirs = os.listdir(ticker_path)
-        return [self._determine_most_recent_file(ticker_path + "/" + dir) for dir in dirs]
+        return [(self._determine_most_recent_file(ticker_path + "/" + dir), (ticker)) for dir in dirs]
 
     def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
         """This function will clean the data and return a list of dicts to be uploaded to the db
