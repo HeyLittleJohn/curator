@@ -170,13 +170,13 @@ def close_json_file(file: TextIO):
     s = file.tell()
     file.seek(s - 2)
     file.truncate()
-    file.write("]")
+    file.write(b"]")
 
 
 # NOTE: call prep_json_file here with flag
 def read_data_from_file(file_path: str, close_file=False) -> list[dict]:
     """Read api data from a json file"""
-    with open(file_path, "+rab") as f:
+    with open(file_path, "+ab") as f:
         if close_file:
             close_json_file(f)
             data = json.load(f)
