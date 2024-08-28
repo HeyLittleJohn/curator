@@ -210,6 +210,9 @@ class QuoteWorker(PoolWorker):
                             empty_otkr = self.check_completed_otkr(seq_start)
                             await self.clean_up_queue(empty_otkr)
                     self.clean_o_ticker_progress()
+                    log.debug(
+                        f"loop complete, restarting while again, running: {running}, total processed: {completed}"
+                    )
 
         log.info(f"worker finished: processed {completed} tasks")
 
@@ -217,8 +220,8 @@ class QuoteWorker(PoolWorker):
         """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
         for tid in self.empty_tids:
             if all((tid + i) in self.empty_tids for i in range(k)):
-                log.debug(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
-                log.debug(f"empty tids: {self.empty_tids}")
+                # log.debug(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
+                # log.debug(f"empty tids: {self.empty_tids}")
                 return tid
         return False
 
@@ -261,11 +264,12 @@ class QuoteWorker(PoolWorker):
                 if len(self.o_ticker_queue_progress[otkr] - self.tid_result_progress) == 0:
                     completely_done_otkrs.append(otkr)
 
-        for otkr in completely_done_otkrs:
-            self.tid_result_progress -= self.o_ticker_queue_progress[otkr]
-            self.o_ticker_queue_progress[otkr].clear()
-            self.o_ticker_queue_progress.pop(otkr)
-        log.info(f"\ncompletely done with otkrs: {completely_done_otkrs}!!")
+        if completely_done_otkrs:
+            for otkr in completely_done_otkrs:
+                self.tid_result_progress -= self.o_ticker_queue_progress[otkr]
+                self.o_ticker_queue_progress[otkr].clear()
+                self.o_ticker_queue_progress.pop(otkr)
+            log.info(f"\ncompletely done with otkrs: {completely_done_otkrs}!!")
 
 
 class QuotePool(Pool):
