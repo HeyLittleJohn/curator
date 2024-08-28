@@ -117,9 +117,9 @@ class PolygonPaginator(ABC):
         """
         results = []
         status = 0
-        retry = False
+        retry = 0
 
-        while True:
+        while True and retry <= 5:
             try:
                 status, response = await self._execute_request(session, url, payload)
 
@@ -137,22 +137,23 @@ class PolygonPaginator(ABC):
                 ClientResponseError,
                 ServerDisconnectedError,
             ) as e:
-                if retry:
+                if retry == 5:
                     log.exception(
                         e,
-                        extra={"context": "Connection Lost AGAGIN! Going to sleep for 45 seconds..."},
+                        extra={"context": "Connection Lost Going to sleep for 45 seconds..."},
                         exc_info=False,
                     )
-                log.debug(e, extra={f"url: {url}, \npayload: {payload}"})
+                    log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
                 status = 3
 
             except asyncio.TimeoutError as e:
-                if retry:
+                if retry == 5:
                     log.exception(
                         e,
                         extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
                         exc_info=False,
                     )
+                    log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
                 status = 4
 
             except Exception as e:
@@ -166,22 +167,21 @@ class PolygonPaginator(ABC):
                         url = self._clean_url(response["next_url"])
                         payload = {}
                         status = 0
-                        retry = False
+                        retry = 0
                     else:
                         break
 
-                elif status == 1 and retry is False:
+                elif status == 1:
                     await asyncio.sleep(self._api_sleep_time())
-                    retry = True
                     status = 0
 
                 elif status in (2, 4) and retry is False:
-                    retry = True
+                    retry += 1
                     status = 0
 
                 elif status == 3 and retry is False:
                     await asyncio.sleep(45)
-                    retry = True
+                    retry += 1
                     status = 0
 
                 else:
