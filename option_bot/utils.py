@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 from datetime import datetime
+from typing import TextIO
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
@@ -162,20 +163,23 @@ def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: s
             f.write(",\n")
 
 
-def prep_json_file(file_path: str, file_name: str):
-    with open(file_path + file_name, "a") as file:
-        file.seek(0, 2)
-        s = file.tell()
-        file.seek(s - 2)
-        file.truncate()
-        file.write("]")
+def close_json_file(file: TextIO):
+    """removes the dangling comma and adds a closing bracket to correctly format json files
+    Specifically will be used with Quotes downloads"""
+    file.seek(0, 2)
+    s = file.tell()
+    file.seek(s - 2)
+    file.truncate()
+    file.write("]")
 
 
 # NOTE: call prep_json_file here with flag
-def read_data_from_file(file_path: str) -> list[dict]:
+def read_data_from_file(file_path: str, close_file=False) -> list[dict]:
     """Read api data from a json file"""
     with open(file_path, "+ab") as f:
-        data = json.load(f)
+        if close_file:
+            close_json_file(f)
+            data = json.load(f)
     return data
 
 
