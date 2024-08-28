@@ -1,4 +1,4 @@
-from asyncio import Queue
+import asyncio
 from typing import Any
 
 from aiomultiprocess import Pool
@@ -85,7 +85,7 @@ async def upload_options_snapshots(o_tickers: dict):
     await etl_pool_uploader(snap_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_quotes(queue: Queue):
+async def upload_options_quotes(ticker="NVDA"):  # queue: Queue):
     quote_runner = OptionsQuoteRunner()
     pool_kwargs = {"childconcurrency": 2, "queuecount": int(CPUS / 3)}
     pool_kwargs = pool_kwarg_config(pool_kwargs)
@@ -93,7 +93,7 @@ async def upload_options_quotes(queue: Queue):
     log.debug(f"-- Starting Upload Process Pool with pool kwargs: {pool_kwargs}")
     async with Pool(**pool_kwargs) as pool:
         while True:
-            ticker = await queue.get()
+            # ticker = await queue.get()
             if ticker is None:
                 break
 
@@ -104,3 +104,7 @@ async def upload_options_quotes(queue: Queue):
                 f"uploading data to the database -- Upload Function: {quote_runner.upload_func.__qualname__}"
             )
             await pool.starmap(quote_runner.upload, path_args)
+
+
+if __name__ == "__main__":
+    asyncio.run(upload_options_quotes())
