@@ -1,3 +1,4 @@
+from asyncio import Queue
 from datetime import datetime
 
 from aiomultiprocess import Pool
@@ -127,7 +128,9 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTicker], months_hist: int = 24):
+async def download_options_quotes(
+    tickers: list[str], o_tickers: list[OptionTicker], queue: Queue, months_hist: int = 24
+):
     """This function downloads options quotes from polygon and stores it as local json.
 
     Args:
@@ -153,6 +156,9 @@ async def download_options_quotes(tickers: list[str], o_tickers: list[OptionTick
                 pool_kwargs=pool_kwargs,
                 args_data=small_batch,
             )
+            log.info(f"Completely done downloading {ticker}. \nPassing {ticker} to upload queue")
+            await queue.put(ticker)
+    await queue.put(None)
 
 
 async def api_quote_downloader(

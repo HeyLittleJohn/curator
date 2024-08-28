@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from data_pipeline.download import (
@@ -111,10 +112,14 @@ async def import_partial(
             ticker_lookup = await pull_tickers_from_db(tickers, all_)
         if not o_tickers:
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
-        await download_options_quotes(
-            tickers=tickers, o_tickers=list(o_tickers.values()), months_hist=months_hist
+
+        final_tickers = list(ticker_lookup.keys())
+        queue = asyncio.Queue()
+        download_task = download_options_quotes(
+            tickers=final_tickers, o_tickers=list(o_tickers.values()), queue=queue, months_hist=months_hist
         )
-        await upload_options_quotes(o_tickers)
+        upload_task = upload_options_quotes(queue)
+        await asyncio.gather(download_task, upload_task)
 
 
 async def remove_tickers_from_universe(tickers: list[str]):

@@ -14,7 +14,13 @@ from db_tools.queries import (
 from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
-from option_bot.utils import months_ago, read_data_from_file, timestamp_now, timestamp_to_datetime
+from option_bot.utils import (
+    clean_o_ticker,
+    months_ago,
+    read_data_from_file,
+    timestamp_now,
+    timestamp_to_datetime,
+)
 
 
 class PathRunner(ABC):
@@ -84,8 +90,9 @@ class PathRunner(ABC):
             file_path (str): path to the file to be uploaded
         """
         log.info(f"uploading data from {file_path}")
+        close_file = True if self.runner_type == "OptionsQuotes" else False
         try:
-            raw_data = read_data_from_file(file_path)
+            raw_data = read_data_from_file(file_path, close_file)
         except FileNotFoundError:
             log.warning(f"file not found at: {file_path} for {self.runner_type}, with ticker: {ticker_data}")
             raw_data = None
@@ -289,10 +296,6 @@ class OptionsPricesRunner(PathRunner):
     def __init__(self):
         super().__init__()
 
-    def _clean_o_ticker(self, o_ticker: str) -> str:
-        """Clean the options ticker to remove the prefix to make it compatible as a file name"""
-        return o_ticker.split(":")[1]
-
     def _make_o_ticker(self, clean_o_ticker: str) -> str:
         """re-adds the option prefix to the clean options ticker"""
         return f"O:{clean_o_ticker}"
@@ -322,7 +325,7 @@ class OptionsPricesRunner(PathRunner):
                 + "/"
                 + o_tickers_lookup[o_ticker].underlying_ticker
                 + "/"
-                + self._clean_o_ticker(o_ticker)
+                + clean_o_ticker(o_ticker)
             )
 
             try:
@@ -410,6 +413,15 @@ class OptionsQuoteRunner(OptionsPricesRunner):
     async def upload_func(self, data: list[dict]):
         return await update_options_quotes(data)
 
+    def generate_path_args(self, ticker: str) -> list[str]:
+        """returns the paths to each of the json file for each process in each ticker subdirectory"""
+        if not os.path.exists(self.base_directory):
+            log.warning("no options contracts found. Download options contracts first!")
+            raise FileNotFoundError
+        ticker_path = self.base_directory + "/" + ticker
+        dirs = os.listdir(ticker_path)
+        return [self._determine_most_recent_file(ticker_path + "/" + dir) for dir in dirs]
+
     def clean_data(self, results: list[dict], o_ticker: OptionTicker) -> list[dict]:
         """This function will clean the data and return a list of dicts to be uploaded to the db
 
@@ -423,8 +435,8 @@ class OptionsQuoteRunner(OptionsPricesRunner):
         if isinstance(results, list):
             for record in results:
                 record["as_of_date"] = timestamp_to_datetime(
-                    record.get("sip_timestamp", timestamp_now() * 1000000) / 1000, nano_sec=True
+                    record.get("sip_timestamp", timestamp_now() * 1000000), nano_sec=True, msec_units=False
                 )
-                record["options_ticker_id"] = o_ticker.id
+
                 clean_results.append(record)
         return clean_results
