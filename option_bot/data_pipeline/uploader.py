@@ -85,7 +85,7 @@ async def upload_options_snapshots(o_tickers: dict):
     await etl_pool_uploader(snap_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_quotes(ticker="NVDA"):  # queue: Queue):
+async def upload_options_quotes(ticker="TSLA"):  # queue: Queue):
     quote_runner = OptionsQuoteRunner()
     pool_kwargs = {"childconcurrency": 2, "queuecount": int(CPUS / 3)}
     pool_kwargs = pool_kwarg_config(pool_kwargs)
