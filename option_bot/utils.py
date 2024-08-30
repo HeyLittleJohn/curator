@@ -3,6 +3,8 @@ import inspect
 import json
 import os
 from datetime import datetime
+from json import JSONDecodeError
+from typing import TextIO
 
 import numpy as np
 from dateutil.relativedelta import relativedelta
@@ -15,7 +17,7 @@ _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a t
 
 def timestamp_to_datetime(timestamp: int, msec_units: bool = True, nano_sec: bool = False) -> datetime:
     if nano_sec:
-        dem = 1000000
+        dem = 1000000000
     elif msec_units:
         dem = 1000
     else:
@@ -31,8 +33,12 @@ def string_to_date(date_string: str, date_format: str = "%Y-%m-%d") -> datetime.
     return datetime.strptime(date_string, date_format).date()
 
 
-def months_ago(months=24) -> datetime:
-    return datetime.now() - relativedelta(months=months)
+def months_ago(months=24, end_date: datetime = None) -> datetime:
+    return (
+        datetime.now() - relativedelta(months=months)
+        if not end_date
+        else end_date - relativedelta(months=months)
+    )
 
 
 def first_weekday_of_month(year_month_array: np.ndarray) -> np.ndarray:
@@ -60,6 +66,20 @@ def timestamp_now(msec_units: bool = True):
 def chunk_iter_generator(data: list, size=250000):
     for i in range(0, len(data), size):
         yield data[i : i + size]
+
+
+def clean_o_ticker(o_ticker: str) -> str:
+    return o_ticker.split(":")[1] if ":" in o_ticker else o_ticker
+
+
+def extract_underlying_from_o_ticker(o_ticker: str) -> str:
+    o_ticker = clean_o_ticker(o_ticker)
+    underlying = ""
+    for char in o_ticker:
+        if char.isdigit():
+            break
+        underlying += char
+    return underlying
 
 
 def Session(func):
@@ -127,24 +147,63 @@ def Session(func):
     return wrapper_events
 
 
-def write_api_data_to_file(data: list[dict], file_path: str, file_name: str):
+def write_api_data_to_file(data: list[dict] | dict, file_path: str, file_name: str = None, append=False):
     """Write api data to a json file"""
-
     os.makedirs(file_path, exist_ok=True)
-    with open(file_path + file_name, "w") as f:
-        json.dump(data, f)
-    log.info(f"Data written to {file_path + file_name}")
+    if not append:
+        with open(file_path + file_name, "w") as f:
+            json.dump(data, f)
+        log.info(f"Data written to {file_path + file_name}")
+    else:
+        files = os.listdir(file_path)
+        file_name = files[0] if len(files) > 0 else str(timestamp_now()) + ".json"
+        with open(file_path + file_name, "+a") as f:
+            if not f.tell() > 0:
+                f.write("[")
+            json.dump(data, f)
+            f.write(",\n")
 
 
-def read_data_from_file(file_path: str) -> list[dict]:
+def close_json_file(file: TextIO):
+    """removes the dangling comma and adds a closing bracket to correctly format json files
+    Specifically will be used with Quotes downloads"""
+    file.seek(0, 2)
+    s = file.tell()
+    file.seek(s - 2)
+    file.truncate()
+    file.write("]")
+    file.seek(0)
+
+
+# NOTE: call prep_json_file here with flag
+def read_data_from_file(file_path: str, close_file=False) -> list[dict]:
     """Read api data from a json file"""
-    with open(file_path, "r") as f:
-        data = json.load(f)
+    try:
+        if close_file:
+            with open(file_path, "+a") as f:
+                if close_file:
+                    close_json_file(f)
+                    data = json.load(f)
+        else:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+    except JSONDecodeError as e:
+        raise e
     return data
+
+
+# def get_ticker_from_oticker(o_ticker: str) -> str:
+#     for i, char in enumerate(o_ticker):
+#         if not char.isalpha():
+#             return o_ticker[:i]
+
+#     return o_ticker
 
 
 def pool_kwarg_config(kwargs: dict) -> dict:
     """This function updates the kwargs for an aiomultiprocess.Pool from the defaults."""
     pool_kwargs = POOL_DEFAULT_KWARGS.copy()
     pool_kwargs.update(kwargs)
+    if pool_kwargs["queuecount"] > pool_kwargs["processes"]:
+        pool_kwargs["queuecount"] = pool_kwargs["processes"]
     return pool_kwargs

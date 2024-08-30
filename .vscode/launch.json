@@ -13,11 +13,13 @@
             "justMyCode": true,
             "args": [
                 "add",
-                "SPY",
+                "NVDA",
+                "GE",
+                // "-A",
+                "--months-hist",
+                "10",
                 "--partial",
                 "6",
-                "--months-hist",
-                "1",
             ],
             "env": {
                 "PYDEVD_DISABLE_FILE_VALIDATION": "1"

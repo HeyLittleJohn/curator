@@ -1,4 +1,5 @@
 import asyncio
+import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 from enum import Enum
@@ -10,6 +11,7 @@ from aiohttp.client_exceptions import (
     ClientConnectionError,
     ClientConnectorError,
     ClientResponseError,
+    ServerDisconnectedError,
 )
 from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
@@ -17,9 +19,11 @@ from db_tools.utils import OptionTicker
 
 from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from option_bot.utils import (
+    extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,
     timestamp_now,
+    timestamp_to_datetime,
     trading_days_in_range,
     write_api_data_to_file,
 )
@@ -113,9 +117,9 @@ class PolygonPaginator(ABC):
         """
         results = []
         status = 0
-        retry = False
+        retry = 0
 
-        while True:
+        while True and retry <= 5:
             try:
                 status, response = await self._execute_request(session, url, payload)
 
@@ -127,16 +131,29 @@ class PolygonPaginator(ABC):
                 log.exception(e)
                 status = 2
 
-            except (ClientConnectionError, ClientConnectorError, ClientResponseError) as e:
-                log.exception(e, extra={"context": "Connection Lost! Going to sleep for 45 seconds..."})
+            except (
+                ClientConnectionError,
+                ClientConnectorError,
+                ClientResponseError,
+                ServerDisconnectedError,
+            ) as e:
+                if retry == 5:
+                    log.exception(
+                        e,
+                        extra={"context": "Connection Lost Going to sleep for 45 seconds..."},
+                        exc_info=False,
+                    )
+                    log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
                 status = 3
 
             except asyncio.TimeoutError as e:
-                log.exception(
-                    e,
-                    extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
-                    exc_info=False,
-                )
+                if retry == 5:
+                    log.exception(
+                        e,
+                        extra={"context": "Event loop request timed out! Consider decreasing concurrency"},
+                        exc_info=False,
+                    )
+                    log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
                 status = 4
 
             except Exception as e:
@@ -150,22 +167,21 @@ class PolygonPaginator(ABC):
                         url = self._clean_url(response["next_url"])
                         payload = {}
                         status = 0
-                        retry = False
+                        retry = 0
                     else:
                         break
 
-                elif status == 1 and retry is False:
+                elif status == 1:
                     await asyncio.sleep(self._api_sleep_time())
-                    retry = True
                     status = 0
 
                 elif status in (2, 4) and retry is False:
-                    retry = True
+                    retry += 1
                     status = 0
 
                 elif status == 3 and retry is False:
                     await asyncio.sleep(45)
-                    retry = True
+                    retry += 1
                     status = 0
 
                 else:
@@ -243,7 +259,7 @@ class HistoricalStockPrices(PolygonPaginator):
         start_date: datetime,
         end_date: datetime,
         multiplier: int = 1,
-        timespan: Timespans = Timespans.day,
+        timespan: Timespans = Timespans.hour,
         adjusted: bool = True,
     ):
         self.multiplier = multiplier
@@ -408,14 +424,19 @@ class HistoricalOptionsPrices(PolygonPaginator):
         log.info(f"Downloading price data for {o_ticker}")
         log.debug(f"Downloading data for {o_ticker} with url: {url} and payload: {payload}")
         results = await self._query_all(session, url, payload)
-        log.info(f"Writing price data for {o_ticker} to file")
-        write_api_data_to_file(
-            results,
-            *self._download_path(
-                under_ticker + "/" + clean_ticker,
-                str(timestamp_now()),
-            ),
-        )
+        results = [x.get("results") for x in results if x.get("results")]
+
+        if results:
+            log.info(f"Writing price data for {o_ticker} to file")
+            write_api_data_to_file(
+                results,
+                *self._download_path(
+                    under_ticker + "/" + clean_ticker,
+                    str(timestamp_now()),
+                ),
+            )
+        else:
+            log.info(f"No price data for {o_ticker} in the time range")
 
 
 class CurrentContractSnapshot(PolygonPaginator):
@@ -447,6 +468,8 @@ class CurrentContractSnapshot(PolygonPaginator):
                 self._clean_o_ticker(o_ticker.o_ticker),
             )
             for o_ticker in args_data
+            if o_ticker.expiration_date >= datetime.now().date()
+            # NOTE: this filters is redundant since o_tickers passed in should be unexpired
         ]
 
     async def download_data(
@@ -480,15 +503,23 @@ class HistoricalQuotes(HistoricalOptionsPrices):
 
     paginator_type = "OptionsQuotes"
 
-    def __init__(self, months_hist: int = 24):
+    def __init__(self, o_ticker_lookup: dict[str, int], months_hist: int = 24):
         super().__init__(months_hist=months_hist, timespan=Timespans.hour)
+        self.start_date, self.close_date = self._determine_start_end_dates(
+            string_to_date("2060-01-01")
+        )  # NOTE: magic number meant to always trigger the newest date (today)
+        self.dates = trading_days_in_range(
+            str(self.start_date), str(self.close_date), count=False, cal_type="o_cal"
+        )
+        self.dates_stamps = self._prepare_timestamps(self.dates)
+        self.o_ticker_lookup = o_ticker_lookup
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
 
     def generate_request_args(
         self, args_data: list[OptionTicker]
-    ) -> list[str, tuple[list[tuple[str, dict]], str, str]]:
+    ) -> tuple[list[tuple[str, dict]], dict[str, int]]:
         """Generate the urls to query the options quotes endpoint.
         Inputs should be OptionTickers. We then generate the date ranges.
         To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
@@ -496,62 +527,42 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         Only create args if the option has not yet expired during the dates in the time range.
 
         Outputs:
-            output_args: list of (o_ticker: str, tuple(
-                list(tuple(url, payload)), underlying_ticker, clean_ticker)
+            output_args: list of (o_ticker: str, payload:dict)
+            o_ticker_count_mapping: dict of o_ticker: count of payloads
             }
         """
-        start_date, close_date = self._determine_start_end_dates(
-            string_to_date("2040-01-01")
-        )  # NOTE: magic number meant to always trigger the newest date (today)
-        dates = trading_days_in_range(str(start_date), str(close_date), count=False)
-        dates = self._prepare_timestamps(dates)
-
         output_args = []
+        o_ticker_count_mapping = {}
+        log.info(f"Generating request args for {len(args_data)} option tickers")
+        count = 0
         for o_ticker in args_data:
-            not_exp = True
-            args = []
-            while not_exp:
-                for i in range(0, len(dates), 9):
-                    if dates[i][:10] > str(o_ticker.expiration_date):
-                        not_exp = False
-                        break
-                    order = "asc"
-                    for _ in range(8):
-                        if _ == 7:
-                            order = "desc"
+            if count % 500 == 0:
+                log.info(f"Generating request args for {count}/{len(args_data)} option tickers")
+            count += 1
+            payloads = [
+                {
+                    "timestamp": x,
+                }
+                for x in self.dates.index[self.dates.index <= str(o_ticker.expiration_date)].astype(str)
+            ]
 
-                        args.append(
-                            (
-                                self._construct_url(o_ticker.o_ticker),
-                                {
-                                    "limit": 1,
-                                    "sort": "timestamp",
-                                    "order": order,
-                                    "timestamp.gte": dates[i + _]
-                                    if _ != 7
-                                    else dates[i + _][:-11] + "0" + dates[i + _][-10:],
-                                    "timestamp.lte": dates[i + _ + 1],
-                                },
-                            )
-                        )
-                break
-            if args:
-                output_args.append(
-                    (
-                        o_ticker.o_ticker,
-                        args,
-                        o_ticker.underlying_ticker,
-                        self._clean_o_ticker(o_ticker.o_ticker),
-                    )
-                )
-        return output_args
+            if payloads:
+                args = [(o_ticker.o_ticker, payload) for payload in payloads]
+                output_args.extend(args)
+                o_ticker_count_mapping[o_ticker.o_ticker] = len(payloads)
+
+        return output_args, o_ticker_count_mapping
 
     @staticmethod
     def _prepare_timestamps(dates: pd.DataFrame) -> list[int]:
-        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz"""
+        """converts market dates to timestamps occurring every hour from 9:30am to 5:30pm based on market tz
+        Also prepares nanosecond unix timestamps"""
         dates = dates.tz_localize("US/Eastern")
         for i in range(9):
-            dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
+            if i >= 7:
+                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
+            else:
+                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
             dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
             dates[f"{i+9}_oclock"] = (
                 dates[f"{i+9}_oclock"].astype(str).str.slice(stop=-2)
@@ -559,46 +570,89 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 + dates[f"{i+9}_oclock"].astype(str).str.slice(start=-2)
             )
         dates.drop(columns=["market_open", "market_close"], inplace=True)
-        return dates.values.flatten().tolist()
+        dates = pd.DataFrame({"timestamp.gte": dates.values.flatten()})
+        dates["timestamp.lte"] = dates["timestamp.gte"].shift(-1)
+        dates = dates[~dates["timestamp.gte"].str.contains("T17")].reset_index(drop=True)
+        dates["order"] = np.tile(["asc"] * 7 + ["desc"], int(np.ceil(len(dates) / 8)))[: len(dates)]
 
-    async def download_data(
-        self,
-        o_ticker: str,
-        request_args: tuple[list[tuple[str, dict]]],
-        under_ticker: str,
-        clean_ticker: str,
-        session: ClientSession = None,
-    ):
+        dates["nanosecond.gte"] = pd.to_datetime(dates["timestamp.gte"], utc=True).astype("int64")
+        dates["nanosecond.lte"] = pd.to_datetime(dates["timestamp.lte"], utc=True).astype("int64")
+
+        return dates.sort_index(ascending=False).reset_index(drop=True)
+
+    async def download_data(self, o_ticker: str, payload: dict, session: ClientSession = None):
         """Overwriting inherited download_data().
         Creates a file per options ticker with all available quote date in the time range
 
         args:
             o_ticker: str,
-            request_args: tuple(list(tuple(url, payload)),
-            under_ticker: str,
-            clean_ticker: str,
-
+            payload: dict(timestamp)
+            # NOTE add the rest of the payload when calling the API to save RAM
+        returns:
+            boolean: indicates if there were results or not. Returns `False` if not. Otherwise no return
         NOTE: session = None prevents the function from crashing without a session input initially.
         This lets us wait for the process pool to insert the session into the args.
         """
-        o_ticker
-        log.info(f"Downloading quote data for {o_ticker}")
-        log.debug(f"Performing {len(request_args)} requests for quotes for {o_ticker}")
+        results = await self._query_all(
+            session,
+            self._construct_url(o_ticker),
+            {**{"limit": 50000, "sort": "timestamp", "order": "desc"}, **payload},
+        )
 
-        tasks = [self._query_all(session, url, payload, limit=True) for url, payload in request_args]
-        results = await asyncio.gather(*tasks)
-
+        results = [record for x in results for record in x.get("results", [])]
         if results:
-            log.info(f"Writing quote data for {o_ticker} to file")
+            results = self.search_for_timestamps(results)
+            results = [{**record, "options_ticker_id": self.o_ticker_lookup[o_ticker]} for record in results]
 
-            results = [x[0].get("results")[0] for x in results if x[0].get("results")]
+            ticker = extract_underlying_from_o_ticker(o_ticker)
+            pid = str(os.getpid())
+            path = f"{BASE_DOWNLOAD_PATH}/{self.paginator_type}/{ticker}/{pid}/"
+            write_api_data_to_file(results, path, append=True)
 
-            write_api_data_to_file(
-                results,
-                *self._download_path(
-                    under_ticker + "/" + clean_ticker,
-                    str(timestamp_now()),
-                ),
-            )
         else:
-            log.info(f"No quote data for {o_ticker} in the time range")
+            return False, o_ticker
+
+    def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
+        date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
+        date = str(date.date())
+        return (
+            self.dates_stamps["nanosecond.gte"]
+            .loc[self.dates_stamps["timestamp.gte"].str.contains(date)]
+            .to_list()
+        )
+
+    # TODO: finish this algorithm
+    def search_for_timestamps(self, data: list[dict]) -> list[dict]:
+        """Finds the date from the data timestamps, looks up the desired 9 timestamps for that date.
+        Then returns the 9 records with the closest timestamps to the desired ones.
+        Needs to handle circumstances where there may not be 9 records."""
+
+        target_timestamps = self.lookup_date_timestamps_from_record(data[0]["sip_timestamp"])
+
+        closest_records = []
+        i, j = len(data) - 1, len(target_timestamps) - 1  # Start pointers at the end
+
+        cur_tgt_timestamp = target_timestamps[j]
+        while j >= 0 and i >= 0:
+            # If closest_records list has all 9 records, break out of the loop
+            if len(closest_records) == 9:
+                break
+
+            record_timestamp = data[i]["sip_timestamp"]
+
+            # has to be bigger than the target
+            if record_timestamp < cur_tgt_timestamp:
+                i -= 1
+
+            # has to be smaller than the next target
+            elif record_timestamp >= target_timestamps[max(j - 1, 0)]:
+                if j == 0:
+                    closest_records.append(data[i])
+                j -= 1
+
+            else:
+                closest_records.append(data[i])
+                j -= 1
+                i -= 1
+
+        return closest_records
