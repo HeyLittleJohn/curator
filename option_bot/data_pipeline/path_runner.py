@@ -1,6 +1,7 @@
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime
+from json import JSONDecodeError
 from typing import Any, Generator
 
 from db_tools.queries import (
@@ -80,7 +81,7 @@ class PathRunner(ABC):
             list[dict]: cleaned data"""
         pass
 
-    async def upload(self, file_path: str, ticker_data: tuple = ()):
+    async def upload(self, file_path: str, ticker_data: tuple = ()) -> str | None:
         """This function will read the file, clean the data, and upload to the database
 
         Every self.upload_func requires args in this format:
@@ -96,6 +97,10 @@ class PathRunner(ABC):
         except FileNotFoundError:
             log.warning(f"file not found at: {file_path} for {self.runner_type}, with ticker: {ticker_data}")
             raw_data = None
+        except JSONDecodeError:
+            log.warning(f"failed to parse {file_path}. Make sure it is correct JSON")
+            raw_data = None
+            return file_path
 
         if raw_data:
             clean_data = self.clean_data(raw_data, ticker_data)
@@ -430,13 +435,20 @@ class OptionsQuoteRunner(OptionsPricesRunner):
             o_ticker (tuple[str, int, str, str]):
             OptionTicker named tuple containing o_ticker, id, expiration_date, underlying_ticker.
         """
-        clean_results = []
-
         if isinstance(results, list):
-            for record in results:
-                record["as_of_date"] = timestamp_to_datetime(
-                    record.get("sip_timestamp", timestamp_now() * 1000000), nano_sec=True, msec_units=False
-                )
+            if isinstance(results[0], list):
+                clean_results = [self._convert_timestamps(record) for batch in results for record in batch]
 
-                clean_results.append(record)
+            else:
+                clean_results = [self._convert_timestamps(record) for record in results]
+        else:
+            clean_results = []
+
         return clean_results
+
+    @staticmethod
+    def _convert_timestamps(record: dict) -> dict:
+        record["as_of_date"] = timestamp_to_datetime(
+            record.get("sip_timestamp", timestamp_now() * 1000000), nano_sec=True, msec_units=False
+        )
+        return record

@@ -61,8 +61,13 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
     await upload_options_prices(o_tickers)
 
     # Download and upload quotes
-    await download_options_quotes(tickers=tickers, o_tickers=list(o_tickers.values()), months_hist=months_hist)
-    await upload_options_quotes(o_tickers)
+    final_tickers = list(ticker_lookup.keys())
+    queue = asyncio.Queue()
+    download_task = download_options_quotes(
+        tickers=final_tickers, o_tickers=list(o_tickers.values()), queue=queue, months_hist=months_hist
+    )
+    upload_task = upload_options_quotes(queue)
+    await asyncio.gather(download_task, upload_task)
 
     # Download and upload underlying stock prices
     # NOTE: at the end due to it being the free api

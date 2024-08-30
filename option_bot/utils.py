@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 from datetime import datetime
+from json import JSONDecodeError
 from typing import TextIO
 
 import numpy as np
@@ -170,16 +171,24 @@ def close_json_file(file: TextIO):
     s = file.tell()
     file.seek(s - 2)
     file.truncate()
-    file.write(b"]")
+    file.write("]")
+    file.seek(0)
 
 
 # NOTE: call prep_json_file here with flag
 def read_data_from_file(file_path: str, close_file=False) -> list[dict]:
     """Read api data from a json file"""
-    with open(file_path, "+ab") as f:
+    try:
         if close_file:
-            close_json_file(f)
-            data = json.load(f)
+            with open(file_path, "+a") as f:
+                if close_file:
+                    close_json_file(f)
+                    data = json.load(f)
+        else:
+            with open(file_path, "r") as f:
+                data = json.load(f)
+    except JSONDecodeError as e:
+        raise e
     return data
 
 
