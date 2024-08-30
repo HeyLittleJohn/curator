@@ -1,3 +1,4 @@
+from asyncio import Queue
 from datetime import datetime
 
 from aiomultiprocess import Pool
@@ -18,6 +19,7 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
+from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
@@ -56,6 +58,7 @@ async def api_pool_downloader(
     url_args = paginator.generate_request_args(args_data)
     if url_args:
         log.info("fetching data from polygon api")
+        log.debug(f"tasks: {len(url_args)}")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
         async with Pool(**pool_kwargs) as pool:
@@ -109,7 +112,7 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 400, "maxtasksperchild": 50000}
     op_prices = HistoricalOptionsPrices(months_hist=months_hist)
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
@@ -120,24 +123,73 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     Args:
         o_tickers: list of OptionTicker tuples
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 250, "maxtasksperchild": 50000}
     op_snapshots = CurrentContractSnapshot()
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_quotes(o_tickers: list[OptionTicker], months_hist: int = 24):
+async def download_options_quotes(
+    tickers: list[str], o_tickers: list[OptionTicker], queue: Queue, months_hist: int = 24
+):
     """This function downloads options quotes from polygon and stores it as local json.
 
     Args:
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 300, "maxtasksperchild": 50000}
-    op_quotes = HistoricalQuotes(months_hist=months_hist)
-    step = 1000
-    batch_num = 1
-    for i in range(0, len(o_tickers), step):
-        log.info(f"downloading options quotes for batch {batch_num}: total o_tickers: {i}/{len(o_tickers)}")
-        batch = o_tickers[i : i + step]
-        batch_num += 1
-        await api_pool_downloader(paginator=op_quotes, pool_kwargs=pool_kwargs, args_data=batch)
+    pool_kwargs = {"childconcurrency": 100, "maxtasksperchild": 1000, "processes": 30}
+    o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
+    op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
+    ticker_counter = 0
+    BATCH_SIZE_OTICKERS = 1000
+    for ticker in tickers:
+        ticker_counter += 1
+        batch_o_tickers = [x for x in o_tickers if x.underlying_ticker == ticker]
+        for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
+            small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
+            log.info(
+                f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
+                with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
+            )
+            await api_quote_downloader(
+                paginator=op_quotes,
+                pool_kwargs=pool_kwargs,
+                args_data=small_batch,
+            )
+            log.info(f"Completely done downloading {ticker}. \nPassing {ticker} to upload queue")
+            await queue.put(ticker)
+    await queue.put(None)
+
+
+async def api_quote_downloader(
+    paginator: HistoricalQuotes,
+    args_data: list = None,
+    pool_kwargs: dict = {},
+):
+    """This function creates a process pool to download data from the polygon api and store it in json files.
+    It is the base module co-routine for all our data pulls.
+    It generates the urls to be queried, creates and runs a process pool to perform the I/O queries.
+    The results for each request are returned via PoolResults generator.
+
+    Args:
+        paginator: PolygonPaginator object, specific to the endpoint being queried,
+        args_data: list of data args to be used to generate pool args
+        pool_kwargs: kwargs to be passed to the process pool
+
+    url_args: list of tuples, each tuple contains the args for the paginator's download_data method
+    """
+    log.info("generating urls to be queried")
+    url_args, o_ticker_count_mapping = paginator.generate_request_args(args_data)
+    if url_args:
+        log.info("fetching data from polygon api")
+        log.debug(f"tasks: {len(url_args)}")
+        pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
+        pool_kwargs = pool_kwarg_config(pool_kwargs)
+        log.info("creating quote pool")
+        async with QuotePool(
+            **pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping, paginator=paginator
+        ) as pool:
+            log.info("deploying QuoteWorkers in Pool")
+            await pool.starmap(paginator.download_data, url_args)
+
+        log.info(f"finished downloading data for {paginator.paginator_type}. Process pool closed")

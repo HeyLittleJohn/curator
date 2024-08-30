@@ -1,3 +1,5 @@
+import asyncio
+from asyncio import Queue
 from typing import Any
 
 from aiomultiprocess import Pool
@@ -11,7 +13,7 @@ from data_pipeline.path_runner import (
     StockPricesRunner,
 )
 
-from option_bot.proj_constants import log
+from option_bot.proj_constants import CPUS, log
 from option_bot.utils import pool_kwarg_config
 
 # TODO: all the "upload_xyz() function below can be abstracted to accept
@@ -74,7 +76,7 @@ async def upload_options_prices(o_tickers: dict):
     Args:
         o_tickers: dict(o_ticker_id: OptionsTicker tuple)"""
     opt_price_runner = OptionsPricesRunner()
-    pool_kwargs = {"childconcurrency": 3}
+    pool_kwargs = {"childconcurrency": 1, "queuecount": int(CPUS / 3)}
     await etl_pool_uploader(opt_price_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
@@ -84,7 +86,30 @@ async def upload_options_snapshots(o_tickers: dict):
     await etl_pool_uploader(snap_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_quotes(o_tickers: dict):
+async def upload_options_quotes(queue: Queue):
     quote_runner = OptionsQuoteRunner()
-    pool_kwargs = {"childconcurrency": 3}
-    await etl_pool_uploader(quote_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
+    pool_kwargs = {"childconcurrency": 5, "queuecount": 1, "processes": 2}
+    pool_kwargs = pool_kwarg_config(pool_kwargs)
+
+    log.debug(f"-- Starting Upload Process Pool with pool kwargs: {pool_kwargs}")
+    failed_paths = []
+    async with Pool(**pool_kwargs) as pool:
+        while True:
+            ticker = await queue.get()
+            if ticker is None:
+                break
+
+            log.info(f"generating the path args to be uploaded -- {quote_runner.runner_type} for {ticker}")
+            path_args = quote_runner.generate_path_args(ticker)
+
+            log.info(
+                f"uploading data to the database -- Upload Function: {quote_runner.upload_func.__qualname__}"
+            )
+            for path in await pool.starmap(quote_runner.upload, path_args):
+                failed_paths.append(path)
+        log.info(f"failed to parse these paths: {failed_paths}")
+    log.info("-- Done Uploading Quote Data")
+
+
+if __name__ == "__main__":
+    asyncio.run(upload_options_quotes())

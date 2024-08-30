@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pandas as pd
 from data_pipeline.exceptions import InvalidArgs
 from db_tools.schemas import (
     OptionPriceModel,
@@ -127,6 +128,9 @@ async def ticker_imported(session: AsyncSession, ticker_id: int):
 
 @Session
 async def update_stock_metadata(session: AsyncSession, data: list[TickerModel]):
+    df = pd.DataFrame(data)
+    df = df.drop_duplicates(subset=["ticker"], keep="last")
+    data = df.to_dict(orient="records")
     stmt = insert(StockTickers).values(data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
@@ -213,10 +217,9 @@ async def update_options_prices(
 @Session
 async def update_options_snapshot(session: AsyncSession, data: list[OptionsSnapshotModel]):
     stmt = insert(OptionsSnapshot).values(data)
-    stmt.on_conflict_do_update(
+    stmt = stmt.on_conflict_do_update(
         constraint="uq_options_snapshot",
         set_=dict(
-            as_of_date=stmt.excluded.as_of_date,
             implied_volatility=stmt.excluded.implied_volatility,
             delta=stmt.excluded.delta,
             gamma=stmt.excluded.gamma,
@@ -237,4 +240,4 @@ async def update_options_quotes(session: AsyncSession, data: list[QuoteModel]):
 
 @Session
 async def delete_stock_ticker(session: AsyncSession, ticker: str):
-    session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))
+    await session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))

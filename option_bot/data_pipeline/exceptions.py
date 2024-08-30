@@ -3,7 +3,6 @@ import sys
 from aiohttp.client_exceptions import ClientConnectionError, ClientResponseError
 from aiomultiprocess.types import ProxyException
 
-
 # from sentry_sdk import capture_exception
 
 
@@ -79,3 +78,11 @@ class ProjAPIOverload(ProjBaseException):
 
 class ProjAPIError(ProjBaseException):
     """An exception indicating a 400 response from the API"""
+
+
+class PoolResultException(ProjBaseException):
+    """An exception indicating an error in the pool results"""
+
+
+class ProjPoolResultException(ProjBaseException):
+    """An exception indicating an error in the pool results"""
