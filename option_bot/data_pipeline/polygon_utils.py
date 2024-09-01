@@ -535,6 +535,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         o_ticker_count_mapping = {}
         log.info(f"Generating request args for {len(args_data)} option tickers")
         count = 0
+        sorted_index = self.dates.index.sort_values(ascending=False)
         for o_ticker in args_data:
             if count % 500 == 0:
                 log.info(f"Generating request args for {count}/{len(args_data)} option tickers")
@@ -543,7 +544,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 {
                     "timestamp": x,
                 }
-                for x in self.dates.index[self.dates.index <= str(o_ticker.expiration_date)].astype(str)
+                for x in sorted_index[sorted_index <= str(o_ticker.expiration_date)].astype(str)
             ]
 
             if payloads:

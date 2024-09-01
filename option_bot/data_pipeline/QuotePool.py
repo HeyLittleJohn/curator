@@ -22,9 +22,7 @@ from aiomultiprocess.types import (
     R,
     T,
     TaskID,
-    TracebackStr,
 )
-from data_pipeline.polygon_utils import HistoricalQuotes
 
 from option_bot.proj_constants import log
 
@@ -123,11 +121,12 @@ class QuoteWorker(PoolWorker):
             session_base_url=session_base_url,
         )
         self.o_ticker_count_mapping = o_ticker_count_mapping
-        self.o_ticker_queue_progress: Dict[str, set[int]] = {}  # list of tids per o_ticker pulled from queue
+        self.o_ticker_queue_progress: Dict[str, set[int]] = {}  # tids pulled to execute
+        self.o_ticker_skip_tids: Dict[str, set[int]] = {}  # tids pulled to skip
         self.tid_result_progress: set = set()
-        self.o_ticker: str = ""
         self.empty_tids: set = set()
         self.complete_otkrs: set[str] = set()
+        self.completely_processed_otkrs = list[str] = list()
 
     async def run(self):
         if self.init_client_session:
@@ -157,22 +156,26 @@ class QuoteWorker(PoolWorker):
 
                         tid, func, args, kwargs = task
 
-                        self.o_ticker = args[0]
-                        if self.o_ticker not in self.o_ticker_queue_progress:
-                            self.o_ticker_queue_progress[self.o_ticker] = set([tid])
+                        # tracking progress
+                        o_ticker = args[0]
+                        if o_ticker not in self.o_ticker_queue_progress:
+                            self.o_ticker_queue_progress[o_ticker] = set([tid])
+                            self.o_ticker_queue_progress[o_ticker] = set()
                         else:
-                            self.o_ticker_queue_progress[self.o_ticker].add(tid)
+                            if o_ticker in self.complete_otkrs:
+                                self.o_ticker_skip_tids[o_ticker].add(tid)
+                            else:
+                                self.o_ticker_queue_progress[o_ticker].add(tid)
 
-                        # start work on task, add to pending
+                        # start work on task, add to pending if not a skipped/complete otkr
+                        if o_ticker not in self.complete_otkrs:
+                            args = [
+                                *args,
+                                client_session,
+                            ]  # NOTE: adds client session to the args list
+                            future = asyncio.ensure_future(func(*args, **kwargs))
+                            pending[future] = tid
 
-                        args = [
-                            *args,
-                            client_session,
-                        ]  # NOTE: adds client session to the args list
-                        future = asyncio.ensure_future(func(*args, **kwargs))
-                        pending[future] = tid
-
-                    # NOTE: this won't initially start processing "pending" until pending is as big as concurrency limit
                     if not pending:
                         await asyncio.sleep(0.005)
                         continue
@@ -190,10 +193,11 @@ class QuoteWorker(PoolWorker):
                         tb = None
                         try:
                             result = future.result()
-                            if result[0] is False:
-                                if result[1] not in self.complete_otkrs:
-                                    self.empty_tids.add(tid)
-                                result = None
+                            if result:
+                                if result[0] is False:
+                                    if result[1] not in self.complete_otkrs:
+                                        self.empty_tids.add(tid)
+                            result = None
                         except BaseException as e:
                             if self.exception_handler is not None:
                                 self.exception_handler(e)
@@ -203,12 +207,8 @@ class QuoteWorker(PoolWorker):
                         self.tid_result_progress.add(tid)
                         completed += 1
 
-                    k = 15  # indicator that we've passed the listing date for the option
-                    if len(self.empty_tids) > k:
-                        seq_start = self.has_consecutive_sequence(k=k)
-                        if seq_start:
-                            empty_otkr = self.check_completed_otkr(seq_start)
-                            await self.clean_up_queue(empty_otkr)
+                    self.eval_list_date()
+
                     self.clean_o_ticker_progress()
                     log.debug(
                         f"loop complete, restarting while again, running: {running}, total processed: {completed}"
@@ -216,12 +216,19 @@ class QuoteWorker(PoolWorker):
 
         log.info(f"worker finished: processed {completed} tasks")
 
+    def eval_list_date(self):
+        k = 15  # indicator that we've passed the listing date for the option
+        if len(self.empty_tids) > k:
+            seq_start = self.has_consecutive_sequence(k=k)
+            if seq_start:
+                self.check_completed_otkr(seq_start)
+
     def has_consecutive_sequence(self, k=15) -> int | bool:
-        """check if there is a sequence of length 16 or longer in which the tids are consecutive"""
+        """check if there is a sequence of length k or longer in which the tids are consecutive"""
         for tid in self.empty_tids:
             if all((tid + i) in self.empty_tids for i in range(k)):
-                # log.debug(f"consecutive sequence found with {len(self.empty_tids)} empty tids")
-                # log.debug(f"empty tids: {self.empty_tids}")
+                log.debug(f"consecutive sequence of {k} found within {len(self.empty_tids)} total empty tids")
+                log.debug(f"empty tids: {self.empty_tids}")
                 return tid
         return False
 
@@ -233,43 +240,41 @@ class QuoteWorker(PoolWorker):
                 now_empty_otkr = otkr
         if now_empty_otkr:
             self.complete_otkrs.add(now_empty_otkr)
-        return now_empty_otkr
-
-    async def clean_up_queue(self, otkr: str):
-        """identifies the o_ticker that has the tid with the consecutive sequence.
-        It calculates the remaining tasks that have to be pulled from the queue for the oticker and removes them.
-        Everything that has already been pulled and is in `pending` will still be processed.
-        Removes completed
-        """
-        done_tids = self.o_ticker_queue_progress[otkr]
-        remaining_tasks = self.o_ticker_count_mapping[otkr] - len(done_tids)
-        i = 0
-        while i < remaining_tasks:
-            try:
-                self.tx.get_nowait()
-                i += 1
-            except queue.Empty:
-                await asyncio.sleep(0.001)
-
-        self.empty_tids = self.empty_tids - done_tids
-        self.o_ticker_count_mapping[otkr] -= remaining_tasks
+            self.empty_tids -= self.o_ticker_queue_progress[now_empty_otkr]
 
     def clean_o_ticker_progress(self):
-        """removes anything"""
-        completely_done_otkrs = []
-        for otkr in self.o_ticker_queue_progress:
+        """reports how many o_tickers have had all tids pulled from the queue and cleans internal tracking sets"""
+        for otkr, total_tids in self.o_ticker_count_mapping:
             if otkr in self.complete_otkrs:
-                self.empty_tids = self.empty_tids - self.o_ticker_queue_progress[otkr]
-            if len(self.o_ticker_queue_progress[otkr]) >= self.o_ticker_count_mapping[otkr]:
-                if len(self.o_ticker_queue_progress[otkr] - self.tid_result_progress) == 0:
-                    completely_done_otkrs.append(otkr)
+                self.empty_tids -= self.o_ticker_queue_progress[otkr]
+                if otkr not in self.completely_processed_otkrs:
+                    if (
+                        len(self.o_ticker_skip_tids[otkr]) + len(self.o_ticker_queue_progress[otkr])
+                        >= total_tids
+                    ):
+                        self.completely_processed_otkrs.append(otkr)
 
-        if completely_done_otkrs:
-            for otkr in completely_done_otkrs:
-                self.tid_result_progress -= self.o_ticker_queue_progress[otkr]
-                self.o_ticker_queue_progress[otkr].clear()
-                self.o_ticker_queue_progress.pop(otkr)
-            log.info(f"\ncompletely done with otkrs: {completely_done_otkrs}!!")
+                    elif (
+                        len(
+                            self.o_ticker_queue_progress[otkr]
+                            + self.o_ticker_skip_tids[otkr]
+                            - self.tid_result_progress
+                        )
+                        == 0
+                    ):
+                        self.completely_processed_otkrs.append(otkr)
+                        log.info(f"all processed for {otkr} but fewer than the expected mapping # of tasks")
+
+                # else:
+                #     self.tid_result_progress -= (
+                #         self.o_ticker_queue_progress[otkr] + self.o_ticker_skip_tids[otkr]
+                #     )
+                #     self.o_ticker_queue_progress[otkr].clear()
+                #     self.o_ticker_queue_progress.pop(otkr)
+                # NOTE: If error with mapping then new tids for an otkr could arrive from the queue after popping...bad
+            log.info(
+                f"\ncompletely done with {len(self.completely_processed_otkrs)}/{len(self.o_ticker_count_mapping.keys())} otkrs !!"  # noqa: E501
+            )
 
 
 class QuotePool(Pool):
@@ -287,7 +292,6 @@ class QuotePool(Pool):
         init_client_session: bool = False,
         session_base_url: Optional[str] = None,
         o_ticker_count_mapping: Dict[str, int] = None,
-        paginator: HistoricalQuotes = None,
     ) -> None:
         self.o_ticker_count_mapping: dict[str, int] = o_ticker_count_mapping
         scheduler = QuoteScheduler(self.o_ticker_count_mapping)
@@ -338,9 +342,9 @@ class QuotePool(Pool):
 
         return task_id
 
-    def finish_work(self, task_id: TaskID, value: Any, tb: Optional[TracebackStr]):
-        """overwriting the inherited function. Not using ._results in the pool"""
-        self.scheduler.complete_task(task_id)
+    # def finish_work(self, task_id: TaskID, value: Any, tb: Optional[TracebackStr]):
+    #     """overwriting the inherited function. Not using ._results in the pool"""
+    #     self.scheduler.complete_task(task_id)
 
     def starmap(
         self,
@@ -373,7 +377,7 @@ class QuotePool(Pool):
 
         :meta private:
         """
-        # paginator = copy.deepcopy(self.paginator)
+
         tx, rx = self.queues[qid]
         process = QuoteWorker(
             tx,
@@ -387,7 +391,6 @@ class QuotePool(Pool):
             init_client_session=self.init_client_session,
             session_base_url=self.session_base_url,
             o_ticker_count_mapping=self.o_ticker_count_mapping,
-            # paginator=paginator,
         )
         process.start()
         return process
