@@ -1,5 +1,4 @@
 import asyncio
-from asyncio import Queue
 from typing import Any
 
 from aiomultiprocess import Pool
@@ -86,29 +85,21 @@ async def upload_options_snapshots(o_tickers: dict):
     await etl_pool_uploader(snap_runner, path_input_args=o_tickers, pool_kwargs=pool_kwargs)
 
 
-async def upload_options_quotes(queue: Queue):
+async def upload_options_quotes(ticker: str):
     quote_runner = OptionsQuoteRunner()
-    pool_kwargs = {"childconcurrency": 5, "queuecount": 1, "processes": 2}
+    pool_kwargs = {"childconcurrency": 3}
     pool_kwargs = pool_kwarg_config(pool_kwargs)
 
     log.debug(f"-- Starting Upload Process Pool with pool kwargs: {pool_kwargs}")
     failed_paths = []
     async with Pool(**pool_kwargs) as pool:
-        while True:
-            ticker = await queue.get()
-            if ticker is None:
-                break
+        log.info(f"generating the path args to be uploaded -- {quote_runner.runner_type} for {ticker}")
+        path_args = quote_runner.generate_path_args(ticker)
 
-            log.info(f"generating the path args to be uploaded -- {quote_runner.runner_type} for {ticker}")
-            path_args = quote_runner.generate_path_args(ticker)
-
-            log.info(
-                f"uploading data to the database -- Upload Function: {quote_runner.upload_func.__qualname__}"
-            )
-            for path in await pool.starmap(quote_runner.upload, path_args):
-                failed_paths.append(path)
-        log.info(f"failed to parse these paths: {failed_paths}")
-    log.info("-- Done Uploading Quote Data")
+        log.info(f"uploading data to the database -- Upload Function: {quote_runner.upload_func.__qualname__}")
+        for path in await pool.starmap(quote_runner.upload, path_args):
+            failed_paths.append(path)
+    return failed_paths
 
 
 if __name__ == "__main__":
