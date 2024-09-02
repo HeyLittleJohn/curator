@@ -167,7 +167,8 @@ class QuoteWorker(PoolWorker):
                             else:
                                 self.o_ticker_queue_progress[o_ticker].add(tid)
 
-                        # start work on task, add to pending if not a skipped/complete otkr
+                        # start work on task, add to pending if not a skipped/complete otkr.
+                        # Otherwise add tid to "results" to mark as done
                         if o_ticker not in self.complete_otkrs:
                             args = [
                                 *args,
@@ -175,6 +176,8 @@ class QuoteWorker(PoolWorker):
                             ]  # NOTE: adds client session to the args list
                             future = asyncio.ensure_future(func(*args, **kwargs))
                             pending[future] = tid
+                        else:
+                            self.rx.put_nowait((tid, None, None))
 
                     if not pending:
                         await asyncio.sleep(0.005)
@@ -210,9 +213,9 @@ class QuoteWorker(PoolWorker):
                     self.eval_list_date()
 
                     self.clean_o_ticker_progress()
-                    log.debug(
-                        f"loop complete, restarting while again, running: {running}, total processed: {completed}"
-                    )
+                    # log.debug(
+                    #     f"loop complete, restarting while again, running: {running}, total processed: {completed}"
+                    # )
 
         log.info(f"worker finished: processed {completed} tasks")
 
@@ -245,12 +248,14 @@ class QuoteWorker(PoolWorker):
 
     def clean_o_ticker_progress(self):
         """reports how many o_tickers have had all tids pulled from the queue and cleans internal tracking sets"""
+        start_complete = len(self.completely_processed_otkrs)
         for otkr, total_tids in self.o_ticker_count_mapping.items():
             if otkr in self.complete_otkrs:
                 self.empty_tids -= self.o_ticker_queue_progress[otkr]
                 if otkr not in self.completely_processed_otkrs:
                     if len(self.o_ticker_skip_tids[otkr] | self.o_ticker_queue_progress[otkr]) >= total_tids:
                         self.completely_processed_otkrs.append(otkr)
+                        log.info(f"all processed for {otkr}!")
 
                     elif (
                         len(
@@ -260,7 +265,7 @@ class QuoteWorker(PoolWorker):
                         == 0
                     ):
                         self.completely_processed_otkrs.append(otkr)
-                        log.info(f"all processed for {otkr} but fewer than the expected mapping # of tasks")
+                        log.info(f"all processed for {otkr}!! (but fewer than the expected mapping # of tasks)")
 
                     # else:
                     #     self.tid_result_progress -= (
@@ -269,9 +274,12 @@ class QuoteWorker(PoolWorker):
                     #     self.o_ticker_queue_progress[otkr].clear()
                     #     self.o_ticker_queue_progress.pop(otkr)
                     # NOTE: If mapping wrong then new tids for an otkr could arrive from the queue after popping...bad
-                    log.info(
-                        f"\ncompletely done with {len(self.completely_processed_otkrs)}/{len(self.o_ticker_count_mapping.keys())} otkrs !!"  # noqa: E501
-                    )
+        if len(self.completely_processed_otkrs) > start_complete:
+            log.info(
+                f"completely done with {len(self.completely_processed_otkrs)} for this worker. \
+                \n with {len(self.o_ticker_queue_progress.keys())} otkrs having been started!! \
+                \n with ~ {round(len(self.o_ticker_count_mapping.keys())/30)} otkrs expected for this worker"
+            )
 
 
 class QuotePool(Pool):
