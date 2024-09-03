@@ -162,15 +162,10 @@ class QuoteWorker(PoolWorker):
                         if o_ticker not in self.o_ticker_queue_progress:
                             self.o_ticker_queue_progress[o_ticker] = set([tid])
 
-                        else:
-                            if o_ticker in self.complete_otkrs:
-                                self.o_ticker_skip_tids[o_ticker].add(tid)
-                            else:
-                                self.o_ticker_queue_progress[o_ticker].add(tid)
-
                         # start work on task, add to pending if not a skipped/complete otkr.
                         # Otherwise add tid to "results" to mark as done
                         if o_ticker not in self.complete_otkrs:
+                            self.o_ticker_queue_progress[o_ticker].add(tid)
                             args = [
                                 *args,
                                 client_session,
@@ -179,6 +174,7 @@ class QuoteWorker(PoolWorker):
                             pending[future] = tid
                         else:
                             self.rx.put_nowait((tid, None, None))
+                            self.o_ticker_skip_tids[o_ticker].add(tid)
                             skipped += 1
 
                     if not pending:
@@ -240,51 +236,40 @@ class QuoteWorker(PoolWorker):
         for otkr in self.o_ticker_queue_progress:
             if tid in self.o_ticker_queue_progress[otkr]:
                 now_empty_otkr = otkr
+                break
         if now_empty_otkr:
             self.complete_otkrs.add(now_empty_otkr)
-            self.o_ticker_skip_tids[otkr] = set()
+            self.o_ticker_skip_tids[now_empty_otkr] = set()
             self.empty_tids -= self.o_ticker_queue_progress[now_empty_otkr]
 
     def clean_o_ticker_progress(self):
         """reports how many o_tickers have had all tids pulled from the queue and cleans internal tracking sets"""
-        # start_complete = len(self.completely_processed_otkrs)
-        for otkr, total_tids in self.o_ticker_count_mapping.items():
-            if otkr in self.complete_otkrs:
-                self.empty_tids -= self.o_ticker_queue_progress[otkr]
-                if otkr not in self.completely_processed_otkrs:
-                    if (
-                        len(self.o_ticker_skip_tids.get(otkr, []) | self.o_ticker_queue_progress.get(otkr, []))
-                        >= total_tids
-                    ):
-                        self.completely_processed_otkrs.append(otkr)
-                        log.info(f"all processed for {otkr}!")
 
-                    elif (
-                        len(
-                            (
-                                self.o_ticker_queue_progress.get(otkr, set())
-                                | self.o_ticker_skip_tids.get(otkr, set())
-                            )
-                            - self.tid_result_progress
+        for otkr in self.complete_otkrs:
+            total_tids = self.o_ticker_count_mapping[otkr]
+            self.empty_tids -= self.o_ticker_queue_progress[otkr]
+            if otkr not in self.completely_processed_otkrs:
+                if (
+                    len(self.o_ticker_skip_tids.get(otkr, []) | self.o_ticker_queue_progress.get(otkr, []))
+                    >= total_tids
+                ):
+                    self.completely_processed_otkrs.append(otkr)
+                    log.info(f"all processed for {otkr}! ({total_tids} tasks)")
+
+                elif (
+                    len(
+                        (
+                            self.o_ticker_queue_progress.get(otkr, set())
+                            | self.o_ticker_skip_tids.get(otkr, set())
                         )
-                        == 0
-                    ):
-                        self.completely_processed_otkrs.append(otkr)
-                        log.info(f"all processed for {otkr}!! (but fewer than the expected mapping # of tasks)")
-
-                    # else:
-                    #     self.tid_result_progress -= (
-                    #         self.o_ticker_queue_progress[otkr] + self.o_ticker_skip_tids[otkr]
-                    #     )
-                    #     self.o_ticker_queue_progress[otkr].clear()
-                    #     self.o_ticker_queue_progress.pop(otkr)
-                    # NOTE: If mapping wrong then new tids for an otkr could arrive from the queue after popping...bad
-        # # if len(self.completely_processed_otkrs) > start_complete:
-        #     log.info(
-        #         f"completely done with {len(self.completely_processed_otkrs)} for this worker. \
-        #         \n with {len(self.o_ticker_queue_progress.keys())} otkrs having been started!! \
-        #         \n with ~ {round(len(self.o_ticker_count_mapping.keys())/30)} otkrs expected for this worker"
-        #     )
+                        - self.tid_result_progress
+                    )
+                    == 0
+                ):
+                    self.completely_processed_otkrs.append(otkr)
+                    log.info(f"all processed for {otkr}!! \
+({len(self.o_ticker_queue_progress.get(otkr, []))} processed, {len(self.o_ticker_skip_tids.get(otkr, []))} skipped, \
+{total_tids} expected)")
 
 
 class QuotePool(Pool):
