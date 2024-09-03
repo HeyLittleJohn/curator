@@ -140,7 +140,7 @@ class PolygonPaginator(ABC):
                 if retry == 5:
                     log.exception(
                         e,
-                        extra={"context": "Connection Lost Going to sleep for 45 seconds..."},
+                        extra={"context": "Connection Lost Going to sleep for 15 seconds..."},
                         exc_info=False,
                     )
                     log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
@@ -180,7 +180,7 @@ class PolygonPaginator(ABC):
                     status = 0
 
                 elif status == 3 and retry is False:
-                    await asyncio.sleep(45)
+                    await asyncio.sleep(10)
                     retry += 1
                     status = 0
 
