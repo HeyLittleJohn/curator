@@ -140,7 +140,7 @@ class PolygonPaginator(ABC):
                 if retry == 5:
                     log.exception(
                         e,
-                        extra={"context": "Connection Lost Going to sleep for 45 seconds..."},
+                        extra={"context": "Connection Lost Going to sleep for 15 seconds..."},
                         exc_info=False,
                     )
                     log.warn(f"task that failed: \nurl: {url}, \npayload: {payload}")
@@ -163,6 +163,8 @@ class PolygonPaginator(ABC):
             finally:
                 if status == 200:
                     results.append(response)
+                    if retry > 0:
+                        log.info(f"retries: {retry}")
                     if response.get("next_url") and not limit:
                         url = self._clean_url(response["next_url"])
                         payload = {}
@@ -180,7 +182,7 @@ class PolygonPaginator(ABC):
                     status = 0
 
                 elif status == 3 and retry is False:
-                    await asyncio.sleep(45)
+                    await asyncio.sleep(10)
                     retry += 1
                     status = 0
 
@@ -535,6 +537,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         o_ticker_count_mapping = {}
         log.info(f"Generating request args for {len(args_data)} option tickers")
         count = 0
+        sorted_index = self.dates.index.sort_values(ascending=False)
         for o_ticker in args_data:
             if count % 500 == 0:
                 log.info(f"Generating request args for {count}/{len(args_data)} option tickers")
@@ -543,7 +546,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
                 {
                     "timestamp": x,
                 }
-                for x in self.dates.index[self.dates.index <= str(o_ticker.expiration_date)].astype(str)
+                for x in sorted_index[sorted_index <= str(o_ticker.expiration_date)].astype(str)
             ]
 
             if payloads:
