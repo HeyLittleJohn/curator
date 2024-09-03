@@ -163,6 +163,8 @@ class PolygonPaginator(ABC):
             finally:
                 if status == 200:
                     results.append(response)
+                    if retry > 0:
+                        log.info(f"retries: {retry}")
                     if response.get("next_url") and not limit:
                         url = self._clean_url(response["next_url"])
                         payload = {}

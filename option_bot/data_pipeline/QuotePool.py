@@ -268,7 +268,8 @@ class QuoteWorker(PoolWorker):
                 ):
                     self.completely_processed_otkrs.append(otkr)
                     log.info(f"all processed for {otkr}!! \
-({len(self.o_ticker_queue_progress.get(otkr, []))} processed, {len(self.o_ticker_skip_tids.get(otkr, []))} skipped, \
+({len(self.o_ticker_queue_progress.get(otkr, []))} processed, \
+{total_tids - len(self.o_ticker_queue_progress.get(otkr, []))} will be skipped, \
 {total_tids} expected)")
 
 
