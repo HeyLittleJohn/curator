@@ -6,4 +6,4 @@
 data/*
 *data/
 .python-version
-.models
+*.code-workspace
