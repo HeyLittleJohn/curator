@@ -103,4 +103,4 @@ async def upload_options_quotes(ticker: str):
 
 
 if __name__ == "__main__":
-    asyncio.run(upload_options_quotes())
+    asyncio.run(upload_options_quotes(ticker="COIN"))
