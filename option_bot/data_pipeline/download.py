@@ -134,7 +134,7 @@ async def download_options_quotes(ticker: str, o_tickers: list[OptionTicker], mo
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 100, "maxtasksperchild": 1000, "processes": 30}
+    pool_kwargs = {"childconcurrency": 20, "maxtasksperchild": 1000, "processes": 30}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     BATCH_SIZE_OTICKERS = 1000
@@ -142,7 +142,7 @@ async def download_options_quotes(ticker: str, o_tickers: list[OptionTicker], mo
     for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
         small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
 
-        log.info(f"downloading quotes for{i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} batch of o_tickers")
+        log.info(f"downloading quotes for {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} batch of o_tickers")
 
         await api_quote_downloader(
             paginator=op_quotes,
