@@ -16,7 +16,7 @@ from db_tools.schemas import (
     StockTickers,
     TickerModel,
 )
-from sqlalchemy import delete, select, update
+from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -241,3 +241,69 @@ async def update_options_quotes(session: AsyncSession, data: list[QuoteModel]):
 @Session
 async def delete_stock_ticker(session: AsyncSession, ticker: str):
     await session.execute(delete(StockTickers).where(StockTickers.ticker == ticker))
+
+
+@Session
+async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [], options=False):
+    """query to retrieve the most recent date of record for ticker data (prices/quotes for stock/options).
+    If tickers is [] empty, return all
+    """
+
+    if options:
+        # Query for options data
+        subquery = (
+            select(
+                OptionsTickers.id.label("ticker_id"),
+                func.max(
+                    case(
+                        (
+                            OptionsQuotesRaw.as_of_date < OptionsTickers.expiration_date,
+                            OptionsQuotesRaw.as_of_date,
+                        ),
+                        else_=None,
+                    )
+                ).label("latest_quote_date"),
+                func.max(
+                    case(
+                        (
+                            OptionsPricesRaw.as_of_date < OptionsTickers.expiration_date,
+                            OptionsPricesRaw.as_of_date,
+                        ),
+                        else_=None,
+                    )
+                ).label("latest_price_date"),
+            )
+            .join(StockTickers, StockTickers.id == OptionsTickers.underlying_ticker_id)
+            .outerjoin(OptionsQuotesRaw, OptionsQuotesRaw.options_ticker_id == OptionsTickers.id)
+            .outerjoin(OptionsPricesRaw, OptionsPricesRaw.options_ticker_id == OptionsTickers.id)
+            .where(or_(StockTickers.ticker.in_(tickers), len(tickers) == 0))
+            .group_by(OptionsTickers.id)
+            .subquery()
+        )
+
+        query = (
+            select(
+                StockTickers.ticker,
+                OptionsTickers.options_ticker,
+                subquery.c.latest_price_date,
+                subquery.c.latest_quote_date,
+            )
+            .join(subquery, subquery.c.ticker_id == OptionsTickers.id)
+            .join(StockTickers, StockTickers.id == OptionsTickers.underlying_ticker_id)
+        )
+
+    else:
+        # Query for stock data
+        subquery = (
+            select(StockPricesRaw.ticker_id, func.max(StockPricesRaw.as_of_date).label("latest_date"))
+            .join(StockTickers, StockTickers.id == StockPricesRaw.ticker_id)
+            .where(or_(StockTickers.ticker.in_(tickers), len(tickers) == 0))
+            .group_by(StockPricesRaw.ticker_id)
+            .subquery()
+        )
+
+        query = select(StockTickers.ticker, subquery.c.latest_date).join(
+            subquery, subquery.c.ticker_id == StockTickers.id
+        )
+
+    return (await session.execute(query)).all()

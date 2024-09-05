@@ -111,7 +111,7 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 400, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 250, "maxtasksperchild": 50000}
     op_prices = HistoricalOptionsPrices(months_hist=months_hist)
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 

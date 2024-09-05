@@ -368,7 +368,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         self,
         months_hist: int = 24,
         multiplier: int = 1,
-        timespan: Timespans = Timespans.day,
+        timespan: Timespans = Timespans.hour,
         adjusted: bool = True,
     ):
         super().__init__()
