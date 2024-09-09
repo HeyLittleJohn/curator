@@ -254,6 +254,7 @@ async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [],
         subquery = (
             select(
                 OptionsTickers.id.label("ticker_id"),
+                OptionsTickers.expiration_date,
                 func.max(
                     case(
                         (
@@ -277,7 +278,7 @@ async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [],
             .outerjoin(OptionsQuotesRaw, OptionsQuotesRaw.options_ticker_id == OptionsTickers.id)
             .outerjoin(OptionsPricesRaw, OptionsPricesRaw.options_ticker_id == OptionsTickers.id)
             .where(or_(StockTickers.ticker.in_(tickers), len(tickers) == 0))
-            .group_by(OptionsTickers.id)
+            .group_by(OptionsTickers.id, OptionsTickers.expiration_date)
             .subquery()
         )
 
@@ -285,6 +286,7 @@ async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [],
             select(
                 StockTickers.ticker,
                 OptionsTickers.options_ticker,
+                OptionsTickers.expiration_date,
                 subquery.c.latest_price_date,
                 subquery.c.latest_quote_date,
             )

@@ -1,6 +1,7 @@
 from collections import namedtuple
 
 from db_tools.queries import query_options_tickers, query_stock_tickers
+from pandas import DataFrame
 
 OptionTicker = namedtuple("OptionTicker", ["o_ticker", "id", "expiration_date", "underlying_ticker"])
 
@@ -36,3 +37,10 @@ async def generate_o_ticker_lookup(
     o_tickers = await query_options_tickers(stock_tickers=tickers, all_=all_, unexpired=unexpired)
 
     return {x[0]: OptionTicker(*x) for x in o_tickers}
+
+
+async def split_quotes_and_prices_dates(tickers: list[str] = []) -> tuple[DataFrame, DataFrame]:
+    """Runs the query then performs the pandas operations and splits by quotes and prices segments"""
+    # df = await latest_date_per_ticker(tickers, options=True)
+    # price_df = df[["options_ticker", "latest_price_date"]].loc[df["latest"]]
+    pass

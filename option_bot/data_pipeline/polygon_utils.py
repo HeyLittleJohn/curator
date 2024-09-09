@@ -182,7 +182,7 @@ class PolygonPaginator(ABC):
                     status = 0
 
                 elif status == 3 and retry is False:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(8)
                     retry += 1
                     status = 0
 
