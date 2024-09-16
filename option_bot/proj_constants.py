@@ -52,11 +52,6 @@ BASE_DOWNLOAD_PATH = str(Path("~").expanduser()) + "/.polygon_data"
 
 POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
-RH_USERNAME = os.getenv("RH_USERNAME")
-RH_PASSWORD = os.getenv("RH_PASSWORD")
-QR = os.getenv("RH_QR")
-TRAD_IRA = os.getenv("TRAD_IRA")
-ROTH_IRA = os.getenv("ROTH_IRA")
 
 # total number of requests the API can handle at once. 100/sec rate limit
 MAX_CONCURRENT_REQUESTS = 250

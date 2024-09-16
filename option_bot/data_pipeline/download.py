@@ -1,4 +1,3 @@
-from asyncio import Queue
 from datetime import datetime
 
 from aiomultiprocess import Pool
@@ -128,37 +127,29 @@ async def download_options_snapshots(o_tickers: list[OptionTicker]):
     await api_pool_downloader(paginator=op_snapshots, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
 
-async def download_options_quotes(
-    tickers: list[str], o_tickers: list[OptionTicker], queue: Queue, months_hist: int = 24
-):
+async def download_options_quotes(ticker: str, o_tickers: list[OptionTicker], months_hist: int = 24):
     """This function downloads options quotes from polygon and stores it as local json.
 
     Args:
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 100, "maxtasksperchild": 1000, "processes": 30}
+    pool_kwargs = {"childconcurrency": 40, "maxtasksperchild": 1000, "processes": 30}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
-    ticker_counter = 0
     BATCH_SIZE_OTICKERS = 1000
-    for ticker in tickers:
-        ticker_counter += 1
-        batch_o_tickers = [x for x in o_tickers if x.underlying_ticker == ticker]
-        for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
-            small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
-            log.info(
-                f"downloading quotes for {ticker} ({ticker_counter}/{len(tickers)}) \
-                with {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} o_tickers"
-            )
-            await api_quote_downloader(
-                paginator=op_quotes,
-                pool_kwargs=pool_kwargs,
-                args_data=small_batch,
-            )
-            log.info(f"Completely done downloading {ticker}. \nPassing {ticker} to upload queue")
-            await queue.put(ticker)
-    await queue.put(None)
+    batch_o_tickers = [x for x in o_tickers if x.underlying_ticker == ticker]
+    for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
+        small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
+
+        log.info(f"downloading quotes for {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} batch of o_tickers")
+
+        await api_quote_downloader(
+            paginator=op_quotes,
+            pool_kwargs=pool_kwargs,
+            args_data=small_batch,
+        )
+    log.info(f"-- Completely done downloading {ticker}")
 
 
 async def api_quote_downloader(
@@ -182,13 +173,11 @@ async def api_quote_downloader(
     url_args, o_ticker_count_mapping = paginator.generate_request_args(args_data)
     if url_args:
         log.info("fetching data from polygon api")
-        log.debug(f"tasks: {len(url_args)}")
+        log.info(f"tasks: {len(url_args)}")
         pool_kwargs = dict(**pool_kwargs, **{"init_client_session": True, "session_base_url": POLYGON_BASE_URL})
         pool_kwargs = pool_kwarg_config(pool_kwargs)
         log.info("creating quote pool")
-        async with QuotePool(
-            **pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping, paginator=paginator
-        ) as pool:
+        async with QuotePool(**pool_kwargs, o_ticker_count_mapping=o_ticker_count_mapping) as pool:
             log.info("deploying QuoteWorkers in Pool")
             await pool.starmap(paginator.download_data, url_args)
 

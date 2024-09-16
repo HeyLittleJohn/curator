@@ -1,4 +1,3 @@
-import asyncio
 from datetime import datetime
 
 from data_pipeline.download import (
@@ -62,12 +61,16 @@ async def import_all(tickers: list, start_date: datetime, end_date: datetime, mo
 
     # Download and upload quotes
     final_tickers = list(ticker_lookup.keys())
-    queue = asyncio.Queue()
-    download_task = download_options_quotes(
-        tickers=final_tickers, o_tickers=list(o_tickers.values()), queue=queue, months_hist=months_hist
-    )
-    upload_task = upload_options_quotes(queue)
-    await asyncio.gather(download_task, upload_task)
+    failed_paths = []
+    ticker_counter = 0
+    for ticker in final_tickers:
+        ticker_counter += 1
+        log.info(f"downloading quotes for {ticker} ({ticker_counter}/{len(final_tickers)})")
+        download_options_quotes(ticker=ticker, o_tickers=list(o_tickers.values()), months_hist=months_hist)
+        temp_paths = upload_options_quotes(ticker)
+        failed_paths.append(temp_paths)
+    log.info(f"failed to parse these paths: {failed_paths}")
+    log.info("-- Done Uploading Quote Data")
 
     # Download and upload underlying stock prices
     # NOTE: at the end due to it being the free api
@@ -119,12 +122,18 @@ async def import_partial(
             o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
 
         final_tickers = list(ticker_lookup.keys())
-        queue = asyncio.Queue()
-        download_task = download_options_quotes(
-            tickers=final_tickers, o_tickers=list(o_tickers.values()), queue=queue, months_hist=months_hist
-        )
-        upload_task = upload_options_quotes(queue)
-        await asyncio.gather(download_task, upload_task)
+        failed_paths = []
+        ticker_counter = 0
+        for ticker in final_tickers:
+            ticker_counter += 1
+            log.info(f"downloading quotes for {ticker}  ({ticker_counter}/{len(final_tickers)})")
+            await download_options_quotes(
+                ticker=ticker, o_tickers=list(o_tickers.values()), months_hist=months_hist
+            )
+            temp_paths = await upload_options_quotes(ticker)
+            failed_paths.append(temp_paths)
+        log.info(f"failed to parse these paths: {failed_paths}")
+        log.info("-- Done Uploading Quote Data")
 
 
 async def remove_tickers_from_universe(tickers: list[str]):
