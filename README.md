@@ -18,7 +18,7 @@ Install [pyenv](https://github.com/pyenv/pyenv) and use it to create a virtualen
 
 ### Poetry
 
-We use [Poetry](https://python-poetry.org/) for dependency management. Once poetry is installed on your machine and you've cloned this repo, go into the project root `option_bot` directory and run `poetry install` to install all dependencies indicated in the pyTOML.
+We use [Poetry](https://python-poetry.org/) for dependency management. Once poetry is installed on your machine and you've cloned this repo, go into the project root `curator` directory and run `poetry install` to install all dependencies indicated in the pyTOML.
 
 ### Data Sources
 
@@ -29,7 +29,7 @@ Likewise, store your username, password, and MFA QR code for Robinhood locally u
 
 ## Using the App
 
-To begin using the app, navigate to your root `option_bot` folder (after having poetry installed everything), and run the following command to build your local db:
+To begin using the app, navigate to your root `curator` folder (after having poetry installed everything), and run the following command to build your local db:
 ```CLI Command Here```
 
 Then run the below command to view the available CLI for the project:

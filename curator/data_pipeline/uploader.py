@@ -12,8 +12,8 @@ from data_pipeline.path_runner import (
     StockPricesRunner,
 )
 
-from option_bot.proj_constants import CPUS, log
-from option_bot.utils import pool_kwarg_config
+from curator.proj_constants import CPUS, log
+from curator.utils import pool_kwarg_config
 
 # TODO: all the "upload_xyz() function below can be abstracted to accept
 # a runner, input_args, and pool_kwargs for the etl_pool_uploader"

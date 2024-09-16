@@ -17,8 +17,8 @@ from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
 from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
-from option_bot.utils import (
+from curator.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
+from curator.utils import (
     extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,

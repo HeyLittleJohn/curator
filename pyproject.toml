@@ -1,13 +1,13 @@
 [tool.poetry]
-name = "option-bot"
+name = "curator"
 version = "0.1.0"
-description = ""
+description = "Package for curating historical market data from Polygon.io to backfill into a postgres database"
 authors = ["Jody Hirschi <jody@heylittlejohn.com>"]
 readme = "README.md"
 packages = [
-    { include = "option_bot", from = "." },
-    { include = "data_pipeline", from = "./option_bot" },
-    { include = "db_tools", from = "./option_bot/" },
+    { include = "curator", from = "." },
+    { include = "data_pipeline", from = "./curator" },
+    { include = "db_tools", from = "./curator/" },
 ]
 
 [tool.poetry.dependencies]

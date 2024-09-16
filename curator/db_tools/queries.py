@@ -20,7 +20,7 @@ from sqlalchemy import case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.utils import Session, months_ago
+from curator.utils import Session, months_ago
 
 
 @Session
