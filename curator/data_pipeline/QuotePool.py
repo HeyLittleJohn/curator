@@ -373,7 +373,6 @@ class QuotePool(Pool):
 
         :meta private:
         """
-
         tx, rx = self.queues[qid]
         process = QuoteWorker(
             tx,
