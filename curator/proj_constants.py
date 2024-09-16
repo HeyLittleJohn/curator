@@ -14,8 +14,9 @@ from sentry_sdk import capture_exception
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+SENTRY_URL = os.environ.get("SENTRY_URL")
 sentry_sdk.init(
-    dsn="https://e76d761b19864956a5a95476a7a41f6a@o4504712959557632.ingest.sentry.io/4504782774337536",
+    dsn=SENTRY_URL,
     traces_sample_rate=0.1,
 )
 
@@ -131,7 +132,12 @@ stream_handler = StreamHandler(sys.stdout)
 stream_handler.setFormatter(log_formatter)
 
 # Add a filehandler
-file_handler = FileHandler(".logs/option_bot_logs.log")
+home_path = os.path.expanduser("~")
+file_path = os.path.abspath(__file__)
+relative_path = file_path.replace(home_path, "")
+dir = relative_path.strip(os.sep).split(os.sep)[0]
+log_file = home_path + "/" + dir + "/.logs/" + dir + "_logs.log"
+file_handler = FileHandler(log_file)
 file_handler.setFormatter(log_formatter)
 
 log.addHandler(stream_handler)

@@ -22,8 +22,8 @@ from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import POLYGON_BASE_URL, log
-from option_bot.utils import pool_kwarg_config
+from curator.proj_constants import POLYGON_BASE_URL, log
+from curator.utils import pool_kwarg_config
 
 planned_exceptions = (
     InvalidArgs,
@@ -111,7 +111,7 @@ async def download_options_prices(o_tickers: list[tuple[str, int, datetime, str]
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 400, "maxtasksperchild": 50000}
+    pool_kwargs = {"childconcurrency": 250, "maxtasksperchild": 50000}
     op_prices = HistoricalOptionsPrices(months_hist=months_hist)
     await api_pool_downloader(paginator=op_prices, pool_kwargs=pool_kwargs, args_data=o_tickers)
 
@@ -134,7 +134,7 @@ async def download_options_quotes(ticker: str, o_tickers: list[OptionTicker], mo
         o_tickers: list of OptionTicker tuples
         month_hist: number of months of history to pull
     """
-    pool_kwargs = {"childconcurrency": 40, "maxtasksperchild": 1000, "processes": 30}
+    pool_kwargs = {"childconcurrency": 14, "maxtasksperchild": 1000, "processes": 30}
     o_ticker_lookup = {x.o_ticker: x.id for x in o_tickers}
     op_quotes = HistoricalQuotes(months_hist=months_hist, o_ticker_lookup=o_ticker_lookup)
     BATCH_SIZE_OTICKERS = 1000

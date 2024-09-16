@@ -24,7 +24,7 @@ from aiomultiprocess.types import (
     TaskID,
 )
 
-from option_bot.proj_constants import log
+from curator.proj_constants import log
 
 
 class QuoteScheduler(RoundRobin):

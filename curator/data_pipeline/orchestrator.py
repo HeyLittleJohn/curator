@@ -16,10 +16,11 @@ from data_pipeline.uploader import (
     upload_stock_metadata,
     upload_stock_prices,
 )
-from db_tools.queries import delete_stock_ticker
+from db_tools.queries import delete_stock_ticker, latest_date_per_ticker
 from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
+from pandas import DataFrame
 
-from option_bot.proj_constants import log
+from curator.proj_constants import log
 
 
 async def import_all(tickers: list, start_date: datetime, end_date: datetime, months_hist: int):
@@ -142,6 +143,34 @@ async def remove_tickers_from_universe(tickers: list[str]):
         log.info(f"deleting ticker {ticker}")
         await delete_stock_ticker(ticker)
         log.info(f"ticker {ticker} successfully deleted")
+
+
+async def refresh_import(
+    tickers: list, start_date: datetime, end_date: datetime, months_hist: int, partial: list[int]
+):
+    """refreshes all or partial components for the given tickers
+    start date and end date is set to today, start date from the most recent going back to 24 months at most"""
+    all_ = True if len(tickers) == 0 else False
+
+    await download_stock_metadata(tickers=tickers, all_=all_)
+    await upload_stock_metadata(tickers=tickers, all_=all_)
+
+    ticker_lookup = await pull_tickers_from_db(tickers, all_)
+
+    if 2 in partial:
+        dates = await latest_date_per_ticker(tickers=tickers, options=False)
+        dates = DataFrame(dates)
+        min_date = dates["latest_date"].min() if dates["latest_date"].min() >= start_date else start_date
+        await download_stock_prices(ticker_lookup, min_date, end_date)
+        await upload_stock_prices(ticker_lookup)
+
+    if 3 in partial:
+        await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=months_hist)
+        await upload_options_contracts(ticker_lookup, months_hist=months_hist)
+
+    if 4 in partial:
+        o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
+        dates = await latest_date_per_ticker(tickers=tickers, options=True)
 
 
 # if __name__ == "__main__":

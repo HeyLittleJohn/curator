@@ -17,8 +17,8 @@ from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
 from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
-from option_bot.utils import (
+from curator.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
+from curator.utils import (
     extract_underlying_from_o_ticker,
     first_weekday_of_month,
     string_to_date,
@@ -182,7 +182,7 @@ class PolygonPaginator(ABC):
                     status = 0
 
                 elif status == 3 and retry is False:
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(8)
                     retry += 1
                     status = 0
 
@@ -368,7 +368,7 @@ class HistoricalOptionsPrices(PolygonPaginator):
         self,
         months_hist: int = 24,
         multiplier: int = 1,
-        timespan: Timespans = Timespans.day,
+        timespan: Timespans = Timespans.hour,
         adjusted: bool = True,
     ):
         super().__init__()

@@ -7,9 +7,9 @@ BUILDKIT_PROGRESS=plain
 
 check:
 	poetry install
-	poetry run isort option_bot/
-	poetry run black option_bot/
-	poetry run flake8 option_bot/
+	poetry run isort curator/
+	poetry run black curator/
+	poetry run flake8 curator/
 
 DESCRIPTION="DB Update"
 update_db:

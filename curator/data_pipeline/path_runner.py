@@ -14,8 +14,8 @@ from db_tools.queries import (
 )
 from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
-from option_bot.utils import (
+from curator.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
+from curator.utils import (
     clean_o_ticker,
     months_ago,
     read_data_from_file,
