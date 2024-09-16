@@ -1,0 +1,6 @@
+{
+    "explorer.excludeGitIgnore": false,
+    "files.watcherExclude": {
+        "**/data/**": true
+    }
+}

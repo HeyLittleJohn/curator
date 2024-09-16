@@ -2,3 +2,8 @@
 .mypy_cache/*
 /bin/notes.txt
 .python-version
+.logs/*
+data/*
+*data/
+.python-version
+*.code-workspace

@@ -1,0 +1,62 @@
+{
+  "results": [
+    {
+      "cfi": "OCASPS",
+      "contract_type": "call",
+      "exercise_style": "american",
+      "expiration_date": "2023-02-03",
+      "primary_exchange": "BATO",
+      "shares_per_contract": 100,
+      "strike_price": 416,
+      "ticker": "O:SPY230203C00416000",
+      "underlying_ticker": "SPY"
+    },
+    {
+      "cfi": "OCASPS",
+      "contract_type": "call",
+      "exercise_style": "american",
+      "expiration_date": "2023-02-03",
+      "primary_exchange": "BATO",
+      "shares_per_contract": 100,
+      "strike_price": 417,
+      "ticker": "O:SPY230203C00417000",
+      "underlying_ticker": "SPY"
+    },
+    {
+      "cfi": "OCASPS",
+      "contract_type": "call",
+      "exercise_style": "american",
+      "expiration_date": "2023-02-03",
+      "primary_exchange": "BATO",
+      "shares_per_contract": 100,
+      "strike_price": 418,
+      "ticker": "O:SPY230203C00418000",
+      "underlying_ticker": "SPY"
+    },
+    {
+      "cfi": "OCASPS",
+      "contract_type": "call",
+      "exercise_style": "american",
+      "expiration_date": "2023-02-03",
+      "primary_exchange": "BATO",
+      "shares_per_contract": 100,
+      "strike_price": 419,
+      "ticker": "O:SPY230203C00419000",
+      "underlying_ticker": "SPY"
+    },
+    {
+      "cfi": "OCASPS",
+      "contract_type": "call",
+      "exercise_style": "american",
+      "expiration_date": "2023-02-03",
+      "primary_exchange": "BATO",
+      "shares_per_contract": 100,
+      "strike_price": 420,
+      "ticker": "O:SPY230203C00420000",
+      "underlying_ticker": "SPY"
+    }
+  ],
+  "status": "OK",
+  "request_id": "5f678804524ed6076002ad59a8e580e5",
+  "count": 5
+}
