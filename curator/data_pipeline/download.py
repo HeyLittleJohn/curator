@@ -22,8 +22,8 @@ from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
-from option_bot.proj_constants import POLYGON_BASE_URL, log
-from option_bot.utils import pool_kwarg_config
+from curator.proj_constants import POLYGON_BASE_URL, log
+from curator.utils import pool_kwarg_config
 
 planned_exceptions = (
     InvalidArgs,

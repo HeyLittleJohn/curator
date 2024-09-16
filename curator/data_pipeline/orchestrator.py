@@ -20,7 +20,7 @@ from db_tools.queries import delete_stock_ticker, latest_date_per_ticker
 from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
 from pandas import DataFrame
 
-from option_bot.proj_constants import log
+from curator.proj_constants import log
 
 
 async def import_all(tickers: list, start_date: datetime, end_date: datetime, months_hist: int):

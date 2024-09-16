@@ -8,7 +8,7 @@
             "name": "Data Pipeline-CLI orchestrator",
             "type": "debugpy",
             "request": "launch",
-            "program": "~/option_bot/option_bot/data_pipeline/main.py",
+            "program": "~/curator/curator/data_pipeline/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
@@ -51,7 +51,7 @@
             "name": "Training Agent",
             "type": "debugpy",
             "request": "launch",
-            "program": "~/option_bot/option_bot/rl_agent/main.py",
+            "program": "~/curator/curator/rl_agent/main.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [

@@ -8,7 +8,7 @@ from data_pipeline.orchestrator import (
     remove_tickers_from_universe,
 )
 
-from option_bot.utils import months_ago
+from curator.utils import months_ago
 
 DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = months_ago(months=DEFAULT_MONTHS_HIST)

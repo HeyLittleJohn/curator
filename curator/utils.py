@@ -10,7 +10,7 @@ import numpy as np
 from dateutil.relativedelta import relativedelta
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from option_bot.proj_constants import POOL_DEFAULT_KWARGS, async_session_maker, e_cal, log, o_cal
+from curator.proj_constants import POOL_DEFAULT_KWARGS, async_session_maker, e_cal, log, o_cal
 
 _async_session_maker = async_session_maker  # NOTE: This is monkeypatched by a test fixture!
 

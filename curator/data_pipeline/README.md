@@ -2,7 +2,7 @@
 
 ## Overview
 
-This package contains the tools, scripts, and clients needed to download data from the Polygon API, clean it, and upload to . Downloaded data is stored in raw `.json` in the `option_bot/data/` directory.
+This package contains the tools, scripts, and clients needed to download data from the Polygon API, clean it, and upload to . Downloaded data is stored in raw `.json` in the `curator/data/` directory.
 
 ## Organization
 

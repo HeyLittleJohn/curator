@@ -6,8 +6,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
-from option_bot.db_tools.schemas import Base
-from option_bot.proj_constants import POSTGRES_DATABASE_URL
+from curator.db_tools.schemas import Base
+from curator.proj_constants import POSTGRES_DATABASE_URL
 
 
 # this is the Alembic Config object, which provides
