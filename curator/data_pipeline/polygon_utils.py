@@ -624,11 +624,10 @@ class HistoricalQuotes(HistoricalOptionsPrices):
             .to_list()
         )
 
-    # TODO: finish this algorithm
     def search_for_timestamps(self, data: list[dict]) -> list[dict]:
         """Finds the date from the data timestamps, looks up the desired 9 timestamps for that date.
         Then returns the 9 records with the closest timestamps to the desired ones.
-        Needs to handle circumstances where there may not be 9 records."""
+        *Handles circumstances where there may not be 9 records*"""
 
         target_timestamps = self.lookup_date_timestamps_from_record(data[0]["sip_timestamp"])
 

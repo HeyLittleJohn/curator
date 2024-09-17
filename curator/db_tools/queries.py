@@ -251,48 +251,52 @@ async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [],
 
     if options:
         # Query for options data
-        subquery = (
+        subquery1 = (
             select(
-                OptionsTickers.id.label("ticker_id"),
+                StockTickers.ticker,
+                OptionsTickers.id.label("oticker_id"),
+                OptionsTickers.options_ticker,
                 OptionsTickers.expiration_date,
-                func.max(
-                    case(
-                        (
-                            OptionsQuotesRaw.as_of_date < OptionsTickers.expiration_date,
-                            OptionsQuotesRaw.as_of_date,
-                        ),
-                        else_=None,
-                    )
-                ).label("latest_quote_date"),
-                func.max(
-                    case(
-                        (
-                            OptionsPricesRaw.as_of_date < OptionsTickers.expiration_date,
-                            OptionsPricesRaw.as_of_date,
-                        ),
-                        else_=None,
-                    )
-                ).label("latest_price_date"),
+                func.max(OptionsQuotesRaw.as_of_date).label("latest_quote_date"),
             )
             .join(StockTickers, StockTickers.id == OptionsTickers.underlying_ticker_id)
             .outerjoin(OptionsQuotesRaw, OptionsQuotesRaw.options_ticker_id == OptionsTickers.id)
+            .where(or_(StockTickers.ticker.in_(tickers), len(tickers) == 0))
+            # .where(StockTickers.active.is_(True)) # NOTE: may still need to backfill for inactive stocks
+            # .where(OptionsTickers.quotes_complete.is_(False))
+            .group_by(
+                StockTickers.ticker,
+                OptionsTickers.id,
+                OptionsTickers.options_ticker,
+                OptionsTickers.expiration_date,
+            )
+            .subquery()
+        )
+
+        subquery2 = (
+            select(
+                OptionsTickers.id.label("oticker_id"),
+                func.max(OptionsPricesRaw.as_of_date).label("latest_price_date"),
+            )
+            .join(StockTickers, StockTickers.id == OptionsTickers.underlying_ticker_id)
             .outerjoin(OptionsPricesRaw, OptionsPricesRaw.options_ticker_id == OptionsTickers.id)
             .where(or_(StockTickers.ticker.in_(tickers), len(tickers) == 0))
+            # .where(StockTickers.active.is_(True)) # NOTE: may still need to backfill for inactive stocks
+            # .where(OptionsTickers.expiration_date >= datetime.now().date())
+            # NOTE: this ^ may be wrong. An option could be expired but still need the last two weeks of its life
+            # filled with a refresh
             .group_by(OptionsTickers.id, OptionsTickers.expiration_date)
             .subquery()
         )
 
-        query = (
-            select(
-                StockTickers.ticker,
-                OptionsTickers.options_ticker,
-                OptionsTickers.expiration_date,
-                subquery.c.latest_price_date,
-                subquery.c.latest_quote_date,
-            )
-            .join(subquery, subquery.c.ticker_id == OptionsTickers.id)
-            .join(StockTickers, StockTickers.id == OptionsTickers.underlying_ticker_id)
-        )
+        query = select(
+            subquery1.c.ticker,
+            subquery1.c.oticker_id,
+            subquery1.c.options_ticker,
+            subquery1.c.expiration_date,
+            subquery2.c.latest_price_date,
+            subquery1.c.latest_quote_date,
+        ).join(subquery1, subquery1.c.oticker_id == subquery2.c.oticker_id)
 
     else:
         # Query for stock data

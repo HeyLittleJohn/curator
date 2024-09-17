@@ -37,7 +37,7 @@ class StockTickers(Base):
     id = Column(Integer, primary_key=True, unique=True, autoincrement=True)
     ticker = Column(String, unique=True, nullable=False)
     imported = Column(Boolean, nullable=False, server_default=expression.false())
-    options_imported = Column(Boolean, nullable=False, server_default=expression.false())
+    options_quotes_imported = Column(Boolean, nullable=False, server_default=expression.false())
     name = Column(String, nullable=False)
     active = Column(Boolean, nullable=False)
     type = Column(String)
@@ -99,6 +99,9 @@ class OptionsTickers(Base):
     cfi = Column(String)
     exercise_style = Column(String)
     primary_exchange = Column(String)
+    quotes_complete = Column(Boolean, nullable=False, server_default=expression.false())
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
 
 
 class OptionsTickerModel(BaseModel):

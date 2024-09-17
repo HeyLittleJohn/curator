@@ -133,7 +133,10 @@ async def import_partial(
             )
             temp_paths = await upload_options_quotes(ticker)
             failed_paths.append(temp_paths)
-        log.info(f"failed to parse these paths: {failed_paths}")
+        failed_paths = [path for path in failed_paths if path]
+        log.info(
+            f"failed to parse these paths: {failed_paths if failed_paths else 'All uploaded successfully'}"
+        )
         log.info("-- Done Uploading Quote Data")
 
 
