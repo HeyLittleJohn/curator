@@ -102,11 +102,13 @@ description = "AsyncIO version of the standard multiprocessing module"
 optional = false
 python-versions = ">=3.6"
 files = []
-develop = true
+develop = false
 
 [package.source]
-type = "directory"
-url = "../aiomultiprocess"
+type = "git"
+url = "git@github.com:jhirschibar/aiomultiprocess.git"
+reference = "1.0.0"
+resolved_reference = "b392f4141f884a02ab92294985a7e56f66bf0a1c"
 
 [[package]]
 name = "aiosignal"
@@ -2800,4 +2802,4 @@ multidict = ">=4.0"
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.11"
-content-hash = "052d49a6ec8d365fe2cac18cc1ff6c649e2d52bbdfe2a57275ddf57bbb68d08f"
+content-hash = "901e8356be89d887c91ede69bee106b5420573ff93c97a350e262612bd35ef77"
