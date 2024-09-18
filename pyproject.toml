@@ -21,7 +21,7 @@ pandas-market-calendars = "^4.1.4"
 scikit-learn = "^1.3.0"
 typer = { extras = ["all"], version = "^0.9.0" }
 polygon-api-client = "^1.14.2"
-aiomultiprocess = {git = "git@github.com:jhirschibar/aiomultiprocess.git", rev = "1.0.0"}
+aiomultiprocess = { git = "git@github.com:jhirschibar/aiomultiprocess.git", rev = "1.0.0" }
 
 [tool.poetry.group.pgdb.dependencies]
 pydantic = "^2.4.2"
