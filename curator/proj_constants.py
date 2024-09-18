@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime
 from logging import FileHandler, Logger, StreamHandler
 from multiprocessing import cpu_count
 from pathlib import Path
@@ -90,59 +91,59 @@ async_session_maker = sessionmaker(
     future=True,
 )
 
-root_logger: Logger = logging.getLogger()
-log: Logger = logging.getLogger(__name__)
-log_formatter = logging.Formatter(
-    "%(asctime)s - "
-    "%(levelname)s - "
-    "%(processName)s:%(threadName)s - "
-    "%(filename)s:%(funcName)s:%(lineno)d - "
-    "%(message)s - "
-    "%(context)s"
-)
+
+def logger_setup(project_name: str, debug=False):
+    root_logger: Logger = logging.getLogger()
+    log: Logger = logging.getLogger(__name__)
+    log_formatter = logging.Formatter(
+        "%(asctime)s - "
+        "%(levelname)s - "
+        "%(processName)s:%(threadName)s - "
+        "%(filename)s:%(funcName)s:%(lineno)d - "
+        "%(message)s - "
+        "%(context)s"
+    )
+
+    class ContextFilter(logging.Filter):
+        """This is a filter which injects contextual information into the log."""
+
+        def filter(self, record):
+            if not hasattr(record, "context"):
+                record.context = ""
+            return True
+
+    # Add filter to give default context value of ""
+    context_filter = ContextFilter()
+    log.addFilter(context_filter)
+
+    # Remove all existing log handlers
+    for handler in root_logger.handlers:
+        root_logger.removeHandler(handler)
+    for handler in log.handlers:
+        log.removeHandler(handler)
+
+    # Set logging level based on env var
+    if debug:
+        log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.INFO)
+
+    # Add a stream handler to stdout
+    stream_handler = StreamHandler(sys.stdout)
+    stream_handler.setFormatter(log_formatter)
+
+    # Add a filehandler
+    home_path = os.path.expanduser("~")
+    log_path = home_path + ".logs/" + project_name + "/" + datetime.now().strftime("%Y-%m-%d") + ".log"
+    file_handler = FileHandler(log_path)
+    file_handler.setFormatter(log_formatter)
+
+    log.addHandler(stream_handler)
+    log.addHandler(file_handler)
+    return log
 
 
-class ContextFilter(logging.Filter):
-    """This is a filter which injects contextual information into the log."""
-
-    def filter(self, record):
-        if not hasattr(record, "context"):
-            record.context = ""
-        return True
-
-
-# Add filter to give default context value of ""
-context_filter = ContextFilter()
-log.addFilter(context_filter)
-
-# Remove all existing log handlers
-for handler in root_logger.handlers:
-    root_logger.removeHandler(handler)
-for handler in log.handlers:
-    log.removeHandler(handler)
-
-# Set logging level based on env var
-if DEBUG:
-    log.setLevel(logging.DEBUG)
-else:
-    log.setLevel(logging.INFO)
-
-# Add a stream handler to stdout
-stream_handler = StreamHandler(sys.stdout)
-stream_handler.setFormatter(log_formatter)
-
-# Add a filehandler
-home_path = os.path.expanduser("~")
-file_path = os.path.abspath(__file__)
-relative_path = file_path.replace(home_path, "")
-dir = relative_path.strip(os.sep).split(os.sep)[0]
-log_file = home_path + "/" + dir + "/.logs/" + dir + "_logs.log"
-file_handler = FileHandler(log_file)
-file_handler.setFormatter(log_formatter)
-
-log.addHandler(stream_handler)
-log.addHandler(file_handler)
-
+log = logger_setup("curator", DEBUG)
 
 # market calendar
 o_cal = mcal.get_calendar("CBOE_Equity_Options")
