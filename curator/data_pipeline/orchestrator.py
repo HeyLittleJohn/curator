@@ -167,13 +167,14 @@ async def refresh_import(
         await download_stock_prices(ticker_lookup, min_date, end_date)
         await upload_stock_prices(ticker_lookup)
 
-    if 3 in partial:
+    if 3 in partial or 4 in partial or 6 in partial:
         await download_options_contracts(ticker_id_lookup=ticker_lookup, months_hist=months_hist)
         await upload_options_contracts(ticker_lookup, months_hist=months_hist)
-
-    if 4 in partial:
         o_tickers = await generate_o_ticker_lookup(tickers, all_=all_)
         dates = await latest_date_per_ticker(tickers=tickers, options=True)
+
+    # NOTE: if 5 in partial, have typer cancel and require you go with `add` instead of refresh
+    # TODO: need to make a refresh version of download.py with refresh generate args in polygon_utils.py
 
 
 # if __name__ == "__main__":
