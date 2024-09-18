@@ -134,7 +134,16 @@ def logger_setup(project_name: str, debug=False):
 
     # Add a filehandler
     home_path = os.path.expanduser("~")
-    log_path = home_path + ".logs/" + project_name + "/" + datetime.now().strftime("%Y-%m-%d") + ".log"
+    log_path = (
+        home_path
+        + "/"
+        + project_name
+        + "/.logs/"
+        + project_name
+        + "_"
+        + datetime.now().strftime("%Y-%m-%d")
+        + ".log"
+    )
     file_handler = FileHandler(log_path)
     file_handler.setFormatter(log_formatter)
 
