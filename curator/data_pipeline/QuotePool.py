@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import queue
 import traceback
 from typing import (
@@ -24,7 +25,7 @@ from aiomultiprocess.types import (
     TaskID,
 )
 
-from curator.proj_constants import log
+log = logging.getLogger(__name__)
 
 
 class QuoteScheduler(RoundRobin):

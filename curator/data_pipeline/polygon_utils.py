@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import date, datetime
@@ -17,7 +18,7 @@ from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
 from db_tools.utils import OptionTicker
 
-from curator.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
+from curator.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL
 from curator.utils import (
     extract_underlying_from_o_ticker,
     first_weekday_of_month,
@@ -27,6 +28,8 @@ from curator.utils import (
     trading_days_in_range,
     write_api_data_to_file,
 )
+
+log = logging.getLogger(__name__)
 
 
 class Timespans(Enum):
