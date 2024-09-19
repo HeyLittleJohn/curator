@@ -1,4 +1,3 @@
-import logging
 import os
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -15,7 +14,7 @@ from db_tools.queries import (
 )
 from db_tools.utils import OptionTicker
 
-from curator.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, logger_setup
+from curator.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
 from curator.utils import (
     clean_o_ticker,
     months_ago,
@@ -23,8 +22,6 @@ from curator.utils import (
     timestamp_now,
     timestamp_to_datetime,
 )
-
-log = logging.getLogger(__name__)
 
 
 class PathRunner(ABC):

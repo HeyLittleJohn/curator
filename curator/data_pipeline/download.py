@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 
 from aiomultiprocess import Pool
@@ -23,10 +22,8 @@ from data_pipeline.QuotePool import QuotePool
 from db_tools.queries import lookup_multi_ticker_ids
 from db_tools.utils import OptionTicker
 
-from curator.proj_constants import POLYGON_BASE_URL
+from curator.proj_constants import POLYGON_BASE_URL, log
 from curator.utils import pool_kwarg_config
-
-log = logging.getLogger(__name__)
 
 planned_exceptions = (
     InvalidArgs,

@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 
 from data_pipeline.download import (
@@ -21,7 +20,7 @@ from db_tools.queries import delete_stock_ticker, latest_date_per_ticker
 from db_tools.utils import generate_o_ticker_lookup, pull_tickers_from_db
 from pandas import DataFrame
 
-log = logging.getLogger(__name__)
+from curator.proj_constants import log
 
 
 async def import_all(tickers: list, start_date: datetime, end_date: datetime, months_hist: int):
