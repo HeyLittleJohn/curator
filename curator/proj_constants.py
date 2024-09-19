@@ -9,20 +9,22 @@ from multiprocessing import cpu_count
 from pathlib import Path
 
 import pandas_market_calendars as mcal
-import sentry_sdk
 import uvloop
-from sentry_sdk import capture_exception
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-SENTRY_URL = os.environ.get("SENTRY_URL")
-sentry_sdk.init(
-    dsn=SENTRY_URL,
-    traces_sample_rate=0.1,
-)
-
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
 DEBUG = False
+SENTRY_URL = os.environ.get("SENTRY_URL", None)
+
+if SENTRY_URL:
+    import sentry_sdk
+    from sentry_sdk import capture_exception
+
+    sentry_sdk.init(
+        dsn=SENTRY_URL,
+        traces_sample_rate=0.1,
+    )
 
 
 # NOTE: use this function if pass variables to env via docker .env file. Otherwise use .pgpass
@@ -64,11 +66,12 @@ CPUS = cpu_count() - 2
 
 POOL_DEFAULT_KWARGS = {
     "processes": CPUS,
-    "exception_handler": capture_exception,
     "loop_initializer": uvloop.new_event_loop,
     "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
     "queuecount": CPUS,
 }
+if SENTRY_URL:
+    POOL_DEFAULT_KWARGS["exception_handler"] = capture_exception
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
@@ -92,7 +95,7 @@ async_session_maker = sessionmaker(
 )
 
 
-def logger_setup(project_name: str, debug=False):
+def logger_setup(project_name: str, debug=False, name=__name__) -> Logger:
     root_logger: Logger = logging.getLogger()
     log: Logger = logging.getLogger(__name__)
     log_formatter = logging.Formatter(
@@ -144,6 +147,7 @@ def logger_setup(project_name: str, debug=False):
         + datetime.now().strftime("%Y-%m-%d")
         + ".log"
     )
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
     file_handler = FileHandler(log_path)
     file_handler.setFormatter(log_formatter)
 
@@ -152,7 +156,7 @@ def logger_setup(project_name: str, debug=False):
     return log
 
 
-log = logger_setup("curator", DEBUG)
+log = logger_setup("curator", debug=DEBUG)
 
 # market calendar
 o_cal = mcal.get_calendar("CBOE_Equity_Options")

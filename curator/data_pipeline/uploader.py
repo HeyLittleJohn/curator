@@ -103,5 +103,6 @@ async def upload_options_quotes(ticker: str):
 
 
 if __name__ == "__main__":
+    log.info("more success!")
     failed_paths = asyncio.run(upload_options_quotes(ticker="QQQ"))
     print(f"failed paths: {failed_paths}")

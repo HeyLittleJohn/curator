@@ -1,6 +1,7 @@
 import functools
 import inspect
 import json
+import logging
 import os
 from datetime import datetime
 from json import JSONDecodeError
@@ -116,8 +117,9 @@ def Session(func):
 
     @functools.wraps(func)
     async def wrapper_events(*args, **kwargs):
+        wrap_log = logging.getLogger(__name__)
         func_mod_and_name = f"{func.__module__}.{func.__name__}"
-        log.info(f"Starting {func_mod_and_name}")
+        wrap_log.info(f"Starting {func_mod_and_name}")
         session_passed = False
         for arg in list(args) + list(kwargs.values()):
             if issubclass(type(arg), AsyncSession):
@@ -138,10 +140,10 @@ def Session(func):
                 finally:
                     await session.close()
 
-            log.info(f"Finished {func_mod_and_name}")
+            wrap_log.info(f"Finished {func_mod_and_name}")
             return func_return
         except Exception as e:
-            log.exception(e)
+            wrap_log.exception(e)
             raise
 
     return wrapper_events
