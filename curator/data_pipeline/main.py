@@ -2,20 +2,18 @@ import asyncio
 from datetime import datetime
 
 import typer
-from data_pipeline.orchestrator import (
+
+from curator.data_pipeline.orchestrator import (
     import_all,
     import_partial,
     remove_tickers_from_universe,
 )
-
 from curator.utils import months_ago
 
 DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = months_ago(months=DEFAULT_MONTHS_HIST)
 
-app = typer.Typer(
-    help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data"
-)
+app = typer.Typer(help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data")
 
 
 def validate_partial(ctx, param, value: list[int]):

@@ -1,8 +1,12 @@
 from datetime import datetime
 
 import pandas as pd
-from data_pipeline.exceptions import InvalidArgs
-from db_tools.schemas import (
+from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from curator.data_pipeline.exceptions import InvalidArgs
+from curator.db_tools.schemas import (
     OptionPriceModel,
     OptionsPricesRaw,
     OptionsQuotesRaw,
@@ -16,10 +20,6 @@ from db_tools.schemas import (
     StockTickers,
     TickerModel,
 )
-from sqlalchemy import case, delete, func, or_, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from curator.utils import Session, months_ago
 
 
@@ -103,9 +103,7 @@ async def query_options_tickers(
 
 
 @Session
-async def query_stock_tickers(
-    session: AsyncSession, all_: bool = True, tickers: list[str] = []
-) -> list[TickerModel]:
+async def query_stock_tickers(session: AsyncSession, all_: bool = True, tickers: list[str] = []) -> list[TickerModel]:
     """only returns tickers likely to have options contracts"""
     stmt = select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
     if not all_:

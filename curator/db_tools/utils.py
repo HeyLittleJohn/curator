@@ -1,7 +1,8 @@
 from collections import namedtuple
 
-from db_tools.queries import query_options_tickers, query_stock_tickers
 from pandas import DataFrame
+
+from curator.db_tools.queries import query_options_tickers, query_stock_tickers
 
 OptionTicker = namedtuple("OptionTicker", ["o_ticker", "id", "expiration_date", "underlying_ticker"])
 
@@ -20,9 +21,7 @@ async def pull_tickers_from_db(tickers: list[str] = [], all_: bool = True) -> li
     return ticker_lookup
 
 
-async def generate_o_ticker_lookup(
-    tickers: list[str], all_: bool = False, unexpired=False
-) -> dict[str, OptionTicker]:
+async def generate_o_ticker_lookup(tickers: list[str], all_: bool = False, unexpired=False) -> dict[str, OptionTicker]:
     """Function to prepare a lookup of o_tickers to o_ticker info based on a list of underlying stock tickers
     Args:
         tickers: list of stock tickers

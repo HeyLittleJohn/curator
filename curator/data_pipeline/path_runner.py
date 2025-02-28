@@ -4,7 +4,7 @@ from datetime import datetime
 from json import JSONDecodeError
 from typing import Any, Generator
 
-from db_tools.queries import (
+from curator.db_tools.queries import (
     update_options_prices,
     update_options_quotes,
     update_options_snapshot,
@@ -12,8 +12,7 @@ from db_tools.queries import (
     update_stock_metadata,
     update_stock_prices,
 )
-from db_tools.utils import OptionTicker
-
+from curator.db_tools.utils import OptionTicker
 from curator.proj_constants import BASE_DOWNLOAD_PATH, POSTGRES_BATCH_MAX, log
 from curator.utils import (
     clean_o_ticker,
@@ -136,10 +135,7 @@ class MetaDataRunner(PathRunner):
         if self.all_:
             return [(self._determine_most_recent_file(self.base_directory),)]
         else:
-            return [
-                (self._determine_most_recent_file(f"{self.base_directory}/{ticker}"),)
-                for ticker in self.tickers
-            ]
+            return [(self._determine_most_recent_file(f"{self.base_directory}/{ticker}"),) for ticker in self.tickers]
 
     def clean_data(self, results: list[dict], ticker_data: tuple = ()):
         clean_results = []

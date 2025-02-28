@@ -13,10 +13,10 @@ from aiohttp.client_exceptions import (
     ClientResponseError,
     ServerDisconnectedError,
 )
-from data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
 from dateutil.relativedelta import relativedelta
-from db_tools.utils import OptionTicker
 
+from curator.data_pipeline.exceptions import ProjAPIError, ProjAPIOverload
+from curator.db_tools.utils import OptionTicker
 from curator.proj_constants import BASE_DOWNLOAD_PATH, POLYGON_API_KEY, POLYGON_BASE_URL, log
 from curator.utils import (
     extract_underlying_from_o_ticker,
@@ -102,9 +102,7 @@ class PolygonPaginator(ABC):
             json_response = await response.json() if status_code == 200 else {}
             return (status_code, json_response)
 
-    async def _query_all(
-        self, session: ClientSession, url: str, payload: dict = {}, limit: bool = False
-    ) -> list[dict]:
+    async def _query_all(self, session: ClientSession, url: str, payload: dict = {}, limit: bool = False) -> list[dict]:
         """Query the API until all results have been returned
         Args:
             session: aiohttp ClientSession
@@ -238,9 +236,7 @@ class StockMetaData(PolygonPaginator):
         Returns:
         urls: list(tuple), each tuple contains the url, the payload for the request and an empty string"""
         if not self.all_:
-            urls = [
-                (self.url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers
-            ]
+            urls = [(self.url_base, dict(self.payload, **{"ticker": ticker}), ticker) for ticker in self.tickers]
         else:
             urls = [(self.url_base, self.payload, "")]
         return urls
@@ -510,18 +506,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         self.start_date, self.close_date = self._determine_start_end_dates(
             string_to_date("2060-01-01")
         )  # NOTE: magic number meant to always trigger the newest date (today)
-        self.dates = trading_days_in_range(
-            str(self.start_date), str(self.close_date), count=False, cal_type="o_cal"
-        )
+        self.dates = trading_days_in_range(str(self.start_date), str(self.close_date), count=False, cal_type="o_cal")
         self.dates_stamps = self._prepare_timestamps(self.dates)
         self.o_ticker_lookup = o_ticker_lookup
 
     def _construct_url(self, o_ticker: str) -> str:
         return f"/v3/quotes/{o_ticker}"
 
-    def generate_request_args(
-        self, args_data: list[OptionTicker]
-    ) -> tuple[list[tuple[str, dict]], dict[str, int]]:
+    def generate_request_args(self, args_data: list[OptionTicker]) -> tuple[list[tuple[str, dict]], dict[str, int]]:
         """Generate the urls to query the options quotes endpoint.
         Inputs should be OptionTickers. We then generate the date ranges.
         To prepare the args, we make the timestamp pairs (1 hour wide) and query for the oldest quote in each window.
@@ -563,14 +555,14 @@ class HistoricalQuotes(HistoricalOptionsPrices):
         dates = dates.tz_localize("US/Eastern")
         for i in range(9):
             if i >= 7:
-                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
+                dates[f"{i + 9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9)
             else:
-                dates[f"{i+9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
-            dates[f"{i+9}_oclock"] = dates[f"{i+9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
-            dates[f"{i+9}_oclock"] = (
-                dates[f"{i+9}_oclock"].astype(str).str.slice(stop=-2)
+                dates[f"{i + 9}_oclock"] = dates.index + pd.Timedelta(hours=i + 9, minutes=30)
+            dates[f"{i + 9}_oclock"] = dates[f"{i + 9}_oclock"].dt.strftime("%Y-%m-%dT%H:%M:%S%z")
+            dates[f"{i + 9}_oclock"] = (
+                dates[f"{i + 9}_oclock"].astype(str).str.slice(stop=-2)
                 + ":"
-                + dates[f"{i+9}_oclock"].astype(str).str.slice(start=-2)
+                + dates[f"{i + 9}_oclock"].astype(str).str.slice(start=-2)
             )
         dates.drop(columns=["market_open", "market_close"], inplace=True)
         dates = pd.DataFrame({"timestamp.gte": dates.values.flatten()})
@@ -618,11 +610,7 @@ class HistoricalQuotes(HistoricalOptionsPrices):
     def lookup_date_timestamps_from_record(self, timestamp: int) -> list[int]:
         date = timestamp_to_datetime(timestamp, msec_units=False, nano_sec=True)
         date = str(date.date())
-        return (
-            self.dates_stamps["nanosecond.gte"]
-            .loc[self.dates_stamps["timestamp.gte"].str.contains(date)]
-            .to_list()
-        )
+        return self.dates_stamps["nanosecond.gte"].loc[self.dates_stamps["timestamp.gte"].str.contains(date)].to_list()
 
     # TODO: finish this algorithm
     def search_for_timestamps(self, data: list[dict]) -> list[dict]:

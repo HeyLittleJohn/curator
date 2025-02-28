@@ -52,7 +52,7 @@ def db_uri_maker() -> str:
 POSTGRES_DATABASE_URL = db_uri_maker()
 POSTGRES_BATCH_MAX = 62000
 
-BASE_DOWNLOAD_PATH = str(Path("~").expanduser()) + "/.polygon_data"
+BASE_DOWNLOAD_PATH = Path("~").expanduser() / ".polygon_data"
 
 POLYGON_BASE_URL = "https://api.polygon.io"
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
@@ -95,6 +95,15 @@ async_session_maker = sessionmaker(
 )
 
 
+class ContextFilter(logging.Filter):
+    """This is a filter which injects contextual information into the log."""
+
+    def filter(self, record):
+        if not hasattr(record, "context"):
+            record.context = ""
+        return True
+
+
 def logger_setup(project_name: str, debug=False, name=__name__) -> Logger:
     root_logger: Logger = logging.getLogger()
     log: Logger = logging.getLogger(__name__)
@@ -106,14 +115,6 @@ def logger_setup(project_name: str, debug=False, name=__name__) -> Logger:
         "%(message)s - "
         "%(context)s"
     )
-
-    class ContextFilter(logging.Filter):
-        """This is a filter which injects contextual information into the log."""
-
-        def filter(self, record):
-            if not hasattr(record, "context"):
-                record.context = ""
-            return True
 
     # Add filter to give default context value of ""
     context_filter = ContextFilter()
@@ -136,18 +137,8 @@ def logger_setup(project_name: str, debug=False, name=__name__) -> Logger:
     stream_handler.setFormatter(log_formatter)
 
     # Add a filehandler
-    home_path = os.path.expanduser("~")
-    log_path = (
-        home_path
-        + "/"
-        + project_name
-        + "/.logs/"
-        + project_name
-        + "_"
-        + datetime.now().strftime("%Y-%m-%d")
-        + ".log"
-    )
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    log_path = Path.home() / project_name / ".logs" / f"{project_name}_{datetime.now().strftime('%Y-%m-%d')}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     file_handler = FileHandler(log_path)
     file_handler.setFormatter(log_formatter)
 

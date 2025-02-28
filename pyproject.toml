@@ -9,11 +9,6 @@ description = "Package for curating historical market data from Polygon.io to ba
 authors = [{name="Jody Hirschi", email="jody@heylittlejohn.com"}]
 requires-python = ">=3.11"
 readme = "README.md"
-# packages = [
-#     { include = "curator", from = "." },
-#     { include = "data_pipeline", from = "./curator" },
-#     { include = "db_tools", from = "./curator/" },
-# ]
 
 dependencies = [
     "aiomultiprocess",
@@ -24,9 +19,16 @@ dependencies = [
     "uvloop >=0.18.0",
     "pandas-market-calendars >=4.1.4",
     "scikit-learn >=1.3.0",
-    "typer[all] >=0.12.0",
+    "typer >=0.12.0",
     "polygon-api-client >=1.14.2",
+    "pydantic >=2.4.2",
+    "sqlalchemy >=2.0.0",
+    "pandas >=2.2.2",
+    "psycopg >=3.1.8",
+    "alembic >=1.9.2",
 ]
+[project.scripts]
+curator = "curator.data_pipeline.main:app"
 
 [tool.uv.sources]
 aiomultiprocess = { git = "https://github.com/jhirschibar/aiomultiprocess.git", tag = "1.0.0" }
@@ -36,14 +38,6 @@ dev = ["pre-commit >=3.0.4",
 "ipython >=8.14.0",
 "ipykernel >=6.26.0",
 "ruff >=0.9.8"
-]
-
-pgdb = ["pydantic >=2.4.2",
-"sqlalchemy >=2.0.0",
-"pandas >=2.2.2",
-"psycopg >=3.1.8",
-"alembic >=1.9.2",
-# "asyncpg >=0.27.0"
 ]
 
 [tool.ruff]

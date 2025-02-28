@@ -259,19 +259,18 @@ class QuoteWorker(PoolWorker):
 
                 elif (
                     len(
-                        (
-                            self.o_ticker_queue_progress.get(otkr, set())
-                            | self.o_ticker_skip_tids.get(otkr, set())
-                        )
+                        (self.o_ticker_queue_progress.get(otkr, set()) | self.o_ticker_skip_tids.get(otkr, set()))
                         - self.tid_result_progress
                     )
                     == 0
                 ):
                     self.completely_processed_otkrs.append(otkr)
-                    log.info(f"all processed for {otkr}!! \
+                    log.info(
+                        f"all processed for {otkr}!! \
 ({len(self.o_ticker_queue_progress.get(otkr, []))} processed, \
 {total_tids - len(self.o_ticker_queue_progress.get(otkr, []))} will be skipped, \
-{total_tids} expected)")
+{total_tids} expected)"
+                    )
 
 
 class QuotePool(Pool):

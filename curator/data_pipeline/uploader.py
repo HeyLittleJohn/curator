@@ -2,7 +2,8 @@ import asyncio
 from typing import Any
 
 from aiomultiprocess import Pool
-from data_pipeline.path_runner import (
+
+from curator.data_pipeline.path_runner import (
     MetaDataRunner,
     OptionsContractsRunner,
     OptionsPricesRunner,
@@ -11,7 +12,6 @@ from data_pipeline.path_runner import (
     PathRunner,
     StockPricesRunner,
 )
-
 from curator.proj_constants import CPUS, log
 from curator.utils import pool_kwarg_config
 
@@ -31,9 +31,7 @@ async def etl_pool_uploader(runner: PathRunner, pool_kwargs: dict = {}, path_inp
     """
 
     log.info(f"generating the path args to be uploaded -- {runner.runner_type}")
-    path_args = (
-        runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
-    )
+    path_args = runner.generate_path_args() if not path_input_args else runner.generate_path_args(path_input_args)
 
     log.info(
         f"uploading data to the database -- Starting Process Pool -- Upload Function: {runner.upload_func.__qualname__}"

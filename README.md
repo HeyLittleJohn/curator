@@ -10,15 +10,16 @@ We can then use the policy and the bot to identify options spread positions that
 
 ## Getting Started
 
-This is a python project, and will utilize pyenv, poetry, pre-commit, and will be greatly benefitted by an Nvidia GPU for training. This project will build on the default `dev` branch and push to `prod` via "Squash Merge" PR only. At which time, we will cut a new release / tag for the project.
+This is a python project, and will utilize uv to manage dependencies. This project will build on the default `dev` branch and push to `prod` via "Squash Merge" PR only. At which time, we will cut a new release / tag for the project.
 
-### PyEnv
+### UV
 
-Install [pyenv](https://github.com/pyenv/pyenv) and use it to create a virtualenv for this project with a version of python that is >=3.11
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use it to create a venv for this project with a version of python that is >=3.11
 
-### Poetry
+```bash
+uv venv --python 3.11
+```
 
-We use [Poetry](https://python-poetry.org/) for dependency management. Once poetry is installed on your machine and you've cloned this repo, go into the project root `curator` directory and run `poetry install` to install all dependencies indicated in the pyTOML.
 
 ### Data Sources
 

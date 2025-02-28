@@ -1,7 +1,8 @@
 from datetime import datetime
 
 from aiomultiprocess import Pool
-from data_pipeline.exceptions import (
+
+from curator.data_pipeline.exceptions import (
     InvalidArgs,
     ProjBaseException,
     ProjClientConnectionError,
@@ -9,7 +10,7 @@ from data_pipeline.exceptions import (
     ProjIndexError,
     ProjTimeoutError,
 )
-from data_pipeline.polygon_utils import (
+from curator.data_pipeline.polygon_utils import (
     CurrentContractSnapshot,
     HistoricalOptionsPrices,
     HistoricalQuotes,
@@ -18,10 +19,9 @@ from data_pipeline.polygon_utils import (
     PolygonPaginator,
     StockMetaData,
 )
-from data_pipeline.QuotePool import QuotePool
-from db_tools.queries import lookup_multi_ticker_ids
-from db_tools.utils import OptionTicker
-
+from curator.data_pipeline.QuotePool import QuotePool
+from curator.db_tools.queries import lookup_multi_ticker_ids
+from curator.db_tools.utils import OptionTicker
 from curator.proj_constants import POLYGON_BASE_URL, log
 from curator.utils import pool_kwarg_config
 
@@ -142,7 +142,7 @@ async def download_options_quotes(ticker: str, o_tickers: list[OptionTicker], mo
     for i in range(0, len(batch_o_tickers), BATCH_SIZE_OTICKERS):
         small_batch = batch_o_tickers[i : i + BATCH_SIZE_OTICKERS]
 
-        log.info(f"downloading quotes for {i+BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} batch of o_tickers")
+        log.info(f"downloading quotes for {i + BATCH_SIZE_OTICKERS}/{len(batch_o_tickers)} batch of o_tickers")
 
         await api_quote_downloader(
             paginator=op_quotes,
