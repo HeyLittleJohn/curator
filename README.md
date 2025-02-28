@@ -17,9 +17,17 @@ This is a python project, and will utilize uv to manage dependencies. This proje
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use it to create a venv for this project with a version of python that is >=3.11
 
 ```bash
-uv venv --python 3.11
+uv python install
+uv venv 
+uv sync
 ```
 
+If you want a particular version of python, you can specify it with the `--python` flag.
+
+```bash
+uv python install --python 3.11
+uv venv --python 3.11
+```
 
 ### Data Sources
 
@@ -28,12 +36,9 @@ We will utilize Polygon.io and Robinhood as our sources of historical and curren
 Store your Polygon.io API key locally in your `.bashrc` file in a variable called `"POLYGON_API_KEY"`
 Likewise, store your username, password, and MFA QR code for Robinhood locally using variable names `"RH_USRNAME"`, `"RH_PASSWORD"`, and `"RH_QR"`.
 
-## Using the App
+## Getting Started
 
-To begin using the app, navigate to your root `curator` folder (after having poetry installed everything), and run the following command to build your local db:
-```CLI Command Here```
-
-Then run the below command to view the available CLI for the project:
-```CLI command Here```
-
-Finally, utilize the below command to add your first underlying ticker to "your universe" to begin backfilling historical stock and option pricing data necessary to begin training your agent. Depending on whether you are subscribed to the free tier of the Polygon.io API or not, this could take a bit of time. Be sure to not interrupt the process until it is done.
+To begin using the app, navigate to your root `curator` folder and run the below command to view the available CLI for the project:
+```bash
+uv run curator --help
+```
