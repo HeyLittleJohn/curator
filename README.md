@@ -36,6 +36,8 @@ We will utilize Polygon.io and Robinhood as our sources of historical and curren
 Store your Polygon.io API key locally in your `.bashrc` file in a variable called `"POLYGON_API_KEY"`
 Likewise, store your username, password, and MFA QR code for Robinhood locally using variable names `"RH_USRNAME"`, `"RH_PASSWORD"`, and `"RH_QR"`.
 
+We are also beginning to support [ThetaData](https://www.thetadata.net/) as of March 2025. 
+
 ## Launch the CLI
 
 To begin using the app, navigate to your root `curator` folder and run the below command to view the available CLI for the project:
