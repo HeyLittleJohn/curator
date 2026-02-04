@@ -222,3 +222,93 @@ class OptionsQuotesRaw(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=datetime.now(dt.UTC))
     is_overwritten = Column(Boolean, server_default=expression.false())
+
+
+class SilverFuturesMBO(Base):
+    """Databento Level 3 MBO (Market By Order) data for silver futures.
+
+    Stores order book events including trades, order additions, cancellations,
+    modifications, and book clear events from Databento's GLBX MBO feed.
+
+    Attributes:
+        ts_recv: Timestamp when data was received (ISO 8601).
+        ts_event: Timestamp when event occurred at matching engine (ISO 8601).
+        rtype: Record type (160 for MBO schema).
+        publisher_id: Databento publisher ID.
+        instrument_id: Numeric instrument identifier.
+        action: Event type - A(dd), C(ancel), M(odify), R(eset), T(rade), F(ill), N(one).
+        side: A(sk), B(id), or N(one).
+        price: Order price in fixed-point format (1e-9 scale).
+        size: Order quantity.
+        channel_id: Databento channel ID.
+        order_id: Venue-assigned order ID.
+        flags: Bit field for event characteristics.
+        ts_in_delta: Nanoseconds before ts_recv when matching engine sent data.
+        sequence: Original message sequence number from venue.
+        symbol: Futures contract symbol (e.g., SILG4, SILH4).
+    """
+
+    __tablename__ = "silver_futures_mbo"
+    __table_args__ = (UniqueConstraint("ts_event", "order_id", "sequence", name="uq_silver_mbo_event"),)
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    ts_recv = Column(DateTime, nullable=False)
+    ts_event = Column(DateTime, nullable=False)
+    rtype = Column(Integer, nullable=False)
+    publisher_id = Column(Integer, nullable=False)
+    instrument_id = Column(Integer, nullable=False)
+    action = Column(String(1), nullable=False)
+    side = Column(String(1))
+    price = Column(DECIMAL(5, 9))
+    size = Column(Integer, nullable=False)
+    channel_id = Column(Integer)
+    order_id = Column(BigInteger, nullable=False)
+    flags = Column(Integer)
+    ts_in_delta = Column(Integer)
+    sequence = Column(Integer)
+    symbol = Column(String, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class SilverFuturesMBOModel(BaseModel):
+    """Pydantic model for SilverFuturesMBO data validation.
+
+    Args:
+        ts_recv: Receive timestamp as datetime.
+        ts_event: Event timestamp as datetime.
+        rtype: Record type integer.
+        publisher_id: Publisher identifier.
+        instrument_id: Instrument identifier.
+        action: Single character action type.
+        side: Single character side indicator (optional).
+        price: Price in fixed-point format (optional).
+        size: Order size.
+        channel_id: Channel identifier (optional).
+        order_id: Order identifier.
+        flags: Event flags (optional).
+        ts_in_delta: Timestamp delta (optional).
+        sequence: Sequence number (optional).
+        symbol: Contract symbol string.
+
+    Returns:
+        Validated SilverFuturesMBOModel instance.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    ts_recv: datetime
+    ts_event: datetime
+    rtype: int
+    publisher_id: int
+    instrument_id: int
+    action: str
+    side: Optional[str]
+    price: Optional[Decimal]
+    size: int
+    channel_id: Optional[int]
+    order_id: int
+    flags: Optional[int]
+    ts_in_delta: Optional[int]
+    sequence: Optional[int]
+    symbol: str
+    id: Optional[int] = None
