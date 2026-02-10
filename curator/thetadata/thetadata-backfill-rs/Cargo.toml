@@ -1,0 +1,62 @@
+[package]
+name = "thetadata-backfill-rs"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance ThetaData historical data backfill system in Rust with Python bindings"
+license = "MIT"
+
+[lib]
+name = "thetadata_backfill"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "thetadata-backfill"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.35", features = ["full", "rt-multi-thread", "sync", "time", "macros"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "gzip", "stream"] }
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "chrono", "rust_decimal", "migrate"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Data types
+chrono = { version = "0.4", features = ["serde"] }
+rust_decimal = { version = "1.33", features = ["serde", "serde-with-str"] }
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Python bindings
+pyo3 = { version = "0.20", features = ["extension-module", "abi3-py38"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Configuration
+config = "0.14"
+dotenvy = "0.15"
+
+# Utilities
+futures = "0.3"
+async-trait = "0.1"
+indicatif = "0.17"
+num_cpus = "1.16"
+
+[build-dependencies]
+pyo3-build-config = "0.20"
+
+[dev-dependencies]
+tokio-test = "0.4"

@@ -3,7 +3,6 @@
 /bin/notes.txt
 .python-version
 .logs/*
-data/*
-*data/
+*/temp/*
 .python-version
 *.code-workspace
