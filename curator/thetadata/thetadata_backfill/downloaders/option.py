@@ -2,32 +2,21 @@
 
 from datetime import date
 from decimal import Decimal
-from typing import Any, AsyncIterator, Optional, Type
+from typing import Any, Optional
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from thetadata_backfill.client import ThetaDataClient
-from thetadata_backfill.config import BackfillMode, Settings
-from thetadata_backfill.db.repository import Repository
-from thetadata_backfill.downloaders.base import BackfillResult, BaseDownloader
+from thetadata_backfill.downloaders.base import BaseDownloader
 from thetadata_backfill.models.option import (
-    OptionOHLC,
-    OptionTrade,
-    OptionQuote,
     OptionGreeks,
-    OptionTradeGreeks,
+    OptionOHLC,
     OptionOpenInterest,
-    OptionEOD,
+    OptionTradeGreeks,
 )
 from thetadata_backfill.schemas.option import (
-    OptionOHLCResponse,
-    OptionTradeResponse,
-    OptionQuoteResponse,
     OptionGreeksResponse,
-    OptionTradeGreeksResponse,
+    OptionOHLCResponse,
     OptionOpenInterestResponse,
-    OptionEODResponse,
     OptionRight,
+    OptionTradeGreeksResponse,
 )
 
 

@@ -1,9 +1,9 @@
 """Generic async repository for bulk database operations."""
 
 from datetime import date
-from typing import Any, Generic, Sequence, Type, TypeVar
+from typing import Any, Generic, Type, TypeVar
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,7 +106,7 @@ class Repository(Generic[ModelT]):
             Set of dates that have data.
         """
         date_col = getattr(self.model, date_column)
-        symbol_col = getattr(self.model, "symbol")
+        symbol_col = self.model.symbol
         
         stmt = (
             select(date_col)
@@ -135,7 +135,7 @@ class Repository(Generic[ModelT]):
             Set of timestamps that have data.
         """
         ts_col = getattr(self.model, timestamp_column)
-        symbol_col = getattr(self.model, "symbol")
+        symbol_col = self.model.symbol
         
         stmt = (
             select(ts_col)
@@ -164,7 +164,7 @@ class Repository(Generic[ModelT]):
         
         stmt = select(func.count()).select_from(self.model)
         if symbol is not None:
-            symbol_col = getattr(self.model, "symbol")
+            symbol_col = self.model.symbol
             stmt = stmt.where(symbol_col == symbol)
         
         result = await self.session.execute(stmt)

@@ -1,10 +1,9 @@
 """Backfill orchestrator for coordinating parallel downloads."""
 
-import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Optional
+from typing import Optional
 
 from rich.console import Console
 from rich.progress import (
@@ -12,7 +11,6 @@ from rich.progress import (
     MofNCompleteColumn,
     Progress,
     SpinnerColumn,
-    TaskID,
     TextColumn,
     TimeElapsedColumn,
 )
@@ -20,7 +18,6 @@ from rich.table import Table
 
 from thetadata_backfill.client import ThetaDataClient
 from thetadata_backfill.config import BackfillMode, Settings
-from thetadata_backfill.downloaders import BackfillResult
 from thetadata_backfill.workers import WorkerPool, WorkerResult
 
 logger = logging.getLogger(__name__)

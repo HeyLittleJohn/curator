@@ -6,21 +6,21 @@ from thetadata_backfill.downloaders.base import (
     DownloadTask,
 )
 from thetadata_backfill.downloaders.equity import (
-    EquityOHLCDownloader,
-    EquityTradeDownloader,
-    EquityQuoteDownloader,
     EquityEODDownloader,
-)
-from thetadata_backfill.downloaders.option import (
-    OptionOHLCDownloader,
-    OptionTradeGreeksDownloader,
-    OptionGreeksDownloader,
-    OptionOpenInterestDownloader,
+    EquityOHLCDownloader,
+    EquityQuoteDownloader,
+    EquityTradeDownloader,
 )
 from thetadata_backfill.downloaders.index import (
+    IndexEODDownloader,
     IndexOHLCDownloader,
     IndexPriceDownloader,
-    IndexEODDownloader,
+)
+from thetadata_backfill.downloaders.option import (
+    OptionGreeksDownloader,
+    OptionOHLCDownloader,
+    OptionOpenInterestDownloader,
+    OptionTradeGreeksDownloader,
 )
 
 __all__ = [

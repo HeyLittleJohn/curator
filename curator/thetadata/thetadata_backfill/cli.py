@@ -12,7 +12,7 @@ from rich.console import Console
 
 from thetadata_backfill import __version__
 from thetadata_backfill.config import BackfillMode, Settings
-from thetadata_backfill.orchestrator import Orchestrator, BackfillJob
+from thetadata_backfill.orchestrator import BackfillJob, Orchestrator
 from thetadata_backfill.workers import install_uvloop
 
 app = typer.Typer(
@@ -313,8 +313,9 @@ def status(
 ):
     """Show current database status and record counts."""
     import asyncio
+
     from sqlalchemy import text
-    
+
     from thetadata_backfill.db import DatabaseManager
     
     settings = Settings(database_url=database_url)

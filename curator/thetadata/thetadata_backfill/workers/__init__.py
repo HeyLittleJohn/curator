@@ -2,8 +2,8 @@
 
 from thetadata_backfill.workers.pool import (
     WorkerPool,
-    WorkerTask,
     WorkerResult,
+    WorkerTask,
     install_uvloop,
 )
 

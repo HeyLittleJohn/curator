@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from typing import Any, AsyncIterator, Generic, Optional, Type, TypeVar
 
 from pydantic import BaseModel

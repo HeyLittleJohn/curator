@@ -6,3 +6,4 @@
 */temp/*
 .python-version
 *.code-workspace
+**/__pycache__/**

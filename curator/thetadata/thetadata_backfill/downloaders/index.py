@@ -1,16 +1,14 @@
 """Index data downloader."""
 
 from datetime import date
-from typing import Any, Optional, Type
+from typing import Any
 
-from thetadata_backfill.client import ThetaDataClient
-from thetadata_backfill.config import Settings
 from thetadata_backfill.downloaders.base import BaseDownloader
-from thetadata_backfill.models.index import IndexOHLC, IndexPrice, IndexEOD
+from thetadata_backfill.models.index import IndexEOD, IndexOHLC, IndexPrice
 from thetadata_backfill.schemas.index import (
+    IndexEODResponse,
     IndexOHLCResponse,
     IndexPriceResponse,
-    IndexEODResponse,
 )
 
 

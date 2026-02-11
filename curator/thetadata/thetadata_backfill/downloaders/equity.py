@@ -1,17 +1,15 @@
 """Equity data downloader."""
 
 from datetime import date
-from typing import Any, Type
+from typing import Any
 
-from thetadata_backfill.config import Settings
-from thetadata_backfill.client import ThetaDataClient
 from thetadata_backfill.downloaders.base import BaseDownloader
-from thetadata_backfill.models.equity import EquityOHLC, EquityTrade, EquityQuote, EquityEOD
+from thetadata_backfill.models.equity import EquityEOD, EquityOHLC, EquityQuote, EquityTrade
 from thetadata_backfill.schemas.equity import (
-    EquityOHLCResponse,
-    EquityTradeResponse,
-    EquityQuoteResponse,
     EquityEODResponse,
+    EquityOHLCResponse,
+    EquityQuoteResponse,
+    EquityTradeResponse,
 )
 
 

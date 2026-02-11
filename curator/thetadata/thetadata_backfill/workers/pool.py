@@ -5,7 +5,7 @@ import logging
 import multiprocessing as mp
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 try:
     import uvloop
@@ -69,17 +69,17 @@ async def process_task(
         Result of the task.
     """
     from thetadata_backfill.downloaders import (
-        EquityOHLCDownloader,
-        EquityTradeDownloader,
-        EquityQuoteDownloader,
         EquityEODDownloader,
-        OptionOHLCDownloader,
-        OptionTradeGreeksDownloader,
-        OptionGreeksDownloader,
-        OptionOpenInterestDownloader,
+        EquityOHLCDownloader,
+        EquityQuoteDownloader,
+        EquityTradeDownloader,
+        IndexEODDownloader,
         IndexOHLCDownloader,
         IndexPriceDownloader,
-        IndexEODDownloader,
+        OptionGreeksDownloader,
+        OptionOHLCDownloader,
+        OptionOpenInterestDownloader,
+        OptionTradeGreeksDownloader,
     )
     
     # Map of (asset_type, data_type) -> downloader class
