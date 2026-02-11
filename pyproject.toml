@@ -35,10 +35,12 @@ curator = "curator.data_pipeline.main:app"
 aiomultiprocess = { git = "https://github.com/jhirschibar/aiomultiprocess.git", tag = "1.0.0" }
 
 [dependency-groups]
-dev = ["pre-commit >=3.0.4",
-"ipython >=8.14.0",
-"ipykernel >=6.26.0",
-"ruff >=0.9.8"
+dev = [
+    "pre-commit >=3.0.4",
+    "ipython >=8.14.0",
+    "ipykernel >=6.26.0",
+    "ruff >=0.9.8",
+    "ty>=0.0.15",
 ]
 
 [tool.ruff]

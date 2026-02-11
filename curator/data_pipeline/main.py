@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from typing import Annotated, Optional
 
 import typer
 
@@ -8,12 +9,16 @@ from curator.data_pipeline.orchestrator import (
     import_partial,
     remove_tickers_from_universe,
 )
+from curator.data_pipeline.silver_futures_upload import silver_app
 from curator.utils import months_ago
 
 DEFAULT_MONTHS_HIST = 24
 DEFAULT_START_DATE = months_ago(months=DEFAULT_MONTHS_HIST)
+DEFAULT_END_DATE = datetime.now()
+DEFAULT_REFRESH_PARTIAL: list[int] = [5]
 
 app = typer.Typer(help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data")
+app.add_typer(silver_app, name="silver")
 
 
 def validate_partial(ctx, param, value: list[int]):
@@ -24,41 +29,49 @@ def validate_partial(ctx, param, value: list[int]):
 
 @app.command(name="add")
 def add(
-    tickers: list[str] = typer.Argument(
-        help="Underlying tickers to add to the data universe or to include in the pull"
-    ),
-    all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
-    partial: list[int] = typer.Option(
-        None,
-        "--partial",
-        "-p",
-        callback=validate_partial,
-        help=(
-            "Components to pull (import/refresh):"
-            " 1: stock metadata,"
-            " 2: stock prices,"
-            " 3: options contracts,"
-            " 4: options prices,"
-            " 5: options snapshots,"
-            " 6: options quotes"
+    tickers: Annotated[
+        list[str], typer.Argument(help="Underlying tickers to add to the data universe or to include in the pull")
+    ],
+    all_tickers: Annotated[bool, typer.Option("--all-tickers", "-A", help="Add all stock tickers to the pull")] = False,
+    partial: Annotated[
+        Optional[list[int]],
+        typer.Option(
+            "--partial",
+            "-p",
+            callback=validate_partial,
+            help=(
+                "Components to pull (import/refresh):"
+                " 1: stock metadata,"
+                " 2: stock prices,"
+                " 3: options contracts,"
+                " 4: options prices,"
+                " 5: options snapshots,"
+                " 6: options quotes"
+            ),
         ),
-    ),
-    start_date: datetime = typer.Option(
-        None,
-        "--start-date",
-        "-s",
-        formats=["%Y-%m"],
-        help="Start date of data pull (YYYY-MM)",
-    ),
-    end_date: datetime = typer.Option(
-        None, "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
-    ),
-    months_hist: int = typer.Option(
-        None,
-        "--months-hist",
-        "-m",
-        help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
-    ),
+    ] = None,
+    start_date: Annotated[
+        Optional[datetime],
+        typer.Option(
+            "--start-date",
+            "-s",
+            formats=["%Y-%m"],
+            help="Start date of data pull (YYYY-MM)",
+        ),
+    ] = None,
+    end_date: Annotated[
+        Optional[datetime],
+        typer.Option("--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"),
+    ] = None,
+    months_hist: Annotated[
+        Optional[int],
+        typer.Option(
+            "--months-hist",
+            "-m",
+            help="Months of historical options contracts to pull."
+            " **Only works if you DO NOT specify a start/end date**",
+        ),
+    ] = None,
 ):
     if all_tickers:
         tickers = []
@@ -88,41 +101,48 @@ def add(
 
 @app.command(name="refresh")
 def refresh(
-    tickers: list[str] = typer.Argument(
-        help="Underlying tickers to add to the data universe or to include in the pull"
-    ),
-    all_tickers: bool = typer.Option(False, "--all-tickers", "-A", help="Add all stock tickers to the pull"),
-    partial: list[int] = typer.Option(
-        [5],
-        "--partial",
-        "-p",
-        callback=validate_partial,
-        help=(
-            "Components to pull (import/refresh):"
-            " 1: stock metadata,"
-            " 2: stock prices,"
-            " 3: options contracts,"
-            " 4: options prices,"
-            " 5: options snapshots,"
-            # " 6: options quotes"
+    tickers: Annotated[
+        list[str], typer.Argument(help="Underlying tickers to add to the data universe or to include in the pull")
+    ],
+    all_tickers: Annotated[bool, typer.Option("--all-tickers", "-A", help="Add all stock tickers to the pull")] = False,
+    partial: Annotated[
+        list[int],
+        typer.Option(
+            "--partial",
+            "-p",
+            callback=validate_partial,
+            help=(
+                "Components to pull (import/refresh):"
+                " 1: stock metadata,"
+                " 2: stock prices,"
+                " 3: options contracts,"
+                " 4: options prices,"
+                " 5: options snapshots,"
+                # " 6: options quotes"
+            ),
         ),
-    ),
-    start_date: datetime = typer.Option(
-        DEFAULT_START_DATE,
-        "--start-date",
-        "-s",
-        formats=["%Y-%m"],
-        help="Start date of data pull (YYYY-MM)",
-    ),
-    end_date: datetime = typer.Option(
-        datetime.now(), "--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)"
-    ),
-    months_hist: int = typer.Option(
-        DEFAULT_MONTHS_HIST,
-        "--months-hist",
-        "-m",
-        help="Months of historical options contracts to pull. **Only works if you DO NOT specify a start/end date**",
-    ),
+    ] = DEFAULT_REFRESH_PARTIAL,
+    start_date: Annotated[
+        datetime,
+        typer.Option(
+            "--start-date",
+            "-s",
+            formats=["%Y-%m"],
+            help="Start date of data pull (YYYY-MM)",
+        ),
+    ] = DEFAULT_START_DATE,
+    end_date: Annotated[
+        datetime, typer.Option("--end-date", "-e", formats=["%Y-%m"], help="End date of data pull (YYYY-MM)")
+    ] = DEFAULT_END_DATE,
+    months_hist: Annotated[
+        int,
+        typer.Option(
+            "--months-hist",
+            "-m",
+            help="Months of historical options contracts to pull."
+            " **Only works if you DO NOT specify a start/end date**",
+        ),
+    ] = DEFAULT_MONTHS_HIST,
 ):
     # TODO: a logic to look up the date of the most recent pull and set as start date
     pass
@@ -130,7 +150,7 @@ def refresh(
 
 @app.command(name="remove")
 def remove(
-    tickers: list[str] = typer.Argument(help="Underlying tickers to remove from the data universe"),
+    tickers: Annotated[list[str], typer.Argument(help="Underlying tickers to remove from the data universe")],
 ):
     typer.echo(f"Removing tickers: {tickers}")
     asyncio.run(remove_tickers(tickers))

@@ -85,6 +85,10 @@ async_engine = create_async_engine(
     pool_timeout=30,
 )
 
+# Suppress SQLAlchemy's verbose SQL dumps on errors (thousands of lines per batch failure)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.CRITICAL)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.CRITICAL)
+
 async_session_maker = sessionmaker(
     async_engine,
     autoflush=False,

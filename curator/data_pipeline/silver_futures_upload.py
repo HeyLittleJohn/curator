@@ -10,7 +10,9 @@ Example usage:
 import asyncio
 import csv
 import io
+from collections.abc import Generator
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
@@ -18,32 +20,32 @@ import typer
 import zstandard
 from sqlalchemy.dialects.postgresql import insert
 
-from curator.db_tools.schemas import SilverFuturesMBO
+from curator.db_tools.schemas import SilverFuturesMBO, SilverFuturesMBOModel
 from curator.proj_constants import POSTGRES_BATCH_MAX, async_session_maker, log
 
-app = typer.Typer()
+silver_app = typer.Typer(help="Silver futures MBO data upload commands")
 
 
-def decompress_zst_file_streaming(file_path: Path) -> list[dict]:
-    """Decompress a zstd-compressed CSV file using streaming and return parsed rows.
+def decompress_zst_file_streaming(file_path: Path) -> Generator[dict, None, None]:
+    """Decompress a zstd-compressed CSV file, yielding rows as they are decompressed.
 
     Uses streaming decompression which is required for Databento zstd files.
+    Rows are yielded one at a time so that callers can process them without
+    holding the entire file in memory.
 
     Args:
         file_path: Path to the .zst compressed file.
 
-    Returns:
-        List of dictionaries, one per CSV row.
+    Yields:
+        Dictionary for each CSV row.
     """
     dctx = zstandard.ZstdDecompressor()
-    rows = []
     with open(file_path, "rb") as f:
         with dctx.stream_reader(f) as reader:
             text_stream = io.TextIOWrapper(reader, encoding="utf-8")
             csv_reader = csv.DictReader(text_stream)
             for row in csv_reader:
-                rows.append(row)
-    return rows
+                yield row
 
 
 def parse_csv_content(content: str) -> list[dict]:
@@ -80,51 +82,40 @@ def parse_iso8601(ts_str: str) -> datetime:
     return datetime.fromisoformat(ts_str)
 
 
-def parse_price_to_fixed_point(price_str: str) -> int | None:
-    """Convert decimal price string to fixed-point integer (1e9 scale).
-
-    Args:
-        price_str: Price as decimal string (e.g., "22.635000000").
-
-    Returns:
-        Price as integer in fixed-point format, or None if empty.
-    """
-    if not price_str:
-        return None
-    # Convert decimal to fixed-point integer (multiply by 1e9)
-    price_float = float(price_str)
-    return int(price_float * 1_000_000_000)
-
-
 def transform_row(row: dict) -> dict:
     """Transform a raw CSV row into a format suitable for database insertion.
+
+    Parses raw CSV string values and validates them through the
+    SilverFuturesMBOModel pydantic model before returning a dict
+    ready for database insertion.
 
     Args:
         row: Dictionary from CSV with string values.
 
     Returns:
-        Dictionary with properly typed values for SilverFuturesMBO model.
+        Dictionary with properly typed values for SilverFuturesMBO table.
     """
-    return {
-        "ts_recv": parse_iso8601(row["ts_recv"]),
-        "ts_event": parse_iso8601(row["ts_event"]),
-        "rtype": int(row["rtype"]),
-        "publisher_id": int(row["publisher_id"]),
-        "instrument_id": int(row["instrument_id"]),
-        "action": row["action"],
-        "side": row["side"] if row["side"] else None,
-        "price": parse_price_to_fixed_point(row["price"]),
-        "size": int(row["size"]),
-        "channel_id": int(row["channel_id"]) if row["channel_id"] else None,
-        "order_id": int(row["order_id"]),
-        "flags": int(row["flags"]) if row["flags"] else None,
-        "ts_in_delta": int(row["ts_in_delta"]) if row["ts_in_delta"] else None,
-        "sequence": int(row["sequence"]) if row["sequence"] else None,
-        "symbol": row["symbol"],
-    }
+    model = SilverFuturesMBOModel(
+        ts_recv=parse_iso8601(row["ts_recv"]),
+        ts_event=parse_iso8601(row["ts_event"]),
+        rtype=int(row["rtype"]),
+        publisher_id=int(row["publisher_id"]),
+        instrument_id=int(row["instrument_id"]),
+        action=row["action"],
+        side=row["side"] if row["side"] else None,
+        price=Decimal(row["price"]) if row["price"] else None,
+        size=int(row["size"]),
+        channel_id=int(row["channel_id"]) if row["channel_id"] else None,
+        order_id=int(row["order_id"]),
+        flags=int(row["flags"]) if row["flags"] else None,
+        ts_in_delta=int(row["ts_in_delta"]) if row["ts_in_delta"] else None,
+        sequence=int(row["sequence"]) if row["sequence"] else None,
+        symbol=row["symbol"],
+    )
+    return model.model_dump(exclude={"id"})
 
 
-async def upload_batch(data: list[dict]) -> int:
+async def upload_batch(data: list[SilverFuturesMBOModel]) -> int:
     """Upload a batch of MBO records to the database.
 
     Args:
@@ -132,20 +123,34 @@ async def upload_batch(data: list[dict]) -> int:
 
     Returns:
         Number of records inserted/updated.
+
+    Raises:
+        Exception: Re-raises after logging a concise error summary.
     """
     if not data:
         return 0
 
-    async with async_session_maker() as session:
-        stmt = insert(SilverFuturesMBO).values(data)
-        stmt = stmt.on_conflict_do_nothing(constraint="uq_silver_mbo_event")
-        result = await session.execute(stmt)
-        await session.commit()
-        return result.rowcount if result.rowcount else len(data)
+    try:
+        async with async_session_maker() as session:
+            stmt = insert(SilverFuturesMBO).values(data)
+            stmt = stmt.on_conflict_do_nothing(constraint="uq_silver_mbo_event")
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount if result.rowcount else len(data)
+    except Exception as e:
+        first_ts = data[0].get("ts_event", "unknown") if data else "N/A"
+        log.error(
+            f"Batch insert failed: {type(e).__name__}: {e!s:.200}"
+            f" | batch_size={len(data)}, first_row_ts_event={first_ts}"
+        )
+        raise
 
 
 async def process_file(file_path: Path) -> tuple[str, int, int]:
-    """Process a single zst file: decompress, parse, and upload to database.
+    """Process a single zst file: stream decompress, parse, and upload to database.
+
+    Rows are streamed from the compressed file and uploaded in batches without
+    ever holding the full file contents in memory.
 
     Args:
         file_path: Path to the .zst file to process.
@@ -156,28 +161,37 @@ async def process_file(file_path: Path) -> tuple[str, int, int]:
     log.info(f"Processing file: {file_path.name}")
 
     try:
-        # Decompress and parse CSV using streaming
-        rows = decompress_zst_file_streaming(file_path)
-        total_rows = len(rows)
+        # psycopg limits queries to 65,535 parameters; calculate max rows per batch
+        num_columns = len(SilverFuturesMBO.__table__.columns)
+        batch_size = min(POSTGRES_BATCH_MAX, 65535 // num_columns)
+        batch: list[dict] = []
+        total_rows = 0
+        inserted = 0
+        batch_count = 0
+
+        for row in decompress_zst_file_streaming(file_path):
+            batch.append(transform_row(row))
+            total_rows += 1
+
+            if len(batch) >= batch_size:
+                count = await upload_batch(batch)
+                inserted += count
+                batch.clear()
+                batch_count += 1
+
+                if batch_count % 10 == 0:
+                    log.info(f"  Streamed {total_rows} rows from {file_path.name}, batch {batch_count}")
+
+        # Upload remaining rows
+        if batch:
+            count = await upload_batch(batch)
+            inserted += count
 
         if total_rows == 0:
             log.warning(f"No rows found in {file_path.name}")
             return (file_path.name, 0, 0)
 
-        # Transform and upload in batches
-        inserted = 0
-        batch_size = min(POSTGRES_BATCH_MAX, 10000)
-
-        for i in range(0, total_rows, batch_size):
-            batch = rows[i : i + batch_size]
-            transformed = [transform_row(row) for row in batch]
-            count = await upload_batch(transformed)
-            inserted += count
-
-            if (i + batch_size) % 50000 == 0:
-                log.info(f"  Processed {i + batch_size}/{total_rows} rows from {file_path.name}")
-
-        log.info(f"Completed {file_path.name}: {inserted}/{total_rows} rows inserted")
+        log.info(f"Completed {file_path.name}: {inserted}/{total_rows} rows inserted, {batch_count} batches")
         return (file_path.name, total_rows, inserted)
 
     except Exception as e:
@@ -187,9 +201,6 @@ async def process_file(file_path: Path) -> tuple[str, int, int]:
 
 async def process_directory(
     input_dir: Path,
-    limit: Optional[int] = None,
-    skip_large: bool = False,
-    max_size_mb: float = 100.0,
 ) -> dict:
     """Process all zst files in a directory.
 
@@ -203,13 +214,6 @@ async def process_directory(
         Dictionary with processing statistics.
     """
     zst_files = sorted(input_dir.glob("*.zst"))
-
-    if skip_large:
-        max_bytes = max_size_mb * 1024 * 1024
-        zst_files = [f for f in zst_files if f.stat().st_size <= max_bytes]
-
-    if limit:
-        zst_files = zst_files[:limit]
 
     log.info(f"Found {len(zst_files)} zst files to process")
 
@@ -234,29 +238,13 @@ async def process_directory(
     return results
 
 
-@app.command()
+@silver_app.command()
 def upload(
     input_dir: str = typer.Option(
         ...,
         "--input-dir",
         "-i",
         help="Directory containing .zst compressed CSV files",
-    ),
-    limit: Optional[int] = typer.Option(
-        None,
-        "--limit",
-        "-l",
-        help="Maximum number of files to process",
-    ),
-    skip_large: bool = typer.Option(
-        False,
-        "--skip-large",
-        help="Skip files larger than --max-size-mb",
-    ),
-    max_size_mb: float = typer.Option(
-        100.0,
-        "--max-size-mb",
-        help="Maximum file size in MB when --skip-large is set",
     ),
 ) -> None:
     """Upload silver futures MBO data from zstd-compressed CSV files.
@@ -282,9 +270,6 @@ def upload(
     results = asyncio.run(
         process_directory(
             input_path,
-            limit=limit,
-            skip_large=skip_large,
-            max_size_mb=max_size_mb,
         )
     )
 
@@ -300,7 +285,7 @@ def upload(
             typer.echo(f"  - {fname}: {error}")
 
 
-@app.command()
+@silver_app.command()
 def decompress_only(
     input_dir: str = typer.Option(
         ...,
@@ -345,19 +330,72 @@ def decompress_only(
 
     for file_path in zst_files:
         out_file = output_path / file_path.stem  # Remove .zst extension
-        rows = decompress_zst_file_streaming(file_path)
-        # Write as CSV
-        if rows:
-            import csv as csv_mod
+        import csv as csv_mod
 
-            with open(out_file, "w", newline="") as f:
-                writer = csv_mod.DictWriter(f, fieldnames=rows[0].keys())
-                writer.writeheader()
-                writer.writerows(rows)
+        header_written = False
+        with open(out_file, "w", newline="") as f:
+            writer: csv_mod.DictWriter | None = None
+            for row in decompress_zst_file_streaming(file_path):
+                if not header_written:
+                    writer = csv_mod.DictWriter(f, fieldnames=row.keys())
+                    writer.writeheader()
+                    header_written = True
+                assert writer is not None
+                writer.writerow(row)
         typer.echo(f"  Decompressed: {file_path.name} -> {out_file.name}")
 
     typer.echo(f"\nDecompressed {len(zst_files)} files to {output_path}")
 
 
+@silver_app.command()
+def test_upload(
+    file_path: str = typer.Argument(
+        ...,
+        help="Path to a single .zst compressed CSV file to upload",
+    ),
+) -> None:
+    """Test uploading a single .zst file to verify the pipeline works correctly.
+
+    Decompresses the file, prints the first row, reports total row count,
+    and uploads to the database.
+
+    Args:
+        file_path: Path to the .zst file to test.
+        dry_run: If True, only decompress and preview without uploading.
+    """
+    path = Path(file_path)
+
+    if not path.exists():
+        typer.echo(f"Error: File {file_path} does not exist")
+        raise typer.Exit(1)
+
+    if not path.is_file():
+        typer.echo(f"Error: {file_path} is not a file")
+        raise typer.Exit(1)
+
+    if not path.name.endswith(".zst"):
+        typer.echo(f"Warning: {path.name} does not have a .zst extension")
+
+    file_size_mb = path.stat().st_size / (1024 * 1024)
+    typer.echo(f"File: {path.name}")
+    typer.echo(f"Size: {file_size_mb:.2f} MB")
+
+    row_count = 0
+    for row in decompress_zst_file_streaming(path):
+        if row_count == 5:
+            typer.echo(row)
+            break
+        row_count += 1
+
+    typer.echo("\nUploading...")
+    filename, total_rows, inserted_rows = asyncio.run(process_file(path))
+
+    typer.echo("\n--- Upload Result ---")
+    typer.echo(f"File: {filename}")
+    typer.echo(f"Total rows: {total_rows}")
+    typer.echo(f"Inserted rows: {inserted_rows}")
+    typer.echo(f"Duplicates skipped: {total_rows - inserted_rows}")
+
+
 if __name__ == "__main__":
-    app()
+    test_upload("curator/temp/data/GLBX-20260203-HYH8YBP4HD/glbx-mdp3-20250316-20260202.mbo.SILH6.csv.zst")

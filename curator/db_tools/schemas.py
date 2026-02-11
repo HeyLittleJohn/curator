@@ -238,7 +238,7 @@ class SilverFuturesMBO(Base):
         instrument_id: Numeric instrument identifier.
         action: Event type - A(dd), C(ancel), M(odify), R(eset), T(rade), F(ill), N(one).
         side: A(sk), B(id), or N(one).
-        price: Order price in fixed-point format (1e-9 scale).
+        price: Order price as decimal (e.g. 22.635).
         size: Order quantity.
         channel_id: Databento channel ID.
         order_id: Venue-assigned order ID.
@@ -259,13 +259,13 @@ class SilverFuturesMBO(Base):
     instrument_id = Column(Integer, nullable=False)
     action = Column(String(1), nullable=False)
     side = Column(String(1))
-    price = Column(DECIMAL(5, 9))
+    price = Column(DECIMAL(8, 3))
     size = Column(Integer, nullable=False)
     channel_id = Column(Integer)
     order_id = Column(BigInteger, nullable=False)
     flags = Column(Integer)
-    ts_in_delta = Column(Integer)
-    sequence = Column(Integer)
+    ts_in_delta = Column(BigInteger)
+    sequence = Column(BigInteger)
     symbol = Column(String, nullable=False)
     created_at = Column(DateTime, server_default=func.now())
 
@@ -281,7 +281,7 @@ class SilverFuturesMBOModel(BaseModel):
         instrument_id: Instrument identifier.
         action: Single character action type.
         side: Single character side indicator (optional).
-        price: Price in fixed-point format (optional).
+        price: Order price as decimal (optional).
         size: Order size.
         channel_id: Channel identifier (optional).
         order_id: Order identifier.
