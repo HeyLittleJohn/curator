@@ -1,7 +1,8 @@
+from collections.abc import Sequence
 from datetime import datetime
 
 import pandas as pd
-from sqlalchemy import case, delete, func, or_, select, update
+from sqlalchemy import Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,7 +71,7 @@ async def query_options_tickers(
     months_hist: int = 24,
     all_=False,
     unexpired=False,
-) -> list[OptionsTickerModel]:
+) -> Sequence[Row]:
     """
     This is to pull all options contracts for a given underlying ticker.
     The batch input is to only pull o_ticker_ids for given o_tickers
@@ -103,12 +104,12 @@ async def query_options_tickers(
 
 
 @Session
-async def query_stock_tickers(session: AsyncSession, all_: bool = True, tickers: list[str] = []) -> list[TickerModel]:
+async def query_stock_tickers(session: AsyncSession, tickers: list[str], all_: bool = True) -> list[TickerModel]:
     """only returns tickers likely to have options contracts"""
     stmt = select(StockTickers.id, StockTickers.ticker).where(StockTickers.type.in_(["ADRC", "ETF", "CS"]))
     if not all_:
         stmt = stmt.where(StockTickers.ticker.in_(tickers))
-    return (await session.execute(stmt)).all()
+    return (await session.execute(stmt)).all()  # type: ignore
 
 
 @Session
@@ -128,8 +129,8 @@ async def ticker_imported(session: AsyncSession, ticker_id: int):
 async def update_stock_metadata(session: AsyncSession, data: list[TickerModel]):
     df = pd.DataFrame(data)
     df = df.drop_duplicates(subset=["ticker"], keep="last")
-    data = df.to_dict(orient="records")
-    stmt = insert(StockTickers).values(data)
+    clean_data = df.to_dict(orient="records")
+    stmt = insert(StockTickers).values(clean_data)
     stmt = stmt.on_conflict_do_update(
         index_elements=["ticker"],
         set_=dict(
@@ -242,7 +243,7 @@ async def delete_stock_ticker(session: AsyncSession, ticker: str):
 
 
 @Session
-async def latest_date_per_ticker(session: AsyncSession, tickers: list[str] = [], options=False):
+async def latest_date_per_ticker(session: AsyncSession, tickers: list[str], options=False):
     """query to retrieve the most recent date of record for ticker data (prices/quotes for stock/options).
     If tickers is [] empty, return all
     """

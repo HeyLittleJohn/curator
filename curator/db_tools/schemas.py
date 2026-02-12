@@ -12,6 +12,7 @@ from sqlalchemy import (
     Column,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -249,7 +250,10 @@ class SilverFuturesMBO(Base):
     """
 
     __tablename__ = "silver_futures_mbo"
-    __table_args__ = (UniqueConstraint("ts_event", "order_id", "sequence", name="uq_silver_mbo_event"),)
+    __table_args__ = (
+        UniqueConstraint("ts_event", "order_id", "sequence", name="uq_silver_mbo_event"),
+        Index("ix_silver_mbo_symbol_ts_action", "symbol", "ts_event", "action"),
+    )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     ts_recv = Column(DateTime, nullable=False)
