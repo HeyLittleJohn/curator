@@ -7,6 +7,7 @@ from datetime import datetime
 from logging import FileHandler, Logger, StreamHandler
 from multiprocessing import cpu_count
 from pathlib import Path
+from typing import Any, Callable, TypedDict
 
 import pandas_market_calendars as mcal
 import uvloop
@@ -52,6 +53,19 @@ def db_uri_maker() -> str:
 POSTGRES_DATABASE_URL = db_uri_maker()
 POSTGRES_BATCH_MAX = 62000
 
+
+def psycopg_conninfo() -> str:
+    """Convert the SQLAlchemy database URL to a plain psycopg connection string.
+
+    Strips the ``+psycopg`` dialect suffix so the URL can be used directly
+    with ``psycopg.AsyncConnection.connect()``.
+
+    Returns:
+        A ``postgresql://`` connection string suitable for raw psycopg use.
+    """
+    return POSTGRES_DATABASE_URL.replace("postgresql+psycopg://", "postgresql://")
+
+
 BASE_DOWNLOAD_PATH = Path("~").expanduser() / ".polygon_data"
 
 POLYGON_BASE_URL = "https://api.polygon.io"
@@ -64,12 +78,22 @@ MAX_QUERY_PER_MINUTE = 4
 
 CPUS = cpu_count() - 2
 
-POOL_DEFAULT_KWARGS = {
+
+class PoolDefaultKwargs(TypedDict, total=False):
+    processes: int
+    loop_initializer: Callable[[], uvloop.Loop]
+    childconcurrency: int
+    queuecount: int
+    exception_handler: Callable[[Exception], Any]
+
+
+POOL_DEFAULT_KWARGS: PoolDefaultKwargs = {
     "processes": CPUS,
     "loop_initializer": uvloop.new_event_loop,
     "childconcurrency": int(MAX_CONCURRENT_REQUESTS / CPUS),
     "queuecount": CPUS,
 }
+
 if SENTRY_URL:
     POOL_DEFAULT_KWARGS["exception_handler"] = capture_exception
 
@@ -155,7 +179,7 @@ log = logger_setup("curator", debug=DEBUG)
 
 # market calendar
 o_cal = mcal.get_calendar("CBOE_Equity_Options")
-o_cal = o_cal.schedule(start_date="2021-01-01", end_date="2026-01-01")
+o_cal = o_cal.schedule(start_date="2021-01-01", end_date="2028-01-01")
 
 e_cal = mcal.get_calendar("NYSE")
-e_cal = e_cal.schedule(start_date="2021-01-01", end_date="2026-01-01")
+e_cal = e_cal.schedule(start_date="2021-01-01", end_date="2028-01-01")

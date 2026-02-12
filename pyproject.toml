@@ -58,6 +58,14 @@ ignore-overlong-task-comments = true
 [tool.ruff.lint.mccabe]
 max-complexity = 20
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "typer.Argument",
+    "typer.Option",
+    "typer.models.OptionInfo",
+    "typer.models.ArgumentInfo"
+]
+
 [tool.ruff.format]
 line-ending = "auto"
 quote-style = "double"

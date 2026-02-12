@@ -1,10 +1,12 @@
 """Silver futures MBO data upload script.
 
 This module provides functionality to decompress Databento zstd-compressed CSV files
-and upload the MBO (Market By Order) data to PostgreSQL.
+and upload the MBO (Market By Order) data to PostgreSQL using psycopg's COPY protocol
+and aiomultiprocess for parallel file processing.
 
 Example usage:
-    uv run python -m curator.data_pipeline.silver_futures_upload --input-dir /path/to/data
+    uv run curator silver upload --input-dir /path/to/data
+    uv run curator silver upload --files file1.zst file2.zst
 """
 
 import asyncio
@@ -16,14 +18,20 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Optional
 
+import psycopg
 import typer
 import zstandard
-from sqlalchemy.dialects.postgresql import insert
+from aiomultiprocess import Pool
 
-from curator.db_tools.schemas import SilverFuturesMBO, SilverFuturesMBOModel
-from curator.proj_constants import POSTGRES_BATCH_MAX, async_session_maker, log
+from curator.db_tools.schemas import SilverFuturesMBOModel
+from curator.proj_constants import POOL_DEFAULT_KWARGS, log, psycopg_conninfo
 
 silver_app = typer.Typer(help="Silver futures MBO data upload commands")
+
+# Columns to COPY into -- derived from the pydantic model, excluding auto-generated `id`
+COPY_COLUMNS = tuple(f for f in SilverFuturesMBOModel.model_fields if f != "id")
+
+DEFAULT_WORKERS = POOL_DEFAULT_KWARGS["processes"]
 
 
 def decompress_zst_file_streaming(file_path: Path) -> Generator[dict, None, None]:
@@ -115,42 +123,75 @@ def transform_row(row: dict) -> dict:
     return model.model_dump(exclude={"id"})
 
 
-async def upload_batch(data: list[SilverFuturesMBOModel]) -> int:
-    """Upload a batch of MBO records to the database.
+def _row_to_copy_tuple(data: dict) -> tuple:
+    """Convert a validated row dict to a tuple in COPY_COLUMNS order.
 
     Args:
-        data: List of dictionaries containing MBO record data.
+        data: Dictionary from ``transform_row`` with properly typed values.
 
     Returns:
-        Number of records inserted/updated.
-
-    Raises:
-        Exception: Re-raises after logging a concise error summary.
+        Tuple of values in the same order as ``COPY_COLUMNS``.
     """
-    if not data:
-        return 0
+    return tuple(data[col] for col in COPY_COLUMNS)
 
-    try:
-        async with async_session_maker() as session:
-            stmt = insert(SilverFuturesMBO).values(data)
-            stmt = stmt.on_conflict_do_nothing(constraint="uq_silver_mbo_event")
-            result = await session.execute(stmt)
-            await session.commit()
-            return result.rowcount if result.rowcount else len(data)
-    except Exception as e:
-        first_ts = data[0].get("ts_event", "unknown") if data else "N/A"
-        log.error(
-            f"Batch insert failed: {type(e).__name__}: {e!s:.200}"
-            f" | batch_size={len(data)}, first_row_ts_event={first_ts}"
-        )
-        raise
+
+async def copy_to_db(rows: Generator[dict, None, None], file_name: str) -> tuple[int, int]:
+    """Stream rows into PostgreSQL via COPY through a staging temp table.
+
+    Creates a temporary table matching ``silver_futures_mbo`` structure,
+    COPYs all validated rows into it, then merges into the real table
+    with ``ON CONFLICT DO NOTHING``.
+
+    Args:
+        rows: Generator of raw CSV row dicts (from ``decompress_zst_file_streaming``).
+        file_name: Filename string used for progress logging.
+
+    Returns:
+        Tuple of (total_rows_streamed, rows_inserted_into_real_table).
+    """
+    conninfo = psycopg_conninfo()
+    cols_csv = ", ".join(COPY_COLUMNS)
+
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=False) as conn:
+        async with conn.cursor() as cur:
+            # Create an unlogged temp table matching the target schema (no constraints/indexes)
+            await cur.execute(
+                "CREATE TEMP TABLE _staging_mbo (LIKE silver_futures_mbo INCLUDING DEFAULTS) ON COMMIT DROP"
+            )
+            # Drop constraints/indexes inherited from LIKE to keep COPY fast
+            await cur.execute("ALTER TABLE _staging_mbo DROP CONSTRAINT IF EXISTS uq_silver_mbo_event")
+            await cur.execute("ALTER TABLE _staging_mbo ALTER COLUMN id DROP DEFAULT")
+            await cur.execute("ALTER TABLE _staging_mbo ALTER COLUMN id DROP NOT NULL")
+
+            # Stream rows via COPY
+            total_rows = 0
+            copy_sql = f"COPY _staging_mbo ({cols_csv}) FROM STDIN"
+            async with cur.copy(copy_sql) as copy:
+                for raw_row in rows:
+                    validated = transform_row(raw_row)
+                    await copy.write_row(_row_to_copy_tuple(validated))
+                    total_rows += 1
+                    if total_rows % 500_000 == 0:
+                        log.info(f"  Streamed {total_rows} rows from {file_name}")
+
+            # Merge staging -> real table, skipping duplicates
+            result = await cur.execute(
+                f"INSERT INTO silver_futures_mbo ({cols_csv})"
+                f" SELECT {cols_csv} FROM _staging_mbo"
+                " ON CONFLICT ON CONSTRAINT uq_silver_mbo_event DO NOTHING"
+            )
+            inserted = result.rowcount if result.rowcount else 0
+
+        await conn.commit()
+
+    return total_rows, inserted
 
 
 async def process_file(file_path: Path) -> tuple[str, int, int]:
-    """Process a single zst file: stream decompress, parse, and upload to database.
+    """Process a single zst file: stream decompress, validate, and COPY to database.
 
-    Rows are streamed from the compressed file and uploaded in batches without
-    ever holding the full file contents in memory.
+    Rows are streamed from the compressed file through pydantic validation
+    directly into a psycopg COPY pipeline without holding the full file in memory.
 
     Args:
         file_path: Path to the .zst file to process.
@@ -161,37 +202,14 @@ async def process_file(file_path: Path) -> tuple[str, int, int]:
     log.info(f"Processing file: {file_path.name}")
 
     try:
-        # psycopg limits queries to 65,535 parameters; calculate max rows per batch
-        num_columns = len(SilverFuturesMBO.__table__.columns)
-        batch_size = min(POSTGRES_BATCH_MAX, 65535 // num_columns)
-        batch: list[dict] = []
-        total_rows = 0
-        inserted = 0
-        batch_count = 0
-
-        for row in decompress_zst_file_streaming(file_path):
-            batch.append(transform_row(row))
-            total_rows += 1
-
-            if len(batch) >= batch_size:
-                count = await upload_batch(batch)
-                inserted += count
-                batch.clear()
-                batch_count += 1
-
-                if batch_count % 10 == 0:
-                    log.info(f"  Streamed {total_rows} rows from {file_path.name}, batch {batch_count}")
-
-        # Upload remaining rows
-        if batch:
-            count = await upload_batch(batch)
-            inserted += count
+        rows = decompress_zst_file_streaming(file_path)
+        total_rows, inserted = await copy_to_db(rows, file_path.name)
 
         if total_rows == 0:
             log.warning(f"No rows found in {file_path.name}")
             return (file_path.name, 0, 0)
 
-        log.info(f"Completed {file_path.name}: {inserted}/{total_rows} rows inserted, {batch_count} batches")
+        log.info(f"Completed {file_path.name}: {inserted}/{total_rows} rows inserted")
         return (file_path.name, total_rows, inserted)
 
     except Exception as e:
@@ -199,25 +217,49 @@ async def process_file(file_path: Path) -> tuple[str, int, int]:
         raise
 
 
-async def process_directory(
-    input_dir: Path,
-) -> dict:
-    """Process all zst files in a directory.
+def _resolve_file_list(
+    input_dir: Optional[Path] = None,
+    files: Optional[list[Path]] = None,
+) -> list[Path]:
+    """Build a list of .zst file paths from either a directory or explicit file list.
 
     Args:
-        input_dir: Path to directory containing .zst files.
-        limit: Maximum number of files to process (None for all).
-        skip_large: If True, skip files larger than max_size_mb.
-        max_size_mb: Maximum file size in MB when skip_large is True.
+        input_dir: Optional directory to glob for .zst files.
+        files: Optional explicit list of file paths.
 
     Returns:
-        Dictionary with processing statistics.
+        Sorted list of Path objects pointing to .zst files.
+
+    Raises:
+        typer.BadParameter: If neither input_dir nor files is provided.
     """
-    zst_files = sorted(input_dir.glob("*.zst"))
+    if files:
+        return sorted(files)
+    if input_dir:
+        return sorted(input_dir.glob("*.zst"))
+    raise typer.BadParameter("Provide either --input-dir or --files")
 
-    log.info(f"Found {len(zst_files)} zst files to process")
 
-    results = {
+async def process_files_parallel(
+    file_list: list[Path],
+    workers: int = DEFAULT_WORKERS,
+) -> dict:
+    """Process multiple zst files in parallel using aiomultiprocess.
+
+    Spins up *workers* child processes, each processing one file at a time
+    via ``process_file``.
+
+    Args:
+        file_list: List of .zst file paths to process.
+        workers: Number of parallel worker processes.
+
+    Returns:
+        Dictionary with processing statistics (files_processed, files_failed,
+        total_rows, inserted_rows, failed_files).
+    """
+    log.info(f"Processing {len(file_list)} files with {workers} workers")
+
+    results: dict = {
         "files_processed": 0,
         "files_failed": 0,
         "total_rows": 0,
@@ -225,53 +267,76 @@ async def process_directory(
         "failed_files": [],
     }
 
-    for file_path in zst_files:
-        try:
-            filename, total, inserted = await process_file(file_path)
-            results["files_processed"] += 1
-            results["total_rows"] += total
-            results["inserted_rows"] += inserted
-        except Exception as e:
-            results["files_failed"] += 1
-            results["failed_files"].append((file_path.name, str(e)))
+    if not file_list:
+        return results
+
+    async with Pool(processes=workers, childconcurrency=1) as pool:
+        outcomes = await pool.map(process_file, file_list)
+
+    for _filename, total, inserted in outcomes:
+        results["files_processed"] += 1
+        results["total_rows"] += total
+        results["inserted_rows"] += inserted
 
     return results
 
 
 @silver_app.command()
 def upload(
-    input_dir: str = typer.Option(
-        ...,
+    input_dir: Optional[str] = typer.Option(
+        None,
         "--input-dir",
         "-i",
         help="Directory containing .zst compressed CSV files",
     ),
+    files: Optional[list[str]] = typer.Option(
+        None,
+        "--files",
+        "-f",
+        help="Explicit list of .zst file paths to upload",
+    ),
+    workers: int = typer.Option(
+        DEFAULT_WORKERS,
+        "--workers",
+        "-w",
+        help="Number of parallel worker processes",
+    ),
 ) -> None:
     """Upload silver futures MBO data from zstd-compressed CSV files.
 
+    Accepts either ``--input-dir`` for a directory of .zst files or ``--files``
+    for an explicit list. Files are processed in parallel using *workers*
+    child processes.
+
     Args:
         input_dir: Directory containing .zst files.
-        limit: Optional limit on number of files to process.
-        skip_large: Whether to skip large files.
-        max_size_mb: Size threshold for --skip-large.
+        files: Explicit list of .zst file paths.
+        workers: Number of parallel worker processes (default 16).
     """
-    input_path = Path(input_dir)
+    input_path = Path(input_dir) if input_dir else None
+    if files:
+        file_paths = [input_path / f if input_path else Path(f) for f in files]
+    elif input_path:
+        file_paths = list(input_path.glob("*.zst"))
+    else:
+        file_paths = []
 
-    if not input_path.exists():
+    if input_path and not input_path.exists():
         typer.echo(f"Error: Directory {input_dir} does not exist")
         raise typer.Exit(1)
 
-    if not input_path.is_dir():
+    if input_path and not input_path.is_dir():
         typer.echo(f"Error: {input_dir} is not a directory")
         raise typer.Exit(1)
 
-    typer.echo(f"Processing files from: {input_path}")
+    if not input_path and not file_paths:
+        typer.echo("Error: Provide either --input-dir or --files")
+        raise typer.Exit(1)
 
-    results = asyncio.run(
-        process_directory(
-            input_path,
-        )
-    )
+    file_list = _resolve_file_list(input_dir=input_path, files=file_paths)
+    typer.echo(f"Processing {len(file_list)} files with {workers} workers")
+
+    results = asyncio.run(process_files_parallel(file_list, workers=workers))
 
     typer.echo("\n--- Upload Summary ---")
     typer.echo(f"Files processed: {results['files_processed']}")
@@ -361,7 +426,6 @@ def test_upload(
 
     Args:
         file_path: Path to the .zst file to test.
-        dry_run: If True, only decompress and preview without uploading.
     """
     path = Path(file_path)
 

@@ -259,7 +259,7 @@ class SilverFuturesMBO(Base):
     instrument_id = Column(Integer, nullable=False)
     action = Column(String(1), nullable=False)
     side = Column(String(1))
-    price = Column(DECIMAL(8, 3))
+    price = Column(DECIMAL(10, 3))
     size = Column(Integer, nullable=False)
     channel_id = Column(Integer)
     order_id = Column(BigInteger, nullable=False)
