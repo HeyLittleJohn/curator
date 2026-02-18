@@ -282,7 +282,7 @@ async def process_files_parallel(
 
 
 def update_lookup_tables() -> None:
-    """Populate the ``daily_contract_volumes`` lookup table for new dates.
+    """Populate the ``daily_futures_volumes`` lookup table for new dates.
 
     Only processes dates in ``silver_futures_mbo`` that are not yet
     present in the lookup table, using the expression index on
@@ -293,16 +293,16 @@ def update_lookup_tables() -> None:
     conninfo = psycopg_conninfo()
     with psycopg.connect(conninfo) as conn:
         with conn.cursor() as cur:
-            log.info("Updating lookup table: daily_contract_volumes")
+            log.info("Updating lookup table: daily_futures_volumes")
             cur.execute("""
-                INSERT INTO daily_contract_volumes (trade_date, symbol, total_volume)
+                INSERT INTO daily_futures_volumes (trade_date, symbol, total_volume)
                 SELECT
                     ts_event::date,
                     symbol,
                     SUM(CASE WHEN action = 'T' THEN size ELSE 0 END)
                 FROM silver_futures_mbo
                 WHERE ts_event::date NOT IN (
-                    SELECT trade_date FROM daily_contract_volumes
+                    SELECT trade_date FROM daily_futures_volumes
                 )
                 GROUP BY ts_event::date, symbol
             """)

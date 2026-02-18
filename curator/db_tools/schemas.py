@@ -334,7 +334,7 @@ class DailyContractVolumes(Base):
         total_volume: Cumulative trade volume for the day.
     """
 
-    __tablename__ = "daily_contract_volumes"
+    __tablename__ = "daily_futures_volumes"
     __table_args__ = (
         UniqueConstraint("trade_date", "symbol", name="uq_daily_volumes_date_symbol"),
         Index("ix_daily_volumes_date_vol", "trade_date", text("total_volume DESC")),
