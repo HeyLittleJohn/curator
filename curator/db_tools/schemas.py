@@ -30,7 +30,7 @@ class ContractType(enum.Enum):
     put = "put"
 
 
-class UTCNow(expression.FunctionElement):  # type: ignore[name-defined]
+class UTCNow(expression.FunctionElement):
     type = DateTime()
 
 
@@ -344,3 +344,75 @@ class DailyContractVolumes(Base):
     trade_date = Column(Date, nullable=False)
     symbol = Column(String, nullable=False)
     total_volume = Column(BigInteger, nullable=False, server_default="0")
+
+
+class LobSnapshots(Base):
+    """Per-second LOB snapshot metadata for silver futures.
+
+    Stores scalar summary values extracted at each 1-second snapshot
+    during LOB reconstruction.  Enables fast price-history and spread
+    queries without parsing the full parquet tensors.
+
+    Attributes:
+        trade_date: Calendar date of the trading session.
+        symbol: Front-month contract symbol (tensor reference frame).
+        snapshot_ts: Snapshot timestamp (UTC).
+        mid_price: FM mid-price in dollars.
+        best_bid: FM best bid in dollars.
+        best_ask: FM best ask in dollars.
+        spread_ticks: Bid-ask spread in tick units.
+        fm_bid_depth_l5: Total FM bid depth within 5 ticks of mid.
+        fm_ask_depth_l5: Total FM ask depth within 5 ticks of mid.
+    """
+
+    __tablename__ = "lob_snapshots"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "symbol", "snapshot_ts", name="uq_lob_snapshot"),
+        Index("ix_lob_snap_date_symbol", "trade_date", "symbol"),
+        Index("ix_lob_snap_ts", "snapshot_ts"),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    trade_date = Column(Date, nullable=False)
+    symbol = Column(String, nullable=False)
+    snapshot_ts = Column(DateTime, nullable=False)
+    mid_price = Column(DECIMAL(10, 3), nullable=False)
+    best_bid = Column(DECIMAL(10, 3), nullable=False)
+    best_ask = Column(DECIMAL(10, 3), nullable=False)
+    spread_ticks = Column(Integer, nullable=False)
+    fm_bid_depth_l5 = Column(BigInteger, nullable=False, server_default="0")
+    fm_ask_depth_l5 = Column(BigInteger, nullable=False, server_default="0")
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class LobSnapshotModel(BaseModel):
+    """Pydantic model for LobSnapshots validation.
+
+    Args:
+        trade_date: Calendar date of the trading session.
+        symbol: Front-month contract symbol.
+        snapshot_ts: Snapshot timestamp.
+        mid_price: FM mid-price in dollars.
+        best_bid: FM best bid in dollars.
+        best_ask: FM best ask in dollars.
+        spread_ticks: Bid-ask spread in tick units.
+        fm_bid_depth_l5: Total FM bid depth within 5 ticks.
+        fm_ask_depth_l5: Total FM ask depth within 5 ticks.
+        id: Primary key (optional, auto-assigned).
+
+    Returns:
+        Validated LobSnapshotModel instance.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    trade_date: date
+    symbol: str
+    snapshot_ts: datetime
+    mid_price: Decimal
+    best_bid: Decimal
+    best_ask: Decimal
+    spread_ticks: int
+    fm_bid_depth_l5: int = 0
+    fm_ask_depth_l5: int = 0
+    id: Optional[int] = None
