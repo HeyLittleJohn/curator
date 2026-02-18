@@ -16,6 +16,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import expression, func
@@ -316,3 +317,30 @@ class SilverFuturesMBOModel(BaseModel):
     sequence: Optional[int]
     symbol: str
     id: Optional[int] = None
+
+
+class DailyContractVolumes(Base):
+    """Pre-aggregated daily volumes per contract symbol.
+
+    Populated incrementally during upload by summing trade sizes per
+    (date, symbol).  Used by the feature engineering pipeline to:
+
+    - enumerate available trading days (``get_trading_dates``)
+    - find the two most-active contracts on a given day (``identify_contracts``)
+
+    Attributes:
+        trade_date: Calendar date of the trading session.
+        symbol: Futures contract symbol (e.g. ``SILH6``).
+        total_volume: Cumulative trade volume for the day.
+    """
+
+    __tablename__ = "daily_contract_volumes"
+    __table_args__ = (
+        UniqueConstraint("trade_date", "symbol", name="uq_daily_volumes_date_symbol"),
+        Index("ix_daily_volumes_date_vol", "trade_date", text("total_volume DESC")),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    trade_date = Column(Date, nullable=False)
+    symbol = Column(String, nullable=False)
+    total_volume = Column(BigInteger, nullable=False, server_default="0")

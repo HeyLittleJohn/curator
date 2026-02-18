@@ -281,6 +281,35 @@ async def process_files_parallel(
     return results
 
 
+def update_lookup_tables() -> None:
+    """Populate the ``daily_contract_volumes`` lookup table for new dates.
+
+    Only processes dates in ``silver_futures_mbo`` that are not yet
+    present in the lookup table, using the expression index on
+    ``ts_event::date`` to avoid scanning the full 132 GB source table.
+
+    Should be called after new data has been uploaded.
+    """
+    conninfo = psycopg_conninfo()
+    with psycopg.connect(conninfo) as conn:
+        with conn.cursor() as cur:
+            log.info("Updating lookup table: daily_contract_volumes")
+            cur.execute("""
+                INSERT INTO daily_contract_volumes (trade_date, symbol, total_volume)
+                SELECT
+                    ts_event::date,
+                    symbol,
+                    SUM(CASE WHEN action = 'T' THEN size ELSE 0 END)
+                FROM silver_futures_mbo
+                WHERE ts_event::date NOT IN (
+                    SELECT trade_date FROM daily_contract_volumes
+                )
+                GROUP BY ts_event::date, symbol
+            """)
+        conn.commit()
+    log.info("Lookup table updated")
+
+
 @silver_app.command()
 def upload(
     input_dir: Optional[str] = typer.Option(
@@ -348,6 +377,11 @@ def upload(
         typer.echo("\nFailed files:")
         for fname, error in results["failed_files"]:
             typer.echo(f"  - {fname}: {error}")
+
+    if results["inserted_rows"] > 0:
+        typer.echo("\nUpdating lookup tables...")
+        update_lookup_tables()
+        typer.echo("Lookup tables updated.")
 
 
 @silver_app.command()
@@ -460,6 +494,12 @@ def test_upload(
     typer.echo(f"Inserted rows: {inserted_rows}")
     typer.echo(f"Duplicates skipped: {total_rows - inserted_rows}")
 
+    if inserted_rows > 0:
+        typer.echo("\nUpdating lookup tables...")
+        update_lookup_tables()
+        typer.echo("Lookup tables updated.")
+
 
 if __name__ == "__main__":
-    test_upload("curator/temp/data/GLBX-20260203-HYH8YBP4HD/glbx-mdp3-20250316-20260202.mbo.SILH6.csv.zst")
+    # test_upload("curator/temp/data/GLBX-20260203-HYH8YBP4HD/glbx-mdp3-20250316-20260202.mbo.SILH6.csv.zst")
+    update_lookup_tables()
