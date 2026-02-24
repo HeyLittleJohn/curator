@@ -254,6 +254,7 @@ class SilverFuturesMBO(Base):
     __table_args__ = (
         UniqueConstraint("ts_event", "order_id", "sequence", name="uq_silver_mbo_event"),
         Index("ix_silver_mbo_symbol_ts_action", "symbol", "ts_event", "action"),
+        Index("ix_silver_mbo_order_id", "order_id"),
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
