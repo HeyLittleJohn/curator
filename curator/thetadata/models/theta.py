@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     MetaData,
     Numeric,
@@ -26,6 +27,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -69,6 +71,9 @@ EOD_NONEGATIVE_SQL = (
 )
 OPEN_INTEREST_NONEGATIVE_SQL = "open_interest >= 0"
 RIGHT_SQL = f"\"right\" IN ('{RIGHT_CALL}', '{RIGHT_PUT}')"
+PROGRESS_STATUS_SQL = "status IN ('pending', 'running', 'done', 'failed', 'empty')"
+PROGRESS_INTERVAL_SQL = "interval_s IS NULL OR interval_s > 0"
+PROGRESS_INTERVAL_COMMENT = "Intraday bar length in seconds. Null for daily open interest and EOD."
 
 UQ_CONTRACTS = "uq_contracts_symbol_expiration_strike_right"
 
@@ -289,12 +294,32 @@ class EOD(ThetaBase):
 
 
 class Progress(ThetaBase):
-    """Resumable backfill progress. Status values are owned by TD-4."""
+    """Resumable backfill progress.
+
+    Status is ``pending``, ``running``, ``done``, ``failed``, or ``empty``.
+    ``interval_s`` is the intraday bar length for quotes, OHLC, and first-order
+    greeks. Daily open interest and EOD leave it null. The partial index on
+    pending rows is what workers use for ``FOR UPDATE SKIP LOCKED`` claims.
+    """
 
     __tablename__ = "progress"
     __table_args__ = (
         CheckConstraint("char_length(dataset) > 0 AND char_length(status) > 0", name="ck_progress_labels"),
         CheckConstraint("row_count >= 0", name="ck_progress_row_count"),
+        CheckConstraint(PROGRESS_STATUS_SQL, name="ck_progress_status"),
+        CheckConstraint(PROGRESS_INTERVAL_SQL, name="ck_progress_interval_s"),
+        Index(
+            "ix_progress_claim",
+            "date",
+            "expiration",
+            "dataset",
+            postgresql_where=text("status = 'pending'"),
+        ),
+        Index(
+            "ix_progress_running",
+            "updated_at",
+            postgresql_where=text("status = 'running'"),
+        ),
         {"comment": PROGRESS_COMMENT},
     )
 
@@ -303,6 +328,11 @@ class Progress(ThetaBase):
     expiration: Mapped[date] = mapped_column(Date, primary_key=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     row_count: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default="0")
+    interval_s: Mapped[int | None] = mapped_column(
+        SmallInteger,
+        nullable=True,
+        comment=PROGRESS_INTERVAL_COMMENT,
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

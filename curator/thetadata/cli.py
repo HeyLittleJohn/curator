@@ -1,9 +1,11 @@
 """ThetaData subcommands for the curator CLI.
 
 Backfill commands stay stubs until later tickets fill in the client and loaders.
-``db`` runs the theta schema Alembic chain.
+``plan`` builds the SPXW job queue and prints counts only. ``db`` runs the theta
+schema Alembic chain.
 """
 
+from datetime import date
 from typing import Annotated, Optional
 
 import typer
@@ -121,6 +123,103 @@ def status(database_url: DatabaseUrlOption = None) -> None:
     """Show backfill record counts."""
     del database_url
     _not_implemented()
+
+
+def _blank(value: str | None) -> str | None:
+    """Treat a blank database URL as unset.
+
+    Args:
+        value: URL from the option or the environment.
+
+    Returns:
+        The stripped URL, or ``None`` when it is missing or blank.
+    """
+    if value is None or not value.strip():
+        return None
+    return value.strip()
+
+
+def _plan_dates(start: str, end: str) -> tuple[date, date]:
+    """Parse plan dates.
+
+    Args:
+        start: ``YYYY-MM-DD`` start.
+        end: ``YYYY-MM-DD`` end.
+
+    Returns:
+        The two dates.
+
+    Raises:
+        typer.Exit: Either value is not an ISO date.
+    """
+    try:
+        return date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        typer.echo("dates must be YYYY-MM-DD", err=True)
+        raise typer.Exit(code=1) from None
+
+
+@theta_app.command("plan")
+def plan(
+    start: Annotated[str, typer.Option("--start", help="First date (YYYY-MM-DD)")],
+    end: Annotated[str, typer.Option("--end", help="Last date (YYYY-MM-DD)")],
+    dataset: Annotated[
+        Optional[list[str]],
+        typer.Option(
+            "--dataset",
+            help="Dataset to plan. Repeat the option or comma-separate names. Default: all SPXW datasets.",
+        ),
+    ] = None,
+    max_dte: Annotated[
+        Optional[int],
+        typer.Option(
+            "--max-dte",
+            help="Optional calendar DTE cap. Default: every listed expiration inside the horizon.",
+        ),
+    ] = None,
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
+    database_url: DatabaseUrlOption = None,
+) -> None:
+    """Plan SPXW jobs and print counts only.
+
+    Expirations come from ``option/list/expirations?symbol=SPXW``. A start before
+    2022-05-16 is clamped. The output is counts, not dates or rows.
+    """
+    from curator.thetadata.exceptions import sanitize_text
+    from curator.thetadata.planner import (
+        PlanError,
+        fetch_spxw_expirations,
+        format_plan_counts,
+        parse_datasets,
+        resolve_range,
+        run_plan,
+    )
+    from curator.thetadata.progress import open_progress_store
+
+    start_day, end_day = _plan_dates(start, end)
+    try:
+        resolve_range(start_day, end_day)
+        parse_datasets(dataset)
+        if max_dte is not None and max_dte < 0:
+            raise PlanError("max_dte must be >= 0")
+        expirations = fetch_spxw_expirations(api_url)
+        with open_progress_store(_blank(database_url)) as store:
+            result = run_plan(
+                expirations,
+                start_day,
+                end_day,
+                datasets=dataset,
+                max_dte=max_dte,
+                queue=store,
+                materialize=False,
+            )
+    except PlanError as exc:
+        typer.echo(sanitize_text(str(exc)), err=True)
+        raise typer.Exit(code=1) from None
+    except Exception as exc:
+        typer.echo(sanitize_text(str(exc)), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(format_plan_counts(result), nl=False)
 
 
 @theta_app.command("migrate")
