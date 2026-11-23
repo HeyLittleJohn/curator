@@ -527,12 +527,6 @@
         "startColumn": 13,
         "endColumn": 52,
         "lineCount": 1
-      },
-      {
-        "rule": "no-matching-overload",
-        "startColumn": 22,
-        "endColumn": 1,
-        "lineCount": 8
       }
     ],
     "curator/utils.py": [

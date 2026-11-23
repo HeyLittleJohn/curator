@@ -11,8 +11,7 @@ from typing import Any, Callable, TypedDict
 
 import pandas_market_calendars as mcal
 import uvloop
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
 DEBUG = False
@@ -25,6 +24,14 @@ if SENTRY_URL:
     sentry_sdk.init(
         dsn=SENTRY_URL,
         traces_sample_rate=0.1,
+        # SDK 3 sends every stack local and HTTP body unless this is set.
+        # Denylist mode only filters top-level names, so locals such as
+        # database_uri and payload would still carry secrets.
+        data_collection={
+            "stack_frame_variables": False,
+            "http_bodies": [],
+            "url_query_params": {"mode": "denylist"},
+        },
     )
 
 
@@ -115,7 +122,6 @@ if SENTRY_URL:
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
-    future=True,
     echo=False,
     echo_pool=True,
     max_overflow=40,
@@ -129,13 +135,11 @@ async_engine = create_async_engine(
 logging.getLogger("sqlalchemy.engine").setLevel(logging.CRITICAL)
 logging.getLogger("sqlalchemy.dialects").setLevel(logging.CRITICAL)
 
-async_session_maker = sessionmaker(
+async_session_maker = async_sessionmaker(
     async_engine,
-    autoflush=False,
-    autocommit=False,
     class_=AsyncSession,
+    autoflush=False,
     expire_on_commit=False,
-    future=True,
 )
 
 
