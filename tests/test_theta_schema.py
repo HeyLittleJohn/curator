@@ -120,9 +120,14 @@ def test_offline_upgrade_sql_builds_theta_chain() -> None:
     for table_name in CONFLICT_COLUMNS:
         assert f"create table {THETA_SCHEMA}.{table_name}" in normalized
         table = ThetaBase.metadata.tables[f"{THETA_SCHEMA}.{table_name}"]
-        block = normalized.split(f"create table {THETA_SCHEMA}.{table_name}", 1)[1].split("create table", 1)[0]
+        rest = normalized.split(f"create table {THETA_SCHEMA}.{table_name}", 1)[1]
+        block = rest.split("create table", 1)[0]
         for column in table.columns:
-            assert column.name in block
+            if column.name in block:
+                continue
+            # A later theta revision may add the column after the version table
+            # is created, which ends the original CREATE TABLE chunk.
+            assert f"add column {column.name}" in rest
     assert "gamma" not in normalized
     assert "vanna" not in normalized
     downgrade = render_migration_sql("downgrade", "base").replace('"', "").lower()

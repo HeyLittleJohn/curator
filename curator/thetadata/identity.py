@@ -109,22 +109,30 @@ def interval_seconds_for_dte(
     calendar_dte_days: int,
     *,
     one_minute_max_dte: int = ONE_MINUTE_MAX_CALENDAR_DTE,
+    near_interval_s: int = INTERVAL_1M_SECONDS,
+    far_interval_s: int = INTERVAL_15M_SECONDS,
 ) -> int:
     """Pick the one bar size for a contract on one session.
 
     Args:
         calendar_dte_days: Calendar days from the session to expiration.
-        one_minute_max_dte: Inclusive upper bound for 1-minute bars.
+        one_minute_max_dte: Inclusive upper bound for the near interval.
+            The default of 5 covers the last 6 calendar days, DTE 0 through 5.
+        near_interval_s: Bar length in seconds when calendar DTE is inside the bound.
+        far_interval_s: Bar length in seconds when calendar DTE is outside the bound.
 
     Returns:
-        60 when calendar DTE is 0 through ``one_minute_max_dte``, otherwise 900.
-        Each contract-session has one interval, so ``(contract_id, ts)`` stays unique.
+        ``near_interval_s`` when calendar DTE is 0 through ``one_minute_max_dte``,
+        otherwise ``far_interval_s``. The defaults are 60 and 900. Each
+        contract-session has one interval, so ``(contract_id, ts)`` stays unique.
 
     Raises:
-        ValueError: If ``one_minute_max_dte`` is negative.
+        ValueError: If ``one_minute_max_dte`` is negative or either interval is not positive.
     """
     if one_minute_max_dte < 0:
         raise ValueError("one_minute_max_dte must be >= 0")
+    if near_interval_s <= 0 or far_interval_s <= 0:
+        raise ValueError("intervals must be positive seconds")
     if 0 <= calendar_dte_days <= one_minute_max_dte:
-        return INTERVAL_1M_SECONDS
-    return INTERVAL_15M_SECONDS
+        return near_interval_s
+    return far_interval_s
