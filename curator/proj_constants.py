@@ -24,6 +24,14 @@ if SENTRY_URL:
     sentry_sdk.init(
         dsn=SENTRY_URL,
         traces_sample_rate=0.1,
+        # SDK 3 sends every stack local and HTTP body unless this is set.
+        # Denylist mode only filters top-level names, so locals such as
+        # database_uri and payload would still carry secrets.
+        data_collection={
+            "stack_frame_variables": False,
+            "http_bodies": [],
+            "url_query_params": {"mode": "denylist"},
+        },
     )
 
 
