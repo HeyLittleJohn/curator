@@ -14,8 +14,10 @@ take that lock; the parent holds it for the whole run.
 from __future__ import annotations
 
 import asyncio
+import errno
 import fcntl
 import os
+import stat
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager, contextmanager
 from multiprocessing.synchronize import Semaphore as MpSemaphore
@@ -131,6 +133,49 @@ async def account_request_slot(limit: int | None = None) -> AsyncGenerator[None,
         slots.release()
 
 
+def _unsafe_lock_path() -> ThetaDataMachineLockError:
+    """Build the error raised when the lock path is not safe to open.
+
+    Returns:
+        An error whose message does not include the path, credentials, or a DSN.
+    """
+    return ThetaDataMachineLockError(
+        "The theta backfill lock must be a regular file owned by this user. "
+        "Refusing to open a symlink or another user's file."
+    )
+
+
+def _open_lock_file(path: Path) -> int:
+    """Open the lock file without following a symlink.
+
+    Args:
+        path: Lock file path. The parent directory must already exist.
+
+    Returns:
+        A file descriptor for a regular file owned by this user.
+
+    Raises:
+        ThetaDataMachineLockError: The path is a symlink, not a regular file,
+            or owned by another user.
+    """
+    flags = os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+    try:
+        file_handle = os.open(path, flags, 0o600)
+    except OSError as exc:
+        if exc.errno in {errno.ELOOP, errno.EISDIR}:
+            raise _unsafe_lock_path() from None
+        raise
+    try:
+        info = os.fstat(file_handle)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            raise _unsafe_lock_path()
+        os.fchmod(file_handle, 0o600)
+    except OSError, ThetaDataMachineLockError:
+        os.close(file_handle)
+        raise
+    return file_handle
+
+
 def _lock_error() -> ThetaDataMachineLockError:
     """Build the error raised when the machine lock is already held.
 
@@ -170,7 +215,7 @@ def _machine_lock(path: Path) -> Generator[None, None, None]:
         return
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    file_handle = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    file_handle = _open_lock_file(path)
     try:
         fcntl.flock(file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError as exc:

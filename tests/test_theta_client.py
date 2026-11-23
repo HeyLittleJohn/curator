@@ -549,6 +549,27 @@ def test_machine_lock_is_reentrant_and_blocks_a_second_process(tmp_path: Path) -
     assert process.exitcode == 0
 
 
+def test_lock_refuses_symlink_and_directory(tmp_path: Path) -> None:
+    """A planted symlink is not followed, and a directory cannot be the lock file."""
+    victim = tmp_path / "victim"
+    victim.write_text("keep")
+    link = tmp_path / "theta.lock"
+    link.symlink_to(victim)
+    with pytest.raises(ThetaDataMachineLockError):
+        asyncio.run(_once(link))
+    assert victim.read_text() == "keep"
+
+    directory = tmp_path / "lock-dir"
+    directory.mkdir()
+    with pytest.raises(ThetaDataMachineLockError):
+        asyncio.run(_once(directory))
+
+    private = tmp_path / "private.lock"
+    asyncio.run(_once(private))
+    assert private.is_file()
+    assert (private.stat().st_mode & 0o777) == 0o600
+
+
 async def _once(path: Path) -> None:
     """Take the machine lock once.
 
