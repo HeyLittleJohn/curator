@@ -4,6 +4,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
+from curator.thetadata.client.errors import ThetaDataSubscriptionError
 from curator.thetadata.downloaders.base import BaseDownloader
 from curator.thetadata.models.option import (
     OptionGreeks,
@@ -123,7 +124,22 @@ class OptionTradeGreeksDownloader(BaseDownloader[OptionTradeGreeksResponse, Opti
         return f"option/list/dates/{request_type}"
 
     def get_history_endpoint(self, request_type: str) -> str:
-        return "option/history/trade_greeks/all"
+        """Refuse trade greeks. They are not on the Options Standard plan.
+
+        Args:
+            request_type: Unused data type name.
+
+        Returns:
+            Never.
+
+        Raises:
+            ThetaDataSubscriptionError: Always. ``trade_greeks`` requires Pro.
+        """
+        del request_type
+        raise ThetaDataSubscriptionError(
+            "option/history/trade_greeks is not included in the ThetaData Options Standard subscription. "
+            "Second-order greeks, third-order greeks, greeks/all, and trade_greeks require Pro."
+        )
 
     def build_request_params(
         self,
@@ -244,7 +260,16 @@ class OptionGreeksDownloader(BaseDownloader[OptionGreeksResponse, OptionGreeks])
         return f"option/list/dates/{request_type}"
 
     def get_history_endpoint(self, request_type: str) -> str:
-        return "option/history/greeks/all"
+        """Return the Options Standard first-order greeks path.
+
+        Args:
+            request_type: Unused. The Standard plan has one greeks route.
+
+        Returns:
+            ``option/history/greeks/first_order``.
+        """
+        del request_type
+        return "option/history/greeks/first_order"
 
     def build_request_params(
         self,

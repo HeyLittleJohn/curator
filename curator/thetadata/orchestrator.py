@@ -18,6 +18,7 @@ from rich.table import Table
 
 from curator.thetadata.client import ThetaDataClient
 from curator.thetadata.config import BackfillMode, Settings
+from curator.thetadata.limits import backfill_lock
 from curator.thetadata.workers import WorkerResult, WorkerTask, run_tasks
 
 logger = logging.getLogger(__name__)
@@ -132,6 +133,18 @@ class Orchestrator:
         job: BackfillJob,
     ) -> BackfillStats:
         """Run a backfill job.
+
+        Args:
+            job: Backfill job definition.
+
+        Returns:
+            Statistics for the backfill run.
+        """
+        async with backfill_lock(self.settings.lock_path):
+            return await self._run_backfill_locked(job)
+
+    async def _run_backfill_locked(self, job: BackfillJob) -> BackfillStats:
+        """Run a backfill while this process holds the machine lock.
 
         Args:
             job: Backfill job definition.
