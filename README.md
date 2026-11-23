@@ -14,19 +14,12 @@ This is a python project, and will utilize uv to manage dependencies. This proje
 
 ### UV
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use it to create a venv for this project with a version of python that is >=3.11
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and use it to create a venv. The project requires Python >=3.14 and pins development and CI to 3.15.2 (`.python-version`).
 
 ```bash
-uv python install
-uv venv 
+uv python install 3.15.2
+uv venv --python 3.15.2
 uv sync
-```
-
-If you want a particular version of python, you can specify it with the `--python` flag.
-
-```bash
-uv python install --python 3.11
-uv venv --python 3.11
 ```
 
 ### Data Sources
@@ -36,7 +29,7 @@ We will utilize Polygon.io and Robinhood as our sources of historical and curren
 Store your Polygon.io API key locally in your `.bashrc` file in a variable called `"POLYGON_API_KEY"`
 Likewise, store your username, password, and MFA QR code for Robinhood locally using variable names `"RH_USRNAME"`, `"RH_PASSWORD"`, and `"RH_QR"`.
 
-We are also beginning to support [ThetaData](https://www.thetadata.net/) as of March 2025. 
+We are also beginning to support [ThetaData](https://www.thetadata.net/) as of March 2025. The backfill command group is `uv run curator theta --help`. 
 
 ## Launch the CLI
 

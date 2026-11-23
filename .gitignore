@@ -1,9 +1,7 @@
 *.pyc
 .mypy_cache/*
 /bin/notes.txt
-.python-version
 .logs/*
 */temp/*
-.python-version
 *.code-workspace
 **/__pycache__/**
