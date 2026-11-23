@@ -8,7 +8,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class OptionRight(str, Enum):
@@ -100,6 +100,8 @@ class OptionQuoteResponse(BaseModel):
 class OptionGreeksResponse(BaseModel):
     """Full Greeks data response including first and second order Greeks."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     # Contract info
     symbol: str
     expiration: date
@@ -138,12 +140,11 @@ class OptionGreeksResponse(BaseModel):
     speed: Optional[Decimal] = None
     ultima: Optional[Decimal] = None
 
-    class Config:
-        populate_by_name = True
-
 
 class OptionTradeGreeksResponse(BaseModel):
     """Trade with Greeks data response."""
+
+    model_config = ConfigDict(populate_by_name=True)
 
     # Contract info
     symbol: str
@@ -189,9 +190,6 @@ class OptionTradeGreeksResponse(BaseModel):
     zomma: Optional[Decimal] = None
     speed: Optional[Decimal] = None
     ultima: Optional[Decimal] = None
-
-    class Config:
-        populate_by_name = True
 
 
 class OptionOpenInterestResponse(BaseModel):
