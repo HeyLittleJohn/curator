@@ -10,7 +10,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # Import models so they're registered with Base.metadata
-from thetadata_backfill.models import Base
+from curator.thetadata.models import Base
 
 config = context.config
 
@@ -25,10 +25,7 @@ def get_url() -> str:
     """Get database URL from environment."""
     url = os.environ.get("THETADATA_DATABASE_URL")
     if url is None:
-        raise ValueError(
-            "THETADATA_DATABASE_URL environment variable not set. "
-            "Set it before running migrations."
-        )
+        raise ValueError("THETADATA_DATABASE_URL environment variable not set. Set it before running migrations.")
     # Ensure we use asyncpg driver
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
@@ -64,7 +61,7 @@ async def run_async_migrations() -> None:
     """Run migrations in async mode."""
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = get_url()
-    
+
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",

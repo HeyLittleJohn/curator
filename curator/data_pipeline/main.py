@@ -10,6 +10,7 @@ from curator.data_pipeline.orchestrator import (
     remove_tickers_from_universe,
 )
 from curator.data_pipeline.silver_futures_upload import silver_app
+from curator.thetadata.cli import theta_app
 from curator.utils import months_ago
 
 DEFAULT_MONTHS_HIST = 24
@@ -19,6 +20,7 @@ DEFAULT_REFRESH_PARTIAL: list[int] = [5]
 
 app = typer.Typer(help="CLI for adding stocks to the data pull process and for refreshing stock/options pricing data")
 app.add_typer(silver_app, name="silver")
+app.add_typer(theta_app, name="theta")
 
 
 def validate_partial(ctx, param, value: list[int]):

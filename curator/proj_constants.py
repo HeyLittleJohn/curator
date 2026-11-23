@@ -50,7 +50,23 @@ def db_uri_maker() -> str:
     return database_uri
 
 
-POSTGRES_DATABASE_URL = db_uri_maker()
+def _postgres_credentials_present() -> bool:
+    """Return whether ``db_uri_maker`` has the environment it reads.
+
+    Returns:
+        True when a local pgpass file or a ``postgres`` env payload is set.
+    """
+    if os.environ.get("ENVIRONMENT") == "LOCAL":
+        return bool(os.environ.get("PGPASSFILE"))
+    return bool(os.environ.get("postgres"))
+
+
+if _postgres_credentials_present():
+    POSTGRES_DATABASE_URL = db_uri_maker()
+else:
+    # Importing the CLI must succeed on a checkout with no database configured.
+    # The engine is still constructed; nothing connects until a command uses it.
+    POSTGRES_DATABASE_URL = "postgresql+psycopg://localhost/curator"
 POSTGRES_BATCH_MAX = 62000
 
 
