@@ -11,8 +11,7 @@ from typing import Any, Callable, TypedDict
 
 import pandas_market_calendars as mcal
 import uvloop
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 ENVIRONMENT = os.environ.get("ENVIRONMENT")
 DEBUG = False
@@ -115,7 +114,6 @@ if SENTRY_URL:
 
 async_engine = create_async_engine(
     POSTGRES_DATABASE_URL,
-    future=True,
     echo=False,
     echo_pool=True,
     max_overflow=40,
@@ -129,13 +127,11 @@ async_engine = create_async_engine(
 logging.getLogger("sqlalchemy.engine").setLevel(logging.CRITICAL)
 logging.getLogger("sqlalchemy.dialects").setLevel(logging.CRITICAL)
 
-async_session_maker = sessionmaker(
+async_session_maker = async_sessionmaker(
     async_engine,
-    autoflush=False,
-    autocommit=False,
     class_=AsyncSession,
+    autoflush=False,
     expire_on_commit=False,
-    future=True,
 )
 
 
