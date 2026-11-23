@@ -29,7 +29,7 @@ We will utilize Polygon.io and Robinhood as our sources of historical and curren
 Store your Polygon.io API key locally in your `.bashrc` file in a variable called `"POLYGON_API_KEY"`
 Likewise, store your username, password, and MFA QR code for Robinhood locally using variable names `"RH_USRNAME"`, `"RH_PASSWORD"`, and `"RH_QR"`.
 
-We are also beginning to support [ThetaData](https://www.thetadata.net/) as of March 2025. The backfill command group is `uv run curator theta --help`. 
+We are also beginning to support [ThetaData](https://www.thetadata.net/) as of March 2025. The backfill command group is `uv run curator theta --help`. SPXW tables live in schema `theta` inside the markets database; `uv run curator theta db upgrade` applies that chain and leaves the main Alembic history alone. 
 
 ## Launch the CLI
 

@@ -3,12 +3,29 @@
 All settings can be configured via environment variables or CLI arguments.
 """
 
+from datetime import date
 from enum import Enum
 from functools import lru_cache
 from typing import Optional
 
 from pydantic import Field, PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Schema name for every theta table, partition, and the theta Alembic version table.
+THETA_SCHEMA: str = "theta"
+ALEMBIC_VERSION_TABLE: str = "alembic_version_theta"
+
+# First session of the Options Standard backfill (daily SPXW expirations).
+BACKFILL_START: date = date(2022, 5, 16)
+
+# Fixed window the initial revision partitions. Later months use add_partitions_ahead.
+INITIAL_PARTITION_START: date = date(2022, 5, 1)
+INITIAL_PARTITION_UNTIL: date = date(2028, 1, 1)
+
+# Calendar DTE 0-5 is 1-minute; anything else on that contract-session is 15-minute.
+INTERVAL_1M_SECONDS: int = 60
+INTERVAL_15M_SECONDS: int = 900
+ONE_MINUTE_MAX_CALENDAR_DTE: int = 5
 
 
 class BackfillMode(str, Enum):
@@ -49,7 +66,7 @@ class Settings(BaseSettings):
     # PostgreSQL settings
     database_url: Optional[PostgresDsn] = Field(
         default=None,
-        description="PostgreSQL connection string (e.g., postgresql+asyncpg://user:pass@host:5432/db)",
+        description="PostgreSQL URL for the markets database. Theta tables use THETA_SCHEMA.",
     )
     db_pool_min_size: int = Field(
         default=5,

@@ -21,6 +21,17 @@ from curator.thetadata.models.option import (
     OptionTrade,
     OptionTradeGreeks,
 )
+from curator.thetadata.models.theta import (
+    CONFLICT_COLUMNS,
+    EOD,
+    OHLC,
+    Contract,
+    GreeksFirstOrder,
+    OpenInterest,
+    Progress,
+    Quote,
+    ThetaBase,
+)
 
 __all__ = [
     # Base
@@ -43,4 +54,14 @@ __all__ = [
     "IndexOHLC",
     "IndexPrice",
     "IndexEOD",
+    # Theta schema
+    "ThetaBase",
+    "CONFLICT_COLUMNS",
+    "Contract",
+    "Quote",
+    "OHLC",
+    "GreeksFirstOrder",
+    "OpenInterest",
+    "EOD",
+    "Progress",
 ]

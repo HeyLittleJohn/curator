@@ -98,9 +98,15 @@ exclude = ["curator/thetadata/_shelved_rust"]
 [tool.ty]
 baseline = "ty-baseline.json"
 
+[tool.pytest.ini_options]
+addopts = "-m 'not postgres'"
+markers = [
+    "postgres: scratch Postgres round-trip for the theta schema; not part of CI",
+]
+
 [tool.ty.src]
 exclude = [
   "curator/thetadata/_shelved_rust/**",
   "alembic/**",
-  "curator/alembic/**",
+  "curator/thetadata/migrations/**",
 ]
