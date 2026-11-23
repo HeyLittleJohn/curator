@@ -33,6 +33,7 @@ ApiUrlOption = Annotated[
     str,
     typer.Option("--api-url", envvar="THETADATA_API_BASE_URL", help="ThetaData API base URL"),
 ]
+_DEFAULT_API_URL = "http://127.0.0.1:25503/v3"
 WorkerCountOption = Annotated[
     Optional[int],
     typer.Option("--workers", "-w", envvar="THETADATA_WORKER_COUNT", help="Number of worker processes"),
@@ -58,7 +59,7 @@ EndDateOption = Annotated[
 @theta_app.command("equities")
 def equities(
     database_url: DatabaseUrlOption = None,
-    api_url: ApiUrlOption = "http://localhost:25503/v3",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
     workers: WorkerCountOption = None,
     mode: ModeOption = BackfillMode.FULL,
     symbols: SymbolsOption = None,
@@ -73,7 +74,7 @@ def equities(
 @theta_app.command("options")
 def options(
     database_url: DatabaseUrlOption = None,
-    api_url: ApiUrlOption = "http://localhost:25503/v3",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
     workers: WorkerCountOption = None,
     mode: ModeOption = BackfillMode.FULL,
     symbols: SymbolsOption = None,
@@ -88,7 +89,7 @@ def options(
 @theta_app.command("indices")
 def indices(
     database_url: DatabaseUrlOption = None,
-    api_url: ApiUrlOption = "http://localhost:25503/v3",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
     workers: WorkerCountOption = None,
     mode: ModeOption = BackfillMode.FULL,
     symbols: SymbolsOption = None,
@@ -103,7 +104,7 @@ def indices(
 @theta_app.command("all")
 def backfill_all(
     database_url: DatabaseUrlOption = None,
-    api_url: ApiUrlOption = "http://localhost:25503/v3",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
     workers: WorkerCountOption = None,
     mode: ModeOption = BackfillMode.FULL,
     symbols: SymbolsOption = None,
