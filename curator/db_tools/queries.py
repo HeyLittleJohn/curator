@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import datetime
 
 import pandas as pd
-from sqlalchemy import Row, case, delete, func, or_, select
+from sqlalchemy import Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,6 +22,25 @@ from curator.db_tools.schemas import (
     TickerModel,
 )
 from curator.utils import Session, months_ago
+
+
+@Session
+async def lookup_ticker_id(session: AsyncSession, ticker_str: str, stock: bool = True) -> int:
+    """Function to find the pk_id of a given ticker. Handles both Stock and Option ticker lookups
+
+    Args:
+        ticker_str: str
+        This is the canonical ticker (like SPY or O:SPY251219C00650000)
+
+        stock: bool (default=True)
+        An indicator of whether this is a stock (default) or option ticker being looked up
+
+    Returns:
+        ticker_id: int
+        The pk_id of the ticker on either the StockTickers or OptionsTickers tables"""
+    table = StockTickers if stock else OptionsTickers
+    column = StockTickers.ticker if stock else OptionsTickers.options_ticker
+    return (await session.execute(select(table.id, column).where(column == ticker_str))).scalars().one()
 
 
 @Session
@@ -91,6 +110,19 @@ async def query_stock_tickers(session: AsyncSession, tickers: list[str], all_: b
     if not all_:
         stmt = stmt.where(StockTickers.ticker.in_(tickers))
     return (await session.execute(stmt)).all()  # type: ignore
+
+
+@Session
+async def ticker_imported(session: AsyncSession, ticker_id: int):
+    """Function updates the StockTickers table to indicate a stock's prices have been imported
+
+    Args:
+        ticker_id: int
+        The pk_id of the ticker that has been imported"""
+    return await session.execute(
+        update(StockTickers).where(StockTickers.id == ticker_id).values(imported=True)
+        # .returning(StockTickers.ticker, StockTickers.imported)
+    )  # .one()
 
 
 @Session

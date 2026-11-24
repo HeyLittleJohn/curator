@@ -26,6 +26,10 @@ def timestamp_to_datetime(timestamp: int, msec_units: bool = True, nano_sec: boo
     return datetime.fromtimestamp(timestamp / dem)
 
 
+def string_to_datetime(date_string: str, date_format: str = "%Y-%m-%d") -> datetime:
+    return datetime.strptime(date_string, date_format)
+
+
 def string_to_date(date_string: str, date_format: str = "%Y-%m-%d") -> datetime.date:
     return datetime.strptime(date_string, date_format).date()
 
@@ -54,6 +58,11 @@ def trading_days_in_range(start_date: str, end_date: str, cal_type="e_cal", coun
 def timestamp_now(msec_units: bool = True):
     """returns a timestamp in milliseconds"""
     return int(datetime.now().timestamp() * 1000) if msec_units else int(datetime.now().timestamp())
+
+
+def chunk_iter_generator(data: list, size=250000):
+    for i in range(0, len(data), size):
+        yield data[i : i + size]
 
 
 def clean_o_ticker(o_ticker: str) -> str:
