@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -43,6 +44,20 @@ JAN4 = date(2024, 1, 4)
 EXP = date(2024, 1, 5)
 DATASETS = ("quotes",)
 Handler = Callable[[web.Request], Awaitable[web.StreamResponse]]
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Drop ANSI color codes from captured CLI text.
+
+    Args:
+        text: Stdout or stderr from ``CliRunner``.
+
+    Returns:
+        The same text without escape sequences. Typer's highlighter can split
+        ``--wait`` when GitHub Actions forces a color terminal.
+    """
+    return _ANSI.sub("", text)
 
 
 @pytest.fixture(autouse=True)
@@ -509,12 +524,13 @@ def test_cli_skips_early_and_exits_nonzero_on_job_failures(tmp_path: Path, monke
     """Help documents the default, a skip exits 0, and job failures exit 1."""
     help_result = CliRunner().invoke(app, ["theta", "--help"])
     assert help_result.exit_code == 0
-    assert "nightly" in help_result.stdout
-    nightly_help = CliRunner().invoke(app, ["theta", "nightly", "--help"])
-    assert nightly_help.exit_code == 0
-    assert "17:15" in nightly_help.stdout
-    assert "--wait" in nightly_help.stdout
-    assert "exit 0" in nightly_help.stdout
+    assert "nightly" in _plain(help_result.stdout)
+    nightly_result = CliRunner().invoke(app, ["theta", "nightly", "--help"])
+    assert nightly_result.exit_code == 0
+    nightly_help = _plain(nightly_result.stdout)
+    assert "17:15" in nightly_help
+    assert "--wait" in nightly_help
+    assert "exit 0" in nightly_help
 
     async def skipped(**_kwargs: object) -> NightlyReport:
         """Return an early skip.
