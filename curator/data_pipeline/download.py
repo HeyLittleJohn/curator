@@ -2,14 +2,7 @@ from datetime import datetime
 
 from aiomultiprocess import Pool
 
-from curator.data_pipeline.exceptions import (
-    InvalidArgs,
-    ProjBaseException,
-    ProjClientConnectionError,
-    ProjClientResponseError,
-    ProjIndexError,
-    ProjTimeoutError,
-)
+from curator.data_pipeline.exceptions import InvalidArgs
 from curator.data_pipeline.polygon_utils import (
     CurrentContractSnapshot,
     HistoricalOptionsPrices,
@@ -24,15 +17,6 @@ from curator.db_tools.queries import lookup_multi_ticker_ids
 from curator.db_tools.utils import OptionTicker
 from curator.proj_constants import POLYGON_BASE_URL, log
 from curator.utils import pool_kwarg_config
-
-planned_exceptions = (
-    InvalidArgs,
-    ProjClientConnectionError,
-    ProjBaseException,
-    ProjClientResponseError,
-    ProjIndexError,
-    ProjTimeoutError,
-)
 
 
 async def api_pool_downloader(

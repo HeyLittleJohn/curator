@@ -12,13 +12,10 @@ readme = "README.md"
 
 dependencies = [
     "aiomultiprocess",
-    "requests>=2.34.2",
-    "types-requests>=2.33.0.20261030",
     "aiohttp>=3.14.5",
     "sentry-sdk>=3.0.0",
     "uvloop>=0.23.0",
     "pandas-market-calendars>=5.6.1",
-    "scikit-learn>=1.9.1",
     "typer>=0.29.2",
     "pydantic>=2.14.4",
     # 2.1 moved the asyncio greenlet dependency into the asyncio extra.
@@ -42,7 +39,6 @@ aiomultiprocess = { git = "https://github.com/jhirschibar/aiomultiprocess.git", 
 
 [dependency-groups]
 dev = [
-    "pre-commit>=4.7.0",
     "ipython>=9.19.1",
     "ipykernel>=7.4.0",
     "ruff>=0.17.6",
@@ -54,7 +50,7 @@ dev = [
 target-version = "py314"
 fix = true
 line-length = 120
-exclude = ["alembic", "curator/thetadata/_shelved_rust"]
+exclude = ["alembic"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B","TID252", "NPY201", "C901"]
@@ -89,12 +85,6 @@ line-ending = "auto"
 quote-style = "double"
 indent-style = "space"
 
-[tool.hatch.build.targets.wheel]
-exclude = ["curator/thetadata/_shelved_rust"]
-
-[tool.hatch.build.targets.sdist]
-exclude = ["curator/thetadata/_shelved_rust"]
-
 [tool.ty]
 baseline = "ty-baseline.json"
 
@@ -106,7 +96,6 @@ markers = [
 
 [tool.ty.src]
 exclude = [
-  "curator/thetadata/_shelved_rust/**",
   "alembic/**",
   "curator/thetadata/migrations/**",
 ]

@@ -32,10 +32,6 @@ class InvalidArgs(ProjBaseException):
     """Exception when incorrect args are passed to the CLI"""
 
 
-class APIOverload(ProjBaseException):
-    """Error indicating a need to wait 1 min before making more API requests"""
-
-
 class ProjTypeError(ProjBaseException, TypeError):
     """TypeError with ProjBaseException"""
 
@@ -78,11 +74,3 @@ class ProjAPIOverload(ProjBaseException):
 
 class ProjAPIError(ProjBaseException):
     """An exception indicating a 400 response from the API"""
-
-
-class PoolResultException(ProjBaseException):
-    """An exception indicating an error in the pool results"""
-
-
-class ProjPoolResultException(ProjBaseException):
-    """An exception indicating an error in the pool results"""

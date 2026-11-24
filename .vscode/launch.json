@@ -46,23 +46,6 @@
                 "-Xfrozen_modules=off"
             ],
             "justMyCode": true
-        },
-        {
-            "name": "Training Agent",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "~/curator/curator/rl_agent/main.py",
-            "console": "integratedTerminal",
-            "justMyCode": true,
-            "args": [
-                "train",
-                "SPY",
-                "2023-01-01",
-                "1"
-            ],
-            "env": {
-                "PYDEVD_DISABLE_FILE_VALIDATION": "1"
-            }
         }
     ]
 }

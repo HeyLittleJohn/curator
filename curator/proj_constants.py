@@ -96,8 +96,6 @@ POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 
 # total number of requests the API can handle at once. 100/sec rate limit
 MAX_CONCURRENT_REQUESTS = 250
-# Max number of requests per minute for the free API tier: 5
-MAX_QUERY_PER_MINUTE = 4
 
 CPUS = cpu_count() - 2
 
