@@ -14,7 +14,7 @@ from sqlalchemy.engine import Engine
 
 from curator.thetadata.migrate import run_migration, to_sync_database_url
 from curator.thetadata.planner import run_plan
-from curator.thetadata.progress import DONE, PostgresProgressStore
+from curator.thetadata.progress import DONE, ORDER_OLDEST, PENDING, PostgresProgressStore
 from curator.thetadata.secrets import scrub_secrets
 
 pytestmark = pytest.mark.postgres
@@ -123,6 +123,45 @@ def test_claim_skip_locked_and_finished_rerun() -> None:
         assert second.jobs == ()
         assert second.counts.writes == 0
         assert second.counts.skipped_done == 2
+    finally:
+        _reset(engine)
+        engine.dispose()
+
+
+def test_claim_order_is_newest_first_and_oldest_reverses_it() -> None:
+    """The claim statement returns the newest session first."""
+    _require_database()
+    engine = _engine()
+    near = date(2022, 5, 20)
+    far = date(2022, 6, 17)
+    start = date(2022, 5, 16)
+    end = date(2022, 5, 18)
+    try:
+        _reset(engine)
+        run_migration("upgrade", "head", os.environ["THETADATA_TEST_DATABASE_URL"])
+        with engine.begin() as connection:
+            store = PostgresProgressStore(connection)
+            run_plan(
+                [near, far],
+                start,
+                end,
+                datasets=["quotes", "eod"],
+                queue=store,
+                materialize=False,
+            )
+            first = store.claim(2)
+            assert [job.trade_date for job in first] == [end, end]
+            rest = store.claim(20)
+            claimed = first + rest
+            keys = [(job.trade_date, job.expiration, job.dataset) for job in claimed]
+            assert len(keys) == 12
+            assert keys == sorted(keys, reverse=True)
+            for job in claimed:
+                store.mark(job, PENDING, 0)
+            oldest = store.claim(20, order=ORDER_OLDEST)
+            old_keys = [(job.trade_date, job.expiration, job.dataset) for job in oldest]
+            assert old_keys == sorted(old_keys)
+            assert old_keys == list(reversed(keys))
     finally:
         _reset(engine)
         engine.dispose()

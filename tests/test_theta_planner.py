@@ -163,6 +163,23 @@ def test_default_keeps_far_expirations_and_drops_the_placeholder() -> None:
     assert capped.counts.placeholders == 1
 
 
+def test_horizon_end_keeps_expirations_past_a_one_day_slice() -> None:
+    """A one-day slice can measure the placeholder horizon from the backfill end."""
+    end = date(2026, 11, 24)
+    expiration = end + timedelta(days=FAR_EXPIRATION_HORIZON_DAYS)
+    day = date(2022, 5, 16)
+    narrowed = run_plan([expiration], day, day, datasets=["eod"])
+    assert narrowed.jobs == ()
+    kept = run_plan([expiration], day, day, datasets=["eod"], horizon_end=end)
+    assert {job.expiration for job in kept.jobs} == {expiration}
+    try:
+        run_plan([expiration], end, end, datasets=["eod"], horizon_end=day)
+    except PlanRangeError:
+        pass
+    else:
+        raise AssertionError("horizon_end before the plan end was accepted")
+
+
 def test_horizon_boundary_is_inclusive() -> None:
     """An expiration exactly on the horizon stays. The next day is a placeholder."""
     end = date(2022, 5, 16)
@@ -348,6 +365,7 @@ def test_claim_sql_uses_skip_locked_and_insert_keeps_conflicts() -> None:
     assert "returning" in sql
     assert "status = 'pending'" in sql
     assert "status = 'running'" in sql
+    assert 'order by "date" desc, expiration desc, dataset desc' in sql
     assert "://" not in sql
     compiled = str(pending_insert_statement().compile(dialect=postgresql.dialect()))
     normalized = " ".join(compiled.lower().split())

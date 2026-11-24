@@ -35,6 +35,14 @@ The live expiration list has returned 2305 dates from 2012-06-01 through 2089-06
 
 `theta.progress` is the queue. Statuses are `pending`, `running`, `done`, `failed`, and `empty`. Resume skips `done` and `empty`. Planning a day whose jobs are all finished writes nothing and queues nothing. `failed` rows are requeued. `running` rows older than one hour are reset to `pending` on resume. `interval_s` is stored per job so a later cutoff change does not rewrite a finished row. Claiming is one statement: `UPDATE ... WHERE status = 'pending' ... FOR UPDATE SKIP LOCKED ... RETURNING`. Two worker processes cannot take the same job. The claimed record is a picklable `PlanJob` for the aiomultiprocess pool.
 
+## Backfill order
+
+`curator theta backfill` loads the newest NYSE session first and finishes that session before it plans the next older one. The walk stops at the 2022-05-16 floor. `--order oldest` restores the forward walk. An interrupted run resumes at the newest unfinished session, skipping sessions that are already done or empty.
+
+The backfill claims inside the session it is draining, so the worker pool does not start the next session early. The claim statement still orders by session date, then expiration, then dataset. `newest` is `date DESC, expiration DESC, dataset DESC`, a backward scan of `ix_progress_claim`. Within a session that is the later expiration first, then the dataset name descending: `quotes`, `open_interest`, `ohlc`, `greeks_first_order`, `eod`. `oldest` is `date, expiration, dataset` ascending. A claim that spans dates can include the tail of one session and the head of the next. It cannot skip ahead to an older session while a newer one still has a pending job.
+
+`load-day` is one session. `nightly` keeps the forward walk over its lookback.
+
 Without `THETADATA_DATABASE_URL` the queue stays in memory. With a URL, rows are written to `theta.progress` and the URL is not printed. Apply `curator theta db upgrade` before the first persisted plan.
 
 ## Nightly
@@ -43,4 +51,4 @@ Without `THETADATA_DATABASE_URL` the queue stays in memory. With a URL, rows are
 uv run curator theta nightly [--lookback 10] [--wait]
 ```
 
-The command plans today and any unfinished NYSE sessions in the lookback, then loads them. The default lookback is 10 sessions and never starts before 2022-05-16. Before 17:15 America/New_York it exits 0. `--wait` sleeps until then. Weekends and NYSE holidays exit 0. A finished window makes no requests and writes nothing. Job failures exit non-zero. The run holds the same lock file and uses the same worker pool and 4-request cap as `backfill`. Counts only. The systemd user timer and the enable steps are in `docs/theta-nightly.md`.
+The command plans today and any unfinished NYSE sessions in the lookback, then loads them oldest session first. The default lookback is 10 sessions and never starts before 2022-05-16. Before 17:15 America/New_York it exits 0. `--wait` sleeps until then. Weekends and NYSE holidays exit 0. A finished window makes no requests and writes nothing. Job failures exit non-zero. The run holds the same lock file and uses the same worker pool and 4-request cap as `backfill`. Counts only. The systemd user units are in `docs/theta-nightly.md`. The timer is not enabled by default.

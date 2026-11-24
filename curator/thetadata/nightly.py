@@ -9,7 +9,9 @@ A trading day before 17:15 America/New_York exits without waiting. ``--wait``
 sleeps until 17:15 and then runs. Weekends and NYSE holidays exit without
 loading; the next trading day's run catches sessions still inside the lookback.
 The lookback is a count of NYSE sessions ending today, clamped to 2022-05-16.
-Sessions in that window that are already done or empty are not requested.
+Those sessions are still loaded oldest first. The backfill command's
+newest-first default does not apply here. Sessions in that window that are
+already done or empty are not requested.
 Sessions that were never planned, or that still have pending, running, or
 failed rows, are planned and loaded. A second run of a finished window makes
 no terminal requests and writes nothing.
@@ -30,7 +32,7 @@ from curator.thetadata.jobs import PlanJob
 from curator.thetadata.limits import backfill_lock
 from curator.thetadata.mapping import PendingFact
 from curator.thetadata.planner import parse_datasets
-from curator.thetadata.progress import MemoryProgressStore, ProgressQueue, open_progress_store
+from curator.thetadata.progress import ORDER_OLDEST, MemoryProgressStore, ProgressQueue, open_progress_store
 from curator.thetadata.report import LoadReport
 from curator.thetadata.time import EASTERN
 from curator.thetadata.window import DEFAULT_STRIKE_RANGE
@@ -378,6 +380,8 @@ async def run_nightly(
 ) -> NightlyReport:
     """Plan and load today's SPXW session and unfinished sessions in the lookback.
 
+    The due span is loaded oldest session first.
+
     Args:
         api_base_url: Theta Terminal v3 base URL.
         database_url: Postgres URL. Required when ``use_pool`` is true. Not logged.
@@ -443,5 +447,6 @@ async def run_nightly(
             queue=queue,
             use_pool=use_pool,
             writer=writer,
+            order=ORDER_OLDEST,
         )
     return _from_load(loaded, len(due))

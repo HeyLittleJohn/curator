@@ -31,9 +31,11 @@ jobs_failed=0
 
 ## systemd user timer
 
+The timer is not enabled by default. The unit files stay in this repository so a host can install them later. Nothing here enables `curator-theta-nightly.timer`, and copying the units into `~/.config/systemd/user` does not enable them. Leave the timer disabled unless you have decided to run the 17:30 schedule.
+
 On the WSL host, Theta Terminal v3 is the systemd user service `~/.config/systemd/user/theta-terminal.service`. It listens on `http://127.0.0.1:25503/v3`. It is started by hand until you enable it. The nightly service sets `After=theta-terminal.service` and `Wants=theta-terminal.service`, so systemd orders the load after the terminal and starts the terminal when the timer fires.
 
-User services stop at logout unless linger is on. Enable linger, then enable the terminal and the nightly timer:
+User services stop at logout unless linger is on. Enable linger before relying on user units. The terminal is still started by hand until you enable it:
 
 ```bash
 loginctl enable-linger "$USER"
@@ -49,7 +51,7 @@ The timer fires at 17:30 America/New_York, Monday through Friday, with `Persiste
 systemd-analyze calendar 'Mon..Fri *-*-* 17:30:00 America/New_York' --iterations=3
 ```
 
-Install the units from this repo. Edit `WorkingDirectory`, `EnvironmentFile`, and `ExecStart` in the service when the checkout is not `~/curator`. Enable the timer, not the service. Enabling the service would start a load at login.
+Install the units from this repo only when you want the schedule. Edit `WorkingDirectory`, `EnvironmentFile`, and `ExecStart` in the service when the checkout is not `~/curator`. If you do enable a schedule, enable the timer, not the service. Enabling the service would start a load at login. The default is to leave both disabled.
 
 ```bash
 mkdir -p ~/.config/systemd/user
