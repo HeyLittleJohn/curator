@@ -294,13 +294,6 @@ class OptionsPricesRunner(PathRunner):
 
     runner_type = "OptionsPrices"
 
-    def __init__(self):
-        super().__init__()
-
-    def _make_o_ticker(self, clean_o_ticker: str) -> str:
-        """re-adds the option prefix to the clean options ticker"""
-        return f"O:{clean_o_ticker}"
-
     async def upload_func(self, data: list[dict]):
         return await update_options_prices(data)
 

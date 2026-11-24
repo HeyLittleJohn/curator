@@ -56,19 +56,6 @@ def decompress_zst_file_streaming(file_path: Path) -> Generator[dict, None, None
                 yield row
 
 
-def parse_csv_content(content: str) -> list[dict]:
-    """Parse CSV content into a list of dictionaries.
-
-    Args:
-        content: CSV string content with header row.
-
-    Returns:
-        List of dictionaries, one per row, with keys from header.
-    """
-    reader = csv.DictReader(io.StringIO(content))
-    return list(reader)
-
-
 def parse_iso8601(ts_str: str) -> datetime:
     """Parse ISO 8601 timestamp string to datetime.
 

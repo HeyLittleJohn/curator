@@ -44,19 +44,9 @@ class PolygonPaginator(ABC):
     """API paginator interface for calls to the Polygon API. \
         It tracks queries made to the polygon API and calcs potential need for sleep
 
-        self.query_all() is the universal function to query the api until all results have been returned.
-
-        self.fetch() will ultimately result in the population of self.clean_results (a list of dicts with polygon data)
-        self.clean_results will be converted into a generator that can be batch input into the db"""
+        self.query_all() is the universal function to query the api until all results have been returned."""
 
     paginator_type = "Generic"
-
-    MAX_QUERY_PER_SECOND = 99
-    # MAX_QUERY_PER_MINUTE = 4  # free api limits to 5 / min which is 4 when indexed at 0
-
-    def __init__(self):
-        self.clean_results = []
-        self.clean_data_generator = iter(())
 
     def _api_sleep_time(self) -> int:
         """Returns the time to sleep based if the endpoint returns a 429 error"""
