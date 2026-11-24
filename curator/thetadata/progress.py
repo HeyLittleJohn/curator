@@ -6,7 +6,12 @@ does not put them back on the queue. ``failed`` is requeued. ``running`` rows
 older than the stale window return to ``pending`` on resume.
 
 Claiming is ``UPDATE ... WHERE status = 'pending' ... FOR UPDATE SKIP LOCKED
-RETURNING``, so two worker processes cannot take the same row. The in-memory
+RETURNING``, so two worker processes cannot take the same row. The default
+order is the newest session first: ``date DESC, expiration DESC, dataset
+DESC``. That is a backward scan of ``ix_progress_claim``. ``oldest`` is
+``date, expiration, dataset`` ascending. Within one session, newest takes the
+later expiration first and then the dataset name descending (``quotes``,
+``open_interest``, ``ohlc``, ``greeks_first_order``, ``eod``). The in-memory
 store uses one lock around the same transition for tests and for a plan that
 has no database URL. CI does not open Postgres.
 """
@@ -37,6 +42,11 @@ FAILED = "failed"
 EMPTY = "empty"
 STATUSES = frozenset({PENDING, RUNNING, DONE, FAILED, EMPTY})
 FINISHED = frozenset({DONE, EMPTY})
+
+# Backfill claims the latest session first. ``oldest`` is the forward scan.
+ORDER_NEWEST = "newest"
+ORDER_OLDEST = "oldest"
+CLAIM_ORDERS = frozenset({ORDER_NEWEST, ORDER_OLDEST})
 
 # A worker that died mid-request leaves ``running``. Resume returns those rows
 # to ``pending`` once they are at least this old. A live worker stays running.
@@ -172,6 +182,7 @@ class ProgressQueue(Protocol):
         start: date | None = None,
         end: date | None = None,
         datasets: Sequence[str] | None = None,
+        order: str = ORDER_NEWEST,
     ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
@@ -180,9 +191,12 @@ class ProgressQueue(Protocol):
             start: First session date, inclusive. ``None`` does not filter.
             end: Last session date, inclusive. ``None`` does not filter.
             datasets: Datasets to claim. ``None`` claims every dataset.
+            order: ``newest`` (default) or ``oldest``.
 
         Returns:
-            The claimed jobs. Empty when nothing pending matches.
+            The claimed jobs. Empty when nothing pending matches. ``newest``
+            is the latest session, then the later expiration, then the dataset
+            name descending. ``oldest`` is session, expiration, dataset ascending.
         """
         ...
 
@@ -392,11 +406,47 @@ def _job_from_row(
     )
 
 
+def parse_claim_order(order: str) -> str:
+    """Return a claim order.
+
+    Args:
+        order: ``newest`` or ``oldest``. Surrounding whitespace is ignored.
+
+    Returns:
+        The normalized order.
+
+    Raises:
+        ProgressError: The value is not one of those two words. The message
+            does not include the value.
+    """
+    chosen = order.strip().lower()
+    if chosen not in CLAIM_ORDERS:
+        raise ProgressError("claim order must be newest or oldest")
+    return chosen
+
+
+def _claim_order_sql(order: str) -> str:
+    """Return the ``ORDER BY`` body for one claim.
+
+    Args:
+        order: ``newest`` or ``oldest``. Already validated.
+
+    Returns:
+        ``"date" DESC, expiration DESC, dataset DESC`` or the ascending
+        ``"date", expiration, dataset`` list. Newest is the reverse of
+        ``ix_progress_claim``, so Postgres can scan that index backward.
+    """
+    if order == ORDER_NEWEST:
+        return '"date" DESC, expiration DESC, dataset DESC'
+    return '"date", expiration, dataset'
+
+
 def claim_sql(
     *,
     start: date | None = None,
     end: date | None = None,
     datasets: Sequence[str] | None = None,
+    order: str = ORDER_NEWEST,
 ) -> str:
     """Return the atomic pending-to-running statement.
 
@@ -404,11 +454,19 @@ def claim_sql(
         start: When set, the statement binds ``:start``.
         end: When set, the statement binds ``:end``.
         datasets: When set, already-validated dataset names are inlined.
+        order: ``newest`` (default) or ``oldest``. The value is not inlined;
+            it selects a fixed ``ORDER BY`` fragment.
 
     Returns:
         SQL that locks pending rows with ``FOR UPDATE SKIP LOCKED`` and marks
-        the locked rows ``running``. ``:limit`` is always bound.
+        the locked rows ``running``. ``:limit`` is always bound. ``newest``
+        orders by session date descending so a worker cannot lock an older
+        session while a newer one is still pending.
+
+    Raises:
+        ProgressError: ``order`` is not ``newest`` or ``oldest``.
     """
+    chosen = parse_claim_order(order)
     filters = [f"status = '{PENDING}'"]
     if start is not None:
         filters.append('"date" >= :start')
@@ -417,12 +475,13 @@ def claim_sql(
     if datasets is not None:
         filters.append(_dataset_in(datasets))
     where = " AND ".join(filters)
+    order_by = _claim_order_sql(chosen)
     return f"""
 WITH picked AS (
     SELECT dataset, "date", expiration
     FROM {_SCHEMA}.progress
     WHERE {where}
-    ORDER BY "date", expiration, dataset
+    ORDER BY {order_by}
     FOR UPDATE SKIP LOCKED
     LIMIT :limit
 )
@@ -473,6 +532,19 @@ class _MemoryRow:
             A ``PlanJob`` with calendar DTE filled in.
         """
         return _job_from_row(self.dataset, self.trade_date, self.expiration, self.interval_s)
+
+
+def _claim_key(row: _MemoryRow) -> tuple[date, date, str]:
+    """Return the claim sort key.
+
+    Args:
+        row: Stored progress row.
+
+    Returns:
+        Session, expiration, then dataset. ``newest`` sorts this descending,
+        which matches ``ORDER BY date DESC, expiration DESC, dataset DESC``.
+    """
+    return (row.trade_date, row.expiration, row.dataset)
 
 
 def _memory_pending(
@@ -594,6 +666,7 @@ class MemoryProgressStore:
         start: date | None = None,
         end: date | None = None,
         datasets: Sequence[str] | None = None,
+        order: str = ORDER_NEWEST,
     ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
@@ -602,22 +675,27 @@ class MemoryProgressStore:
             start: First session date, inclusive. ``None`` does not filter.
             end: Last session date, inclusive. ``None`` does not filter.
             datasets: Datasets to claim. ``None`` claims every dataset.
+            order: ``newest`` (default) or ``oldest``.
 
         Returns:
-            The claimed jobs, oldest session first.
+            The claimed jobs. ``newest`` is the latest session, then the later
+            expiration, then the dataset name descending. ``oldest`` is session,
+            expiration, then dataset ascending.
 
         Raises:
-            ProgressError: ``limit`` is below 1, or a dataset name is unknown.
+            ProgressError: ``limit`` is below 1, a dataset name is unknown, or
+                ``order`` is not ``newest`` or ``oldest``.
         """
         if limit < 1:
             raise ProgressError("claim limit must be >= 1")
+        chosen = parse_claim_order(order)
         allowed = frozenset(_check_datasets(datasets)) if datasets is not None else None
         now = datetime.now(timezone.utc)
         with self._lock:
             pending = [
                 row for row in self._rows.values() if _memory_pending(row, start=start, end=end, datasets=allowed)
             ]
-            pending.sort(key=lambda row: (row.trade_date, row.expiration, row.dataset))
+            pending.sort(key=_claim_key, reverse=chosen == ORDER_NEWEST)
             taken = pending[:limit]
             for row in taken:
                 row.status = RUNNING
@@ -942,6 +1020,7 @@ class PostgresProgressStore:
         start: date | None = None,
         end: date | None = None,
         datasets: Sequence[str] | None = None,
+        order: str = ORDER_NEWEST,
     ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
@@ -950,22 +1029,26 @@ class PostgresProgressStore:
             start: First session date, inclusive. ``None`` does not filter.
             end: Last session date, inclusive. ``None`` does not filter.
             datasets: Datasets to claim. ``None`` claims every dataset.
+            order: ``newest`` (default) or ``oldest``.
 
         Returns:
-            The claimed jobs.
+            The claimed jobs, in the requested order.
 
         Raises:
-            ProgressError: ``limit`` is below 1, or a dataset name is unknown.
+            ProgressError: ``limit`` is below 1, a dataset name is unknown, or
+                ``order`` is not ``newest`` or ``oldest``.
         """
         if limit < 1:
             raise ProgressError("claim limit must be >= 1")
+        chosen = parse_claim_order(order)
         names = _check_datasets(datasets) if datasets is not None else None
         params: dict[str, object] = {"limit": limit}
         if start is not None:
             params["start"] = start
         if end is not None:
             params["end"] = end
-        rows = self._connection.execute(text(claim_sql(start=start, end=end, datasets=names)), params).mappings().all()
+        statement = claim_sql(start=start, end=end, datasets=names, order=chosen)
+        rows = self._connection.execute(text(statement), params).mappings().all()
         return [_job_from_row(row["dataset"], row["trade_date"], row["expiration"], row["interval_s"]) for row in rows]
 
     def census(self, *, start: date, end: date, datasets: Sequence[str]) -> RangeCensus:

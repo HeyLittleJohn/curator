@@ -255,6 +255,7 @@ def _run_load(
     api_url: str,
     database_url: str | None,
     workers: int | None,
+    order: str,
 ) -> None:
     """Run a backfill or a single day and print counts.
 
@@ -267,19 +268,26 @@ def _run_load(
         api_url: Theta Terminal base URL.
         database_url: Postgres URL. Not printed.
         workers: Worker processes. ``None`` uses the default.
+        order: ``newest`` or ``oldest``. ``load-day`` passes ``newest``.
 
     Returns:
         None.
 
     Raises:
-        typer.Exit: The load fails, or any job is marked failed.
+        typer.Exit: The load fails, the order is unknown, or any job is marked failed.
     """
     import asyncio
 
     from curator.thetadata.backfill import run_backfill
     from curator.thetadata.exceptions import sanitize_text
+    from curator.thetadata.progress import ProgressError, parse_claim_order
     from curator.thetadata.report import format_load_report
 
+    try:
+        chosen = parse_claim_order(order)
+    except ProgressError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
     start_day, end_day = _plan_dates(start, end)
     width = _strike_range_option(strike_range)
     try:
@@ -295,6 +303,7 @@ def _run_load(
                 strike_range=width,
                 worker_count=workers,
                 lock_path=Path(lock_env) if lock_env else None,
+                order=chosen,
             )
         )
     except Exception as exc:
@@ -335,8 +344,19 @@ def backfill(
     api_url: ApiUrlOption = _DEFAULT_API_URL,
     database_url: DatabaseUrlOption = None,
     workers: WorkerCountOption = None,
+    order: Annotated[
+        str,
+        typer.Option(
+            "--order",
+            help="newest (default) finishes the latest session first. oldest walks forward.",
+        ),
+    ] = "newest",
 ) -> None:
-    """Download SPXW jobs for a date range and print counts only."""
+    """Download SPXW jobs for a date range and print counts only.
+
+    The default loads the newest session first and works back toward 2022-05-16.
+    ``--order oldest`` keeps the forward walk.
+    """
     _run_load(
         start=start,
         end=end,
@@ -346,6 +366,7 @@ def backfill(
         api_url=api_url,
         database_url=database_url,
         workers=workers,
+        order=order,
     )
 
 
@@ -369,6 +390,7 @@ def load_day(
         api_url=api_url,
         database_url=database_url,
         workers=workers,
+        order="newest",
     )
 
 

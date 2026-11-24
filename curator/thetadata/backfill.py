@@ -3,16 +3,20 @@
 A finished range is a no-op: no expiration list, no history requests, no new
 rows. Every NYSE session in the range must already have a row for each
 requested dataset. A later session that was never planned is still loaded when
-an earlier session is done. Otherwise the parent lists SPXW expirations, syncs
-the TD-4 queue, and claims pending jobs with ``FOR UPDATE SKIP LOCKED``.
-Workers stream and upsert. The parent holds the machine lock for the whole run
-so a second backfill cannot open its own request semaphore.
+an earlier session is done. Otherwise the parent lists SPXW expirations once,
+then plans and drains one session at a time. The default walk is newest
+session first, so a full range from 2022-05-16 is not queued before the latest
+session downloads. ``oldest`` walks forward. Claiming is ``FOR UPDATE SKIP
+LOCKED`` ordered by session date, so a claim that spans dates cannot take an
+older session while a newer one is still pending. Workers stream and upsert.
+The parent holds the machine lock for the whole run so a second backfill
+cannot open its own request semaphore.
 """
 
 from __future__ import annotations
 
 import os
-from collections.abc import Awaitable, Callable, Generator, Sequence
+from collections.abc import Awaitable, Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -30,10 +34,13 @@ from curator.thetadata.progress import (
     DONE,
     EMPTY,
     FAILED,
+    ORDER_NEWEST,
+    ORDER_OLDEST,
     STALE_RUNNING_AFTER,
     MemoryProgressStore,
     ProgressQueue,
     open_progress_store,
+    parse_claim_order,
 )
 from curator.thetadata.report import (
     LoadReport,
@@ -161,6 +168,51 @@ def _failed(job: PlanJob, message: str) -> JobOutcome:
     )
 
 
+def _ordered_sessions(start: date, end: date, order: str) -> tuple[date, ...]:
+    """Return NYSE sessions in claim order.
+
+    Args:
+        start: First date, inclusive.
+        end: Last date, inclusive.
+        order: ``newest`` or ``oldest``. Already validated.
+
+    Returns:
+        Session dates. ``newest`` is reverse chronological. ``oldest`` is
+        chronological. Holidays and weekends are absent.
+    """
+    sessions = tuple(item.trade_date for item in trading_sessions(start, end))
+    if order == ORDER_OLDEST:
+        return sessions
+    return tuple(reversed(sessions))
+
+
+def _day_needs_work(
+    database_url: str | None,
+    queue: ProgressQueue | None,
+    day: date,
+    datasets: Sequence[str],
+    covered: Mapping[str, frozenset[date]],
+) -> bool:
+    """Return whether one session still needs a plan or a claim.
+
+    Args:
+        database_url: Postgres URL. Ignored when ``queue`` is set.
+        queue: Progress queue.
+        day: Session date.
+        datasets: Datasets that must each be finished.
+        covered: Sessions that already have a row for each dataset. A missing
+            dataset is unfinished without a status query.
+
+    Returns:
+        True when a dataset has no row, or a row is pending, running, or failed.
+    """
+    if any(day not in covered[name] for name in datasets):
+        return True
+    with _open_queue(database_url, queue) as store:
+        census = store.census(start=day, end=day, datasets=datasets)
+    return bool(census.pending or census.running or census.failed)
+
+
 async def _claim_loop(
     *,
     database_url: str | None,
@@ -170,6 +222,7 @@ async def _claim_loop(
     datasets: Sequence[str],
     limit: int,
     process: ProcessBatch,
+    order: str,
 ) -> list[JobOutcome]:
     """Claim pending jobs and mark each outcome.
 
@@ -181,6 +234,7 @@ async def _claim_loop(
         datasets: Datasets to claim.
         limit: Jobs to claim at once.
         process: Runs one claimed batch.
+        order: ``newest`` or ``oldest``.
 
     Returns:
         Outcomes in claim order.
@@ -188,7 +242,7 @@ async def _claim_loop(
     outcomes: list[JobOutcome] = []
     while True:
         with _open_queue(database_url, queue) as store:
-            claimed = store.claim(limit, start=start, end=end, datasets=datasets)
+            claimed = store.claim(limit, start=start, end=end, datasets=datasets, order=order)
         if not claimed:
             break
         try:
@@ -204,30 +258,102 @@ async def _claim_loop(
     return outcomes
 
 
+async def _drain_sessions(
+    *,
+    expirations: Sequence[date],
+    effective_start: date,
+    effective_end: date,
+    order: str,
+    database_url: str | None,
+    queue: ProgressQueue | None,
+    datasets: Sequence[str],
+    max_dte: int | None,
+    limit: int,
+    process: ProcessBatch,
+) -> list[JobOutcome]:
+    """Plan and drain one session before starting the next.
+
+    Args:
+        expirations: Listed SPXW expirations. Already fetched.
+        effective_start: First session after the floor clamp.
+        effective_end: Last session. Also the placeholder horizon, so a
+            one-day plan keeps the same expirations as one plan of the range.
+        order: ``newest`` or ``oldest``.
+        database_url: Postgres URL, or ``None`` for an in-memory queue.
+        queue: Progress queue.
+        datasets: Datasets to load.
+        max_dte: Optional calendar DTE cap.
+        limit: Jobs to claim at once.
+        process: Runs one claimed batch.
+
+    Returns:
+        Outcomes in claim order. With ``newest``, every job for a later
+        session is claimed and marked before an earlier session is planned.
+    """
+    days = _ordered_sessions(effective_start, effective_end, order)
+    if not days:
+        return []
+    with _open_queue(database_url, queue) as store:
+        covered = store.covered_dates(start=effective_start, end=effective_end, datasets=datasets)
+    outcomes: list[JobOutcome] = []
+    for day in days:
+        if not _day_needs_work(database_url, queue, day, datasets, covered):
+            continue
+        with _open_queue(database_url, queue) as store:
+            run_plan(
+                expirations,
+                day,
+                day,
+                datasets=datasets,
+                max_dte=max_dte,
+                queue=store,
+                horizon_end=effective_end,
+                materialize=False,
+            )
+        finished = await _claim_loop(
+            database_url=database_url,
+            queue=queue,
+            start=day,
+            end=day,
+            datasets=datasets,
+            limit=limit,
+            process=process,
+            order=order,
+        )
+        outcomes.extend(finished)
+    return outcomes
+
+
 async def _execute_pool(
     *,
     database_url: str,
     queue: ProgressQueue | None,
     api_base_url: str,
-    start: date,
-    end: date,
+    expirations: Sequence[date],
+    effective_start: date,
+    effective_end: date,
     datasets: Sequence[str],
+    max_dte: int | None,
     strike_range: int | None,
     batch_size: int,
     worker_count: int,
+    order: str,
 ) -> list[JobOutcome]:
-    """Claim jobs into the aiomultiprocess pool.
+    """Claim jobs into the aiomultiprocess pool, one session at a time.
 
     Args:
         database_url: Postgres URL passed to each worker. Not logged.
         queue: Progress queue.
         api_base_url: Terminal base URL.
-        start: First session date.
-        end: Last session date.
+        expirations: Listed SPXW expirations.
+        effective_start: First session after the floor clamp.
+        effective_end: Last session date.
         datasets: Datasets to claim.
+        max_dte: Optional calendar DTE cap.
         strike_range: Strike window width.
         batch_size: Insert batch size.
         worker_count: Worker processes. Also the claim batch size.
+        order: ``newest`` or ``oldest``.
 
     Returns:
         One outcome per claimed job.
@@ -246,12 +372,15 @@ async def _execute_pool(
             payloads = [(job, api_base_url, database_url, strike_range, batch_size) for job in batch]
             return list(await pool.starmap(load_plan_job, payloads))
 
-        return await _claim_loop(
+        return await _drain_sessions(
+            expirations=expirations,
+            effective_start=effective_start,
+            effective_end=effective_end,
+            order=order,
             database_url=database_url,
             queue=queue,
-            start=start,
-            end=end,
             datasets=datasets,
+            max_dte=max_dte,
             limit=worker_count,
             process=process,
         )
@@ -262,12 +391,15 @@ async def _execute_inline(
     *,
     database_url: str | None,
     queue: ProgressQueue | None,
-    start: date,
-    end: date,
+    expirations: Sequence[date],
+    effective_start: date,
+    effective_end: date,
     datasets: Sequence[str],
+    max_dte: int | None,
     strike_range: int | None,
     batch_size: int,
     writer: Callable[[PlanJob, Sequence[PendingFact]], int] | None,
+    order: str,
 ) -> list[JobOutcome]:
     """Claim jobs and load them on the parent's event loop.
 
@@ -275,12 +407,15 @@ async def _execute_inline(
         client: Open parent client.
         database_url: Postgres URL, or ``None`` when ``writer`` stores the rows.
         queue: Progress queue.
-        start: First session date.
-        end: Last session date.
+        expirations: Listed SPXW expirations.
+        effective_start: First session after the floor clamp.
+        effective_end: Last session date.
         datasets: Datasets to claim.
+        max_dte: Optional calendar DTE cap.
         strike_range: Strike window width.
         batch_size: Insert batch size.
         writer: In-process sink. ``None`` writes to postgres.
+        order: ``newest`` or ``oldest``.
 
     Returns:
         One outcome per claimed job.
@@ -319,12 +454,15 @@ async def _execute_inline(
         return [await load_one(client, job, strike_range, batch_size, persist) for job in batch]
 
     try:
-        return await _claim_loop(
+        return await _drain_sessions(
+            expirations=expirations,
+            effective_start=effective_start,
+            effective_end=effective_end,
+            order=order,
             database_url=database_url,
             queue=queue,
-            start=start,
-            end=end,
             datasets=datasets,
+            max_dte=max_dte,
             limit=1,
             process=process,
         )
@@ -364,8 +502,13 @@ async def run_backfill(
     queue: ProgressQueue | None = None,
     use_pool: bool = True,
     writer: Callable[[PlanJob, Sequence[PendingFact]], int] | None = None,
+    order: str = ORDER_NEWEST,
 ) -> LoadReport:
     """Plan a range and load the jobs that are not already finished.
+
+    The default claims the newest unfinished session and finishes it before
+    planning the next older one. ``oldest`` walks forward from the start.
+    Resume skips sessions that are already done or empty.
 
     Args:
         start: First date. Dates before 2022-05-16 are clamped.
@@ -384,6 +527,7 @@ async def run_backfill(
         use_pool: When true, parsing and upserts run in the aiomultiprocess pool.
         writer: In-process sink used instead of postgres. Tests pass this with
             ``use_pool`` false.
+        order: ``newest`` (default) or ``oldest``.
 
     Returns:
         Counts and byte sizes. A second call after every session in the range
@@ -393,7 +537,9 @@ async def run_backfill(
         LoadError: The request cannot be run.
         PlanRangeError: The dates, datasets, or DTE cap are not usable.
         PlanFloorError: The range ends before 2022-05-16.
+        ProgressError: ``order`` is not ``newest`` or ``oldest``.
     """
+    chosen = parse_claim_order(order)
     _validate(strike_range, batch_size, worker_count, use_pool, writer)
     if use_pool and not database_url:
         raise LoadError("database URL is required")
@@ -407,8 +553,6 @@ async def run_backfill(
             queue=queue,
             database_url=database_url,
             api_base_url=api_base_url,
-            start=start,
-            end=end,
             effective_start=effective_start,
             effective_end=effective_end,
             datasets=selected,
@@ -418,6 +562,7 @@ async def run_backfill(
             worker_count=worker_count,
             use_pool=use_pool,
             writer=writer,
+            order=chosen,
         )
     if database_url is None:
         stored_rows: dict[tuple[str, str], int] = {}
@@ -446,8 +591,6 @@ async def _load(
     queue: ProgressQueue | None,
     database_url: str | None,
     api_base_url: str,
-    start: date,
-    end: date,
     effective_start: date,
     effective_end: date,
     datasets: tuple[str, ...],
@@ -457,6 +600,7 @@ async def _load(
     worker_count: int | None,
     use_pool: bool,
     writer: Callable[[PlanJob, Sequence[PendingFact]], int] | None,
+    order: str,
 ) -> tuple[list[JobOutcome], int]:
     """Fetch expirations only when the range still has work.
 
@@ -464,8 +608,6 @@ async def _load(
         queue: Progress queue.
         database_url: Postgres URL, or ``None`` for an in-memory queue.
         api_base_url: Terminal base URL.
-        start: Requested start, before the floor clamp is reapplied by the planner.
-        end: Requested end.
         effective_start: Start after the floor clamp.
         effective_end: End date.
         datasets: Datasets to load.
@@ -475,6 +617,7 @@ async def _load(
         worker_count: Pool size.
         use_pool: Use worker processes when true.
         writer: Optional in-process sink.
+        order: ``newest`` or ``oldest``. Already validated.
 
     Returns:
         Outcomes, and 1 when the expiration list was requested, otherwise 0.
@@ -487,27 +630,20 @@ async def _load(
         return [], 0
     async with ThetaDataClient(_client_settings(api_base_url)) as client:
         expirations = await load_spxw_expirations(client)
-        with _open_queue(database_url, queue) as store:
-            run_plan(
-                expirations,
-                start,
-                end,
-                datasets=datasets,
-                max_dte=max_dte,
-                queue=store,
-                materialize=False,
-            )
         if not use_pool:
             outcomes = await _execute_inline(
                 client,
                 database_url=database_url,
                 queue=queue,
-                start=effective_start,
-                end=effective_end,
+                expirations=expirations,
+                effective_start=effective_start,
+                effective_end=effective_end,
                 datasets=datasets,
+                max_dte=max_dte,
                 strike_range=strike_range,
                 batch_size=batch_size,
                 writer=writer,
+                order=order,
             )
             return outcomes, 1
     workers = worker_count if worker_count is not None else os.cpu_count() or 1
@@ -517,11 +653,14 @@ async def _load(
         database_url=database_url,
         queue=queue,
         api_base_url=api_base_url,
-        start=effective_start,
-        end=effective_end,
+        expirations=expirations,
+        effective_start=effective_start,
+        effective_end=effective_end,
         datasets=datasets,
+        max_dte=max_dte,
         strike_range=strike_range,
         batch_size=batch_size,
         worker_count=workers,
+        order=order,
     )
     return outcomes, 1

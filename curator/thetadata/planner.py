@@ -275,6 +275,7 @@ def run_plan(
     near_interval_s: int = INTERVAL_1M_SECONDS,
     far_interval_s: int = INTERVAL_15M_SECONDS,
     horizon_days: int | None = FAR_EXPIRATION_HORIZON_DAYS,
+    horizon_end: date | None = None,
     stale_after: timedelta = STALE_RUNNING_AFTER,
     materialize: bool = True,
 ) -> PlanResult:
@@ -295,6 +296,10 @@ def run_plan(
         near_interval_s: Near bar length in seconds.
         far_interval_s: Far bar length in seconds.
         horizon_days: Far-future placeholder horizon. ``None`` disables it.
+        horizon_end: Date the placeholder horizon is measured from. ``None``
+            uses this plan's end. A one-session chunk of a longer backfill
+            passes the backfill end so the kept expirations match one plan of
+            the whole range.
         stale_after: Running rows older than this are reset to pending first.
         materialize: When true, ``jobs`` lists the pending queue.
 
@@ -302,15 +307,16 @@ def run_plan(
         Counts and, when requested, the pending jobs.
 
     Raises:
-        PlanRangeError: A date, dataset, cap, or interval is invalid.
+        PlanRangeError: A date, dataset, cap, interval, or horizon anchor is invalid.
         PlanFloorError: The range ends before 2022-05-16.
     """
     effective_start, effective_end, clamped = resolve_range(start, end)
     selected = parse_datasets(datasets)
     _validate_limits(max_dte, one_minute_max_dte, near_interval_s, far_interval_s)
+    anchor = _horizon_anchor(effective_end, horizon_end)
     sessions = trading_sessions(effective_start, effective_end)
     listed = tuple(sorted(set(expirations)))
-    kept, dropped = partition_expirations(listed, plan_end=effective_end, horizon_days=horizon_days)
+    kept, dropped = partition_expirations(listed, plan_end=anchor, horizon_days=horizon_days)
     store = queue if queue is not None else MemoryProgressStore()
     reset_running = store.reset_stale(
         datetime.now(timezone.utc) - stale_after,
@@ -494,6 +500,26 @@ def _interval_for(
         near_interval_s=near_interval_s,
         far_interval_s=far_interval_s,
     )
+
+
+def _horizon_anchor(plan_end: date, horizon_end: date | None) -> date:
+    """Return the date the far-expiration horizon is measured from.
+
+    Args:
+        plan_end: Last session in this plan call.
+        horizon_end: Caller override. ``None`` uses ``plan_end``.
+
+    Returns:
+        The anchor date.
+
+    Raises:
+        PlanRangeError: ``horizon_end`` is before ``plan_end``.
+    """
+    if horizon_end is None:
+        return plan_end
+    if horizon_end < plan_end:
+        raise PlanRangeError("horizon_end is before the plan end")
+    return horizon_end
 
 
 def _validate_limits(
