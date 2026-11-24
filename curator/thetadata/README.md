@@ -36,3 +36,11 @@ The live expiration list has returned 2305 dates from 2012-06-01 through 2089-06
 `theta.progress` is the queue. Statuses are `pending`, `running`, `done`, `failed`, and `empty`. Resume skips `done` and `empty`. Planning a day whose jobs are all finished writes nothing and queues nothing. `failed` rows are requeued. `running` rows older than one hour are reset to `pending` on resume. `interval_s` is stored per job so a later cutoff change does not rewrite a finished row. Claiming is one statement: `UPDATE ... WHERE status = 'pending' ... FOR UPDATE SKIP LOCKED ... RETURNING`. Two worker processes cannot take the same job. The claimed record is a picklable `PlanJob` for the aiomultiprocess pool.
 
 Without `THETADATA_DATABASE_URL` the queue stays in memory. With a URL, rows are written to `theta.progress` and the URL is not printed. Apply `curator theta db upgrade` before the first persisted plan.
+
+## Nightly
+
+```bash
+uv run curator theta nightly [--lookback 10] [--wait]
+```
+
+The command plans today and any unfinished NYSE sessions in the lookback, then loads them. The default lookback is 10 sessions and never starts before 2022-05-16. Before 17:15 America/New_York it exits 0. `--wait` sleeps until then. Weekends and NYSE holidays exit 0. A finished window makes no requests and writes nothing. Job failures exit non-zero. The run holds the same lock file and uses the same worker pool and 4-request cap as `backfill`. Counts only. The systemd user timer and the enable steps are in `docs/theta-nightly.md`.

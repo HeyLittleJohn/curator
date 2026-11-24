@@ -1,7 +1,8 @@
 """ThetaData subcommands for the curator CLI.
 
 ``plan`` builds the SPXW job queue. ``backfill`` and ``load-day`` download the
-queued jobs and print counts only. ``db`` runs the theta schema Alembic chain.
+queued jobs and print counts only. ``nightly`` plans and loads today's session
+after 17:15 America/New_York. ``db`` runs the theta schema Alembic chain.
 """
 
 import os
@@ -369,6 +370,75 @@ def load_day(
         database_url=database_url,
         workers=workers,
     )
+
+
+@theta_app.command("nightly")
+def nightly(
+    dataset: DatasetOption = None,
+    max_dte: MaxDteOption = None,
+    strike_range: StrikeRangeOption = "125",
+    lookback: Annotated[
+        int,
+        typer.Option(
+            "--lookback",
+            envvar="THETADATA_NIGHTLY_LOOKBACK",
+            help="NYSE sessions to catch up, including today. Default 10. Clamped to 2022-05-16.",
+        ),
+    ] = 10,
+    wait: Annotated[
+        bool,
+        typer.Option(
+            "--wait",
+            help="Sleep until 17:15 America/New_York. Default: exit 0 with a message if started earlier.",
+        ),
+    ] = False,
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
+    database_url: DatabaseUrlOption = None,
+    workers: WorkerCountOption = None,
+) -> None:
+    """Plan and load today plus unfinished sessions in the lookback.
+
+    The default exits before 17:15 America/New_York and on weekends and NYSE
+    holidays. A finished window makes no requests. Job failures exit non-zero.
+    """
+    import asyncio
+
+    from curator.thetadata.exceptions import sanitize_text
+    from curator.thetadata.nightly import (
+        SKIP_CLOSED,
+        SKIP_CLOSED_MESSAGE,
+        SKIP_EARLY,
+        SKIP_EARLY_MESSAGE,
+        format_nightly_report,
+        run_nightly,
+    )
+
+    width = _strike_range_option(strike_range)
+    try:
+        lock_env = os.environ.get("THETADATA_LOCK_PATH", "").strip()
+        report = asyncio.run(
+            run_nightly(
+                api_base_url=api_url,
+                database_url=_blank(database_url),
+                datasets=dataset,
+                max_dte=max_dte,
+                strike_range=width,
+                worker_count=workers,
+                lock_path=Path(lock_env) if lock_env else None,
+                lookback=lookback,
+                wait=wait,
+            )
+        )
+    except Exception as exc:
+        typer.echo(sanitize_text(str(exc)), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(format_nightly_report(report), nl=False)
+    if report.action == SKIP_EARLY:
+        typer.echo(SKIP_EARLY_MESSAGE, err=True)
+    elif report.action == SKIP_CLOSED:
+        typer.echo(SKIP_CLOSED_MESSAGE, err=True)
+    if report.jobs_failed:
+        raise typer.Exit(code=1)
 
 
 @theta_app.command("migrate")

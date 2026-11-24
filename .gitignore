@@ -1,4 +1,5 @@
 *.pyc
+.env
 .mypy_cache/*
 /bin/notes.txt
 .logs/*

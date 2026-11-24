@@ -1,0 +1,17 @@
+# Weekday 17:30 America/New_York. Persistent=true runs a missed fire after boot.
+# A weekend catch-up exits 0; the next trading day loads sessions still in the lookback.
+# See docs/theta-nightly.md.
+
+[Unit]
+Description=Weekday ThetaData SPXW nightly load at 17:30 America/New_York
+After=theta-terminal.service
+Wants=theta-terminal.service
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 17:30:00 America/New_York
+Persistent=true
+AccuracySec=1s
+Unit=curator-theta-nightly.service
+
+[Install]
+WantedBy=timers.target

@@ -14,7 +14,7 @@ has no database URL. CI does not open Postgres.
 from __future__ import annotations
 
 import threading
-from collections.abc import Generator, Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -199,6 +199,20 @@ class ProgressQueue(Protocol):
         """
         ...
 
+    def covered_dates(self, *, start: date, end: date, datasets: Sequence[str]) -> Mapping[str, frozenset[date]]:
+        """Return the sessions that already have a row for each dataset.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to inspect.
+
+        Returns:
+            Each requested dataset mapped to the session dates that have at
+            least one progress row, whatever the status.
+        """
+        ...
+
     def mark(self, job: PlanJob, status: str, row_count: int) -> None:
         """Set the status and row count of an existing job.
 
@@ -261,6 +275,25 @@ def classify_job(existing: ProgressSnapshot | None, job: PlanJob) -> str:
     if existing.status == RUNNING:
         return "skip_running"
     raise ProgressError("unknown progress status")
+
+
+def _as_date(value: object) -> date:
+    """Return a date from a progress-table value.
+
+    Args:
+        value: A ``date`` or ``datetime`` read from ``theta.progress``.
+
+    Returns:
+        The calendar date.
+
+    Raises:
+        ProgressError: The value is not a date.
+    """
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    raise ProgressError("progress date is not a date")
 
 
 def _require_aware(value: datetime) -> datetime:
@@ -614,6 +647,27 @@ class MemoryProgressStore:
                 counts[row.status] = counts.get(row.status, 0) + 1
         return _census_from(counts)
 
+    def covered_dates(self, *, start: date, end: date, datasets: Sequence[str]) -> Mapping[str, frozenset[date]]:
+        """Return the sessions that already have a row for each dataset.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to inspect.
+
+        Returns:
+            Each requested dataset mapped to the session dates that have at
+            least one progress row, whatever the status.
+        """
+        names = _check_datasets(datasets)
+        found: dict[str, set[date]] = {name: set() for name in names}
+        with self._lock:
+            for row in self._rows.values():
+                if row.dataset not in found or row.trade_date < start or row.trade_date > end:
+                    continue
+                found[row.dataset].add(row.trade_date)
+        return {name: frozenset(days) for name, days in found.items()}
+
     def mark(self, job: PlanJob, status: str, row_count: int) -> None:
         """Set the status and row count of an existing job.
 
@@ -945,6 +999,36 @@ class PostgresProgressStore:
         for row in rows:
             counts[str(row["status"])] = int(row["n"])
         return _census_from(counts)
+
+    def covered_dates(self, *, start: date, end: date, datasets: Sequence[str]) -> Mapping[str, frozenset[date]]:
+        """Return the sessions that already have a row for each dataset.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to inspect.
+
+        Returns:
+            Each requested dataset mapped to the session dates that have at
+            least one progress row, whatever the status.
+        """
+        names = _check_datasets(datasets)
+        rows = self._connection.execute(
+            text(
+                f"""
+                SELECT dataset, "date" AS trade_date
+                FROM {_SCHEMA}.progress
+                WHERE "date" BETWEEN :start AND :end
+                  AND {_dataset_in(names)}
+                GROUP BY dataset, "date"
+                """
+            ),
+            {"start": start, "end": end},
+        ).mappings()
+        found: dict[str, set[date]] = {name: set() for name in names}
+        for row in rows:
+            found[str(row["dataset"])].add(_as_date(row["trade_date"]))
+        return {name: frozenset(days) for name, days in found.items()}
 
     def mark(self, job: PlanJob, status: str, row_count: int) -> None:
         """Set the status and row count of an existing job.
