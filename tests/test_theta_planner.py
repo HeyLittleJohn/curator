@@ -134,8 +134,8 @@ def test_holidays_are_skipped_and_half_days_stay() -> None:
     assert {job.trade_date for job in planned.jobs} == {date(2022, 11, 23), date(2022, 11, 25)}
 
 
-def test_default_keeps_far_expirations_and_drops_the_placeholder() -> None:
-    """No max_dte cap. 2089-06-30 is a placeholder. A 2030 expiration is a job."""
+def test_default_keeps_near_expirations_and_drops_the_placeholder() -> None:
+    """No max_dte cap. 2089-06-30 is a placeholder. A 2030 expiration is past the roll-in."""
     near = date(2022, 5, 20)
     far = date(2030, 12, 20)
     early = date(2012, 6, 1)
@@ -146,10 +146,10 @@ def test_default_keeps_far_expirations_and_drops_the_placeholder() -> None:
         datasets=["eod"],
     )
     expirations = {job.expiration for job in result.jobs}
-    assert expirations == {near, far}
+    assert expirations == {near}
     assert result.counts.placeholders == 1
     assert result.counts.listed == 4
-    assert result.counts.expirations == 2
+    assert result.counts.expirations == 1
     assert all(job.interval_s is None for job in result.jobs)
 
     capped = run_plan(
@@ -164,11 +164,20 @@ def test_default_keeps_far_expirations_and_drops_the_placeholder() -> None:
 
 
 def test_horizon_boundary_is_inclusive() -> None:
-    """An expiration exactly on the horizon stays. The next day is a placeholder."""
+    """An expiration exactly on the horizon is not a placeholder. The next day is."""
+    from curator.thetadata.planner import partition_expirations
+
     end = date(2022, 5, 16)
     edge = end + timedelta(days=FAR_EXPIRATION_HORIZON_DAYS)
+    kept, dropped = partition_expirations(
+        [edge, edge + timedelta(days=1)],
+        plan_end=end,
+        horizon_days=FAR_EXPIRATION_HORIZON_DAYS,
+    )
+    assert kept == (edge,)
+    assert dropped == (edge + timedelta(days=1),)
     result = run_plan([edge, edge + timedelta(days=1)], end, end, datasets=["eod"])
-    assert {job.expiration for job in result.jobs} == {edge}
+    assert result.jobs == ()
     assert result.counts.placeholders == 1
 
 
@@ -364,7 +373,9 @@ def test_progress_migration_adds_interval_and_claim_index() -> None:
     assert "ix_progress_running" in sql
     assert "ck_progress_status" in sql
     assert "interval_s" in sql
+    assert "add column error" in sql
     progress = ThetaBase.metadata.tables[f"{THETA_SCHEMA}.progress"]
+    assert progress.columns["error"].nullable is True
     assert progress.columns["interval_s"].nullable is True
     assert {index.name for index in progress.indexes} >= {"ix_progress_claim", "ix_progress_running"}
     assert "34551fa734e8" not in sql

@@ -28,8 +28,19 @@ INTERVAL_1M_SECONDS: int = 60
 INTERVAL_15M_SECONDS: int = 900
 ONE_MINUTE_MAX_CALENDAR_DTE: int = 5
 
+# VS3D-style SPXW expiration windows, in calendar DTE.
+# 0 through near: every listed expiration.
+# Weekly Fridays that are not the third Friday: through weekly.
+# Monthlies, quarterlies, and end-of-month: through standard, plus the next one through roll-in.
+NEAR_EXPIRATION_DTE: int = 40
+WEEKLY_EXPIRATION_DTE: int = 50
+STANDARD_EXPIRATION_DTE: int = 183
+ROLL_IN_EXPIRATION_DTE: int = 220
+
 # ThetaData Options Standard allows 4 concurrent requests for the whole account.
 OPTIONS_STANDARD_CONCURRENCY = 4
+# Worker processes default to that cap. A larger pool only queues behind the semaphore.
+DEFAULT_BACKFILL_WORKERS: int = OPTIONS_STANDARD_CONCURRENCY
 
 
 class BackfillMode(str, Enum):
@@ -97,7 +108,7 @@ class Settings(BaseSettings):
     # Worker settings
     worker_count: Optional[int] = Field(
         default=None,
-        description="Number of worker processes (defaults to CPU count)",
+        description="Number of worker processes (defaults to 4, the Options Standard concurrency cap)",
     )
     batch_size: int = Field(
         default=1000,
@@ -178,12 +189,14 @@ class Settings(BaseSettings):
 
     @property
     def effective_worker_count(self) -> int:
-        """Get effective worker count, defaulting to CPU count."""
-        import os
+        """Return the worker process count.
 
+        Returns:
+            ``worker_count`` when it is set, otherwise 4.
+        """
         if self.worker_count is not None:
             return self.worker_count
-        return os.cpu_count() or 4
+        return DEFAULT_BACKFILL_WORKERS
 
     @property
     def asyncpg_dsn(self) -> Optional[str]:

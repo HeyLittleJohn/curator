@@ -8,7 +8,7 @@ after 17:15 America/New_York. ``db`` runs the theta schema Alembic chain.
 import os
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Optional
+from typing import Annotated, NoReturn, Optional
 
 import typer
 
@@ -40,7 +40,38 @@ ApiUrlOption = Annotated[
 _DEFAULT_API_URL = "http://127.0.0.1:25503/v3"
 WorkerCountOption = Annotated[
     Optional[int],
-    typer.Option("--workers", "-w", envvar="THETADATA_WORKER_COUNT", help="Number of worker processes"),
+    typer.Option(
+        "--workers",
+        "-w",
+        envvar="THETADATA_WORKER_COUNT",
+        help="Worker processes. Default 4, the Options Standard concurrency cap.",
+    ),
+]
+DebugOption = Annotated[bool, typer.Option("--debug", help="Print the sanitized traceback on failure.")]
+NearDteOption = Annotated[
+    int,
+    typer.Option("--near-dte", help="Keep every listed expiration through this calendar DTE. Default 40."),
+]
+WeeklyDteOption = Annotated[
+    int,
+    typer.Option(
+        "--weekly-dte",
+        help="Keep weekly Fridays that are not the third Friday through this DTE. Default 50.",
+    ),
+]
+StandardDteOption = Annotated[
+    int,
+    typer.Option(
+        "--standard-dte",
+        help="Keep monthlies, quarterlies, and end-of-month expirations through this DTE. Default 183.",
+    ),
+]
+RollInDteOption = Annotated[
+    int,
+    typer.Option(
+        "--roll-in-dte",
+        help="Also keep the next monthly, quarterly, or end-of-month expiration through this DTE. Default 220.",
+    ),
 ]
 ModeOption = Annotated[
     BackfillMode,
@@ -176,18 +207,23 @@ def plan(
         Optional[int],
         typer.Option(
             "--max-dte",
-            help="Optional calendar DTE cap. Default: every listed expiration inside the horizon.",
+            help="Optional extra calendar DTE cap applied after expiration selection.",
         ),
     ] = None,
+    near_dte: NearDteOption = 40,
+    weekly_dte: WeeklyDteOption = 50,
+    standard_dte: StandardDteOption = 183,
+    roll_in_dte: RollInDteOption = 220,
     api_url: ApiUrlOption = _DEFAULT_API_URL,
     database_url: DatabaseUrlOption = None,
+    debug: DebugOption = False,
 ) -> None:
     """Plan SPXW jobs and print counts only.
 
-    Expirations come from ``option/list/expirations?symbol=SPXW``. A start before
-    2022-05-16 is clamped. The output is counts, not dates or rows.
+    Expirations come from ``option/list/expirations?symbol=SPXW`` and are
+    filtered to the VS3D windows. A start before 2022-05-16 is clamped. The
+    output is counts, not dates or rows. Sessions are synced one at a time.
     """
-    from curator.thetadata.exceptions import sanitize_text
     from curator.thetadata.planner import (
         PlanError,
         fetch_spxw_expirations,
@@ -213,15 +249,36 @@ def plan(
                 datasets=dataset,
                 max_dte=max_dte,
                 queue=store,
+                near_dte=near_dte,
+                weekly_dte=weekly_dte,
+                standard_dte=standard_dte,
+                roll_in_dte=roll_in_dte,
                 materialize=False,
             )
     except PlanError as exc:
-        typer.echo(sanitize_text(str(exc)), err=True)
-        raise typer.Exit(code=1) from None
+        _fail(exc, debug=debug)
     except Exception as exc:
-        typer.echo(sanitize_text(str(exc)), err=True)
-        raise typer.Exit(code=1) from None
+        _fail(exc, debug=debug)
     typer.echo(format_plan_counts(result), nl=False)
+
+
+def _fail(exc: Exception, *, debug: bool) -> NoReturn:
+    """Print a sanitized error, log the traceback, and exit.
+
+    Args:
+        exc: Failure from planning or loading.
+        debug: When true, also print the sanitized traceback.
+
+    Raises:
+        typer.Exit: Always, with status code 1.
+    """
+    from curator.thetadata.exceptions import log_sanitized_exception, sanitize_text
+
+    logged = log_sanitized_exception(exc)
+    typer.echo(sanitize_text(str(exc)), err=True)
+    if debug:
+        typer.echo(logged, err=True)
+    raise typer.Exit(code=1) from None
 
 
 def _strike_range_option(value: str) -> int | None:
@@ -255,6 +312,12 @@ def _run_load(
     api_url: str,
     database_url: str | None,
     workers: int | None,
+    order: str,
+    near_dte: int,
+    weekly_dte: int,
+    standard_dte: int,
+    roll_in_dte: int,
+    debug: bool,
 ) -> None:
     """Run a backfill or a single day and print counts.
 
@@ -266,7 +329,13 @@ def _run_load(
         strike_range: Window width or ``all``.
         api_url: Theta Terminal base URL.
         database_url: Postgres URL. Not printed.
-        workers: Worker processes. ``None`` uses the default.
+        workers: Worker processes. ``None`` uses 4.
+        order: ``newest`` or ``oldest``.
+        near_dte: Inclusive DTE that keeps every listed expiration.
+        weekly_dte: Inclusive DTE for non-third-Friday weeklies.
+        standard_dte: Inclusive DTE for monthlies, quarterlies, and end-of-month.
+        roll_in_dte: Inclusive DTE for the next standard expiration.
+        debug: Print the sanitized traceback when the load fails.
 
     Returns:
         None.
@@ -277,7 +346,6 @@ def _run_load(
     import asyncio
 
     from curator.thetadata.backfill import run_backfill
-    from curator.thetadata.exceptions import sanitize_text
     from curator.thetadata.report import format_load_report
 
     start_day, end_day = _plan_dates(start, end)
@@ -295,11 +363,15 @@ def _run_load(
                 strike_range=width,
                 worker_count=workers,
                 lock_path=Path(lock_env) if lock_env else None,
+                order=order,
+                near_dte=near_dte,
+                weekly_dte=weekly_dte,
+                standard_dte=standard_dte,
+                roll_in_dte=roll_in_dte,
             )
         )
     except Exception as exc:
-        typer.echo(sanitize_text(str(exc)), err=True)
-        raise typer.Exit(code=1) from None
+        _fail(exc, debug=debug)
     typer.echo(format_load_report(report), nl=False)
     if report.jobs_failed:
         raise typer.Exit(code=1)
@@ -314,7 +386,7 @@ DatasetOption = Annotated[
 ]
 MaxDteOption = Annotated[
     Optional[int],
-    typer.Option("--max-dte", help="Optional calendar DTE cap. Default: every listed expiration."),
+    typer.Option("--max-dte", help="Optional extra calendar DTE cap applied after expiration selection."),
 ]
 StrikeRangeOption = Annotated[
     str,
@@ -335,8 +407,21 @@ def backfill(
     api_url: ApiUrlOption = _DEFAULT_API_URL,
     database_url: DatabaseUrlOption = None,
     workers: WorkerCountOption = None,
+    order: Annotated[
+        str,
+        typer.Option("--order", help="Walk sessions newest-first (default) or oldest-first."),
+    ] = "newest",
+    near_dte: NearDteOption = 40,
+    weekly_dte: WeeklyDteOption = 50,
+    standard_dte: StandardDteOption = 183,
+    roll_in_dte: RollInDteOption = 220,
+    debug: DebugOption = False,
 ) -> None:
-    """Download SPXW jobs for a date range and print counts only."""
+    """Download SPXW jobs for a date range and print counts only.
+
+    Sessions are planned and drained one at a time, newest first unless
+    ``--order oldest`` is set.
+    """
     _run_load(
         start=start,
         end=end,
@@ -346,6 +431,12 @@ def backfill(
         api_url=api_url,
         database_url=database_url,
         workers=workers,
+        order=order,
+        near_dte=near_dte,
+        weekly_dte=weekly_dte,
+        standard_dte=standard_dte,
+        roll_in_dte=roll_in_dte,
+        debug=debug,
     )
 
 
@@ -358,6 +449,11 @@ def load_day(
     api_url: ApiUrlOption = _DEFAULT_API_URL,
     database_url: DatabaseUrlOption = None,
     workers: WorkerCountOption = None,
+    near_dte: NearDteOption = 40,
+    weekly_dte: WeeklyDteOption = 50,
+    standard_dte: StandardDteOption = 183,
+    roll_in_dte: RollInDteOption = 220,
+    debug: DebugOption = False,
 ) -> None:
     """Download one SPXW session and print row counts, bytes, and the projected backfill."""
     _run_load(
@@ -369,6 +465,12 @@ def load_day(
         api_url=api_url,
         database_url=database_url,
         workers=workers,
+        order="newest",
+        near_dte=near_dte,
+        weekly_dte=weekly_dte,
+        standard_dte=standard_dte,
+        roll_in_dte=roll_in_dte,
+        debug=debug,
     )
 
 
@@ -395,6 +497,11 @@ def nightly(
     api_url: ApiUrlOption = _DEFAULT_API_URL,
     database_url: DatabaseUrlOption = None,
     workers: WorkerCountOption = None,
+    near_dte: NearDteOption = 40,
+    weekly_dte: WeeklyDteOption = 50,
+    standard_dte: StandardDteOption = 183,
+    roll_in_dte: RollInDteOption = 220,
+    debug: DebugOption = False,
 ) -> None:
     """Plan and load today plus unfinished sessions in the lookback.
 
@@ -403,7 +510,6 @@ def nightly(
     """
     import asyncio
 
-    from curator.thetadata.exceptions import sanitize_text
     from curator.thetadata.nightly import (
         SKIP_CLOSED,
         SKIP_CLOSED_MESSAGE,
@@ -427,11 +533,14 @@ def nightly(
                 lock_path=Path(lock_env) if lock_env else None,
                 lookback=lookback,
                 wait=wait,
+                near_dte=near_dte,
+                weekly_dte=weekly_dte,
+                standard_dte=standard_dte,
+                roll_in_dte=roll_in_dte,
             )
         )
     except Exception as exc:
-        typer.echo(sanitize_text(str(exc)), err=True)
-        raise typer.Exit(code=1) from None
+        _fail(exc, debug=debug)
     typer.echo(format_nightly_report(report), nl=False)
     if report.action == SKIP_EARLY:
         typer.echo(SKIP_EARLY_MESSAGE, err=True)

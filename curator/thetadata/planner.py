@@ -1,23 +1,33 @@
 """SPXW job planner.
 
 Jobs are ``(dataset, trade_date, expiration)`` for every NYSE session in range
-and every expiration from ``option/list/expirations?symbol=SPXW`` with calendar
-DTE of at least 0. Expirations are never inferred from a weekday rule.
+and the listed SPXW expirations ``select_spxw_expirations`` keeps. Dates are
+never invented: a holiday-shifted monthly is kept only when that Thursday is
+already in the listed set.
 
 Intraday datasets use a 1-minute bar when calendar DTE is 0 through 5, and a
 15-minute bar otherwise. The cutoff and both lengths are arguments. Open
 interest and EOD are daily: each job still names one expiration, the interval
 is empty, and the downloader covers the full strike chain.
 
-The default includes every listed expiration inside the horizon below, so a
-far-dated position still appears in GEX. ``max_dte`` is an optional cap.
+Selection follows the VolSignals 3D windows. Calendar DTE 0 through 40 keeps
+every listed expiration. Weekly Fridays that are not the third Friday are kept
+through 50. Monthlies (third Friday, or the Thursday before it when that
+Friday is an NYSE holiday), quarterlies (those monthlies in March, June,
+September, and December), and end-of-month (the last listed weekday expiration
+of the month) are kept through 183, plus the next one of those dates through
+220. ``max_dte`` is an optional extra cap applied after that selection.
 
 The live expiration list has returned 2305 dates from 2012-06-01 through
 2089-06-30. That last date sits decades after any listed SPXW series and is
 treated as a ThetaData placeholder. Expirations more than
 ``FAR_EXPIRATION_HORIZON_DAYS`` (10 years of 366 days) after the plan end are
-counted and dropped. The horizon is not ``max_dte``. Pass ``horizon_days=None``
-to keep every future date, including that placeholder.
+counted and dropped before the VS3D windows run. The horizon is not
+``max_dte``. Pass ``horizon_days=None`` to keep every future date in the
+windows, including that placeholder when it also passes selection.
+
+A multi-session plan syncs one session at a time so the progress queue never
+materializes the whole range in memory.
 
 The backfill floor is 2022-05-16. An earlier start is clamped up to the floor
 when the end is on or after it. A range that ends before the floor is refused.
@@ -36,7 +46,11 @@ from curator.thetadata.config import (
     BACKFILL_START,
     INTERVAL_1M_SECONDS,
     INTERVAL_15M_SECONDS,
+    NEAR_EXPIRATION_DTE,
     ONE_MINUTE_MAX_CALENDAR_DTE,
+    ROLL_IN_EXPIRATION_DTE,
+    STANDARD_EXPIRATION_DTE,
+    WEEKLY_EXPIRATION_DTE,
 )
 from curator.thetadata.identity import calendar_dte, interval_seconds_for_dte
 from curator.thetadata.jobs import DATASET_NAMES, DATASETS, DATASETS_INTRADAY, SYMBOL_SPXW, PlanJob
@@ -210,6 +224,62 @@ def partition_expirations(
     return kept, dropped
 
 
+def select_spxw_expirations(
+    session: date,
+    listed: Sequence[date],
+    *,
+    near_dte: int = NEAR_EXPIRATION_DTE,
+    weekly_dte: int = WEEKLY_EXPIRATION_DTE,
+    standard_dte: int = STANDARD_EXPIRATION_DTE,
+    roll_in_dte: int = ROLL_IN_EXPIRATION_DTE,
+) -> tuple[date, ...]:
+    """Choose the listed SPXW expirations to load for one session.
+
+    Only dates in ``listed`` are returned. Nothing is invented: a monthly that
+    moves to Thursday because the third Friday is an NYSE holiday is kept only
+    when that Thursday is already listed. Calendar DTE below 0 is dropped.
+
+    Args:
+        session: NYSE session the DTE is measured from.
+        listed: Expiration dates from ``option/list/expirations``. Duplicates
+            collapse. Order does not matter.
+        near_dte: Inclusive calendar DTE through which every listed expiration
+            is kept. Default 40.
+        weekly_dte: Inclusive calendar DTE through which Friday expirations
+            that are not the third Friday are kept. Default 50.
+        standard_dte: Inclusive calendar DTE through which monthlies,
+            quarterlies, and end-of-month expirations are kept. Default 183.
+        roll_in_dte: Inclusive calendar DTE through which the next monthly,
+            quarterly, or end-of-month expiration past ``standard_dte`` is
+            kept. Default 220. One date, the soonest.
+
+    Returns:
+        Selected expiration dates, ascending.
+
+    Raises:
+        PlanRangeError: A threshold is negative.
+    """
+    _validate_expiration_window(near_dte, weekly_dte, standard_dte, roll_in_dte)
+    unique = tuple(sorted(set(listed)))
+    if not unique:
+        return ()
+    standards = _standard_expirations(set(unique))
+    chosen: set[date] = set()
+    roll_in: date | None = None
+    for expiration in unique:
+        dte = calendar_dte(session, expiration)
+        if dte < 0:
+            continue
+        if _keep_listed(expiration, dte, standards, near_dte, weekly_dte, standard_dte):
+            chosen.add(expiration)
+            continue
+        if expiration in standards and dte <= roll_in_dte and roll_in is None:
+            roll_in = expiration
+    if roll_in is not None:
+        chosen.add(roll_in)
+    return tuple(sorted(chosen))
+
+
 def iter_jobs(
     sessions: Sequence[date],
     expirations: Sequence[date],
@@ -219,30 +289,46 @@ def iter_jobs(
     one_minute_max_dte: int,
     near_interval_s: int,
     far_interval_s: int,
+    near_dte: int = NEAR_EXPIRATION_DTE,
+    weekly_dte: int = WEEKLY_EXPIRATION_DTE,
+    standard_dte: int = STANDARD_EXPIRATION_DTE,
+    roll_in_dte: int = ROLL_IN_EXPIRATION_DTE,
 ) -> Iterator[PlanJob]:
-    """Yield one job per dataset, session, and expiration with DTE >= 0.
+    """Yield one job per dataset, session, and selected expiration.
 
     Args:
         sessions: NYSE session dates, in order.
-        expirations: Kept expiration dates. Order does not matter.
+        expirations: Listed expiration dates. Order does not matter. The
+            placeholder horizon is applied by the caller before this.
         datasets: Datasets to emit.
-        max_dte: Optional inclusive calendar DTE cap. ``None`` does not cap.
+        max_dte: Optional inclusive calendar DTE cap applied after selection.
+            ``None`` does not add a cap.
         one_minute_max_dte: Inclusive DTE bound for the near interval.
         near_interval_s: Bar length inside that bound.
         far_interval_s: Bar length outside that bound.
+        near_dte: See ``select_spxw_expirations``.
+        weekly_dte: See ``select_spxw_expirations``.
+        standard_dte: See ``select_spxw_expirations``.
+        roll_in_dte: See ``select_spxw_expirations``.
 
     Yields:
         Jobs ordered by session, expiration, then dataset.
 
     Raises:
+        PlanRangeError: An expiration threshold is negative.
         ValueError: An interval argument is invalid.
     """
-    ordered = tuple(sorted(set(expirations)))
     for session in sessions:
-        for expiration in ordered:
+        selected = select_spxw_expirations(
+            session,
+            expirations,
+            near_dte=near_dte,
+            weekly_dte=weekly_dte,
+            standard_dte=standard_dte,
+            roll_in_dte=roll_in_dte,
+        )
+        for expiration in selected:
             dte = calendar_dte(session, expiration)
-            if dte < 0:
-                continue
             if max_dte is not None and dte > max_dte:
                 continue
             for dataset in datasets:
@@ -275,6 +361,11 @@ def run_plan(
     near_interval_s: int = INTERVAL_1M_SECONDS,
     far_interval_s: int = INTERVAL_15M_SECONDS,
     horizon_days: int | None = FAR_EXPIRATION_HORIZON_DAYS,
+    horizon_end: date | None = None,
+    near_dte: int = NEAR_EXPIRATION_DTE,
+    weekly_dte: int = WEEKLY_EXPIRATION_DTE,
+    standard_dte: int = STANDARD_EXPIRATION_DTE,
+    roll_in_dte: int = ROLL_IN_EXPIRATION_DTE,
     stale_after: timedelta = STALE_RUNNING_AFTER,
     materialize: bool = True,
 ) -> PlanResult:
@@ -289,28 +380,42 @@ def run_plan(
         start: Requested first date. Dates before 2022-05-16 are clamped.
         end: Requested last date.
         datasets: Datasets to plan. ``None`` plans all five.
-        max_dte: Optional calendar DTE cap. ``None`` keeps every kept expiration.
+        max_dte: Optional calendar DTE cap applied after VS3D selection.
+            ``None`` does not add a cap.
         queue: Progress queue. ``None`` uses a new in-memory queue.
         one_minute_max_dte: Inclusive DTE bound for the near interval.
         near_interval_s: Near bar length in seconds.
         far_interval_s: Far bar length in seconds.
         horizon_days: Far-future placeholder horizon. ``None`` disables it.
+        horizon_end: Date the placeholder horizon is measured from. ``None``
+            uses this plan's end. A one-session chunk of a longer backfill
+            passes the backfill end so the kept expirations match one plan of
+            the whole range.
+        near_dte: Inclusive DTE that keeps every listed expiration.
+        weekly_dte: Inclusive DTE for non-third-Friday weeklies.
+        standard_dte: Inclusive DTE for monthlies, quarterlies, and end-of-month.
+        roll_in_dte: Inclusive DTE for the next standard expiration past
+            ``standard_dte``.
         stale_after: Running rows older than this are reset to pending first.
-        materialize: When true, ``jobs`` lists the pending queue.
+        materialize: When true, ``jobs`` lists the pending queue. The queue
+            itself is still synced one session at a time.
 
     Returns:
         Counts and, when requested, the pending jobs.
 
     Raises:
-        PlanRangeError: A date, dataset, cap, or interval is invalid.
+        PlanRangeError: A date, dataset, cap, interval, horizon anchor, or
+            expiration window is invalid.
         PlanFloorError: The range ends before 2022-05-16.
     """
     effective_start, effective_end, clamped = resolve_range(start, end)
     selected = parse_datasets(datasets)
     _validate_limits(max_dte, one_minute_max_dte, near_interval_s, far_interval_s)
+    _validate_expiration_window(near_dte, weekly_dte, standard_dte, roll_in_dte)
+    anchor = _horizon_anchor(effective_end, horizon_end)
     sessions = trading_sessions(effective_start, effective_end)
     listed = tuple(sorted(set(expirations)))
-    kept, dropped = partition_expirations(listed, plan_end=effective_end, horizon_days=horizon_days)
+    kept, dropped = partition_expirations(listed, plan_end=anchor, horizon_days=horizon_days)
     store = queue if queue is not None else MemoryProgressStore()
     reset_running = store.reset_stale(
         datetime.now(timezone.utc) - stale_after,
@@ -318,30 +423,30 @@ def run_plan(
         end=effective_end,
         datasets=selected,
     )
-    produced = iter_jobs(
-        tuple(session.trade_date for session in sessions),
-        kept,
-        datasets=selected,
-        max_dte=max_dte,
-        one_minute_max_dte=one_minute_max_dte,
-        near_interval_s=near_interval_s,
-        far_interval_s=far_interval_s,
-    )
     keys: set[tuple[str, date, date]] = set()
     tally = _Tally(selected, near_interval_s, far_interval_s)
-
-    def counted() -> Iterator[PlanJob]:
-        """Count jobs as they are queued.
-
-        Yields:
-            The same jobs ``iter_jobs`` produced.
-        """
-        for job in produced:
-            keys.add(job.key())
-            tally.add(job)
-            yield job
-
-    stats = store.sync(counted())
+    parts: list[SyncStats] = []
+    for session in sessions:
+        parts.append(
+            store.sync(
+                _counted_session(
+                    session.trade_date,
+                    kept,
+                    datasets=selected,
+                    max_dte=max_dte,
+                    one_minute_max_dte=one_minute_max_dte,
+                    near_interval_s=near_interval_s,
+                    far_interval_s=far_interval_s,
+                    near_dte=near_dte,
+                    weekly_dte=weekly_dte,
+                    standard_dte=standard_dte,
+                    roll_in_dte=roll_in_dte,
+                    tally=tally,
+                    keys=keys if materialize else None,
+                )
+            )
+        )
+    stats = _merge_stats(parts)
     pending: tuple[PlanJob, ...] = ()
     if materialize and sessions:
         pending = tuple(
@@ -464,6 +569,244 @@ def _fetch_spxw_expirations(api_base_url: str) -> list[date]:
 
 # A variable, not a function object, so tests can replace the loader.
 fetch_spxw_expirations: Callable[[str], list[date]] = _fetch_spxw_expirations
+
+
+def _counted_session(
+    session: date,
+    expirations: Sequence[date],
+    *,
+    datasets: Sequence[str],
+    max_dte: int | None,
+    one_minute_max_dte: int,
+    near_interval_s: int,
+    far_interval_s: int,
+    near_dte: int,
+    weekly_dte: int,
+    standard_dte: int,
+    roll_in_dte: int,
+    tally: _Tally,
+    keys: set[tuple[str, date, date]] | None,
+) -> Iterator[PlanJob]:
+    """Yield one session's jobs and count them.
+
+    Args:
+        session: NYSE session.
+        expirations: Expirations inside the placeholder horizon.
+        datasets: Datasets to emit.
+        max_dte: Optional extra DTE cap.
+        one_minute_max_dte: Inclusive DTE bound for the near interval.
+        near_interval_s: Near bar length.
+        far_interval_s: Far bar length.
+        near_dte: VS3D near window.
+        weekly_dte: VS3D weekly window.
+        standard_dte: VS3D standard window.
+        roll_in_dte: VS3D roll-in window.
+        tally: Running counts for the whole plan.
+        keys: When set, each job key is recorded so a materialized result can
+            drop rows this plan did not produce.
+
+    Yields:
+        The session's jobs.
+    """
+    produced = iter_jobs(
+        (session,),
+        expirations,
+        datasets=datasets,
+        max_dte=max_dte,
+        one_minute_max_dte=one_minute_max_dte,
+        near_interval_s=near_interval_s,
+        far_interval_s=far_interval_s,
+        near_dte=near_dte,
+        weekly_dte=weekly_dte,
+        standard_dte=standard_dte,
+        roll_in_dte=roll_in_dte,
+    )
+    for job in produced:
+        if keys is not None:
+            keys.add(job.key())
+        tally.add(job)
+        yield job
+
+
+def _merge_stats(parts: Sequence[SyncStats]) -> SyncStats:
+    """Add per-session sync results.
+
+    Args:
+        parts: One result per session. Empty when the range has no sessions.
+
+    Returns:
+        The combined counts. ``pending`` follows from the summed fields.
+    """
+    return SyncStats(
+        inserted=sum(part.inserted for part in parts),
+        requeued_failed=sum(part.requeued_failed for part in parts),
+        touched=sum(part.touched for part in parts),
+        skipped_done=sum(part.skipped_done for part in parts),
+        skipped_empty=sum(part.skipped_empty for part in parts),
+        skipped_pending=sum(part.skipped_pending for part in parts),
+        skipped_running=sum(part.skipped_running for part in parts),
+        writes=sum(part.writes for part in parts),
+    )
+
+
+def _horizon_anchor(plan_end: date, horizon_end: date | None) -> date:
+    """Return the date the far-expiration horizon is measured from.
+
+    Args:
+        plan_end: Last session in this plan call.
+        horizon_end: Caller override. ``None`` uses ``plan_end``.
+
+    Returns:
+        The anchor date.
+
+    Raises:
+        PlanRangeError: ``horizon_end`` is before ``plan_end``.
+    """
+    if horizon_end is None:
+        return plan_end
+    if horizon_end < plan_end:
+        raise PlanRangeError("horizon_end is before the plan end")
+    return horizon_end
+
+
+def _validate_expiration_window(near_dte: int, weekly_dte: int, standard_dte: int, roll_in_dte: int) -> None:
+    """Reject a negative VS3D threshold.
+
+    Args:
+        near_dte: Near window.
+        weekly_dte: Weekly window.
+        standard_dte: Standard window.
+        roll_in_dte: Roll-in window.
+
+    Raises:
+        PlanRangeError: A threshold is negative.
+    """
+    if near_dte < 0 or weekly_dte < 0 or standard_dte < 0 or roll_in_dte < 0:
+        raise PlanRangeError("expiration windows must be >= 0")
+
+
+def _keep_listed(
+    expiration: date,
+    dte: int,
+    standards: set[date],
+    near_dte: int,
+    weekly_dte: int,
+    standard_dte: int,
+) -> bool:
+    """Return whether selection keeps this expiration before the roll-in.
+
+    Args:
+        expiration: Listed expiration.
+        dte: Calendar DTE from the session. Never negative.
+        standards: Monthlies, quarterlies, and end-of-month dates in the list.
+        near_dte: Inclusive DTE that keeps every listed expiration.
+        weekly_dte: Inclusive DTE for a Friday that is not the third Friday.
+        standard_dte: Inclusive DTE for a date in ``standards``.
+
+    Returns:
+        True when the expiration is inside one of those windows.
+    """
+    if dte <= near_dte:
+        return True
+    if _is_weekly_friday(expiration) and dte <= weekly_dte:
+        return True
+    return expiration in standards and dte <= standard_dte
+
+
+def _is_weekly_friday(expiration: date) -> bool:
+    """Return whether a date is a Friday and not the third Friday of its month.
+
+    Args:
+        expiration: Listed expiration.
+
+    Returns:
+        True for a weekly Friday. The third Friday is a monthly, including
+        when that Friday is an NYSE holiday.
+    """
+    return expiration.weekday() == 4 and expiration != _third_friday(expiration.year, expiration.month)
+
+
+def _standard_expirations(listed: set[date]) -> set[date]:
+    """Return monthlies, quarterlies, and end-of-month dates that are listed.
+
+    Quarterlies are the monthlies of March, June, September, and December, so
+    they are included by collecting monthlies. End-of-month is the last listed
+    weekday expiration of each month.
+
+    Args:
+        listed: Unique expiration dates.
+
+    Returns:
+        The standard dates that appear in ``listed``.
+    """
+    found: set[date] = set()
+    for year, month in {(day.year, day.month) for day in listed}:
+        monthly = _listed_monthly(year, month, listed)
+        if monthly is not None:
+            found.add(monthly)
+    found.update(_eom_expirations(listed))
+    return found
+
+
+def _listed_monthly(year: int, month: int, listed: set[date]) -> date | None:
+    """Return the monthly expiration when it is in the listed set.
+
+    The monthly is the third Friday. When that Friday is not an NYSE session,
+    it is the Thursday before, and only if that Thursday is listed.
+
+    Args:
+        year: Calendar year.
+        month: Calendar month, 1 through 12.
+        listed: Unique expiration dates.
+
+    Returns:
+        The listed monthly, or ``None`` when the candidate is not listed.
+    """
+    friday = _third_friday(year, month)
+    if trading_sessions(friday, friday):
+        candidate = friday
+    else:
+        candidate = friday - timedelta(days=1)
+        if not trading_sessions(candidate, candidate):
+            return None
+    if candidate in listed:
+        return candidate
+    return None
+
+
+def _third_friday(year: int, month: int) -> date:
+    """Return the third Friday of a month.
+
+    Args:
+        year: Calendar year.
+        month: Calendar month, 1 through 12.
+
+    Returns:
+        The third Friday, whether or not the exchange is open.
+    """
+    first = date(year, month, 1)
+    offset = (4 - first.weekday()) % 7
+    return first + timedelta(days=offset + 14)
+
+
+def _eom_expirations(listed: set[date]) -> set[date]:
+    """Return the last listed weekday expiration of each month.
+
+    Args:
+        listed: Unique expiration dates.
+
+    Returns:
+        One date per month that has a listed Monday-through-Friday expiration.
+    """
+    by_month: dict[tuple[int, int], date] = {}
+    for day in listed:
+        if day.weekday() >= 5:
+            continue
+        key = (day.year, day.month)
+        current = by_month.get(key)
+        if current is None or day > current:
+            by_month[key] = day
+    return set(by_month.values())
 
 
 def _interval_for(
