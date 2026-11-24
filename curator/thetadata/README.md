@@ -6,7 +6,7 @@ ThetaData lives in the curator package and is invoked as:
 uv run curator theta --help
 ```
 
-Backfill commands print `not implemented` until the client tickets fill them in. Schema migrations are a separate Alembic chain from the repository-root history (head `34551fa734e8`):
+`curator theta plan` queues jobs. `curator theta backfill --start --end` and `curator theta load-day --date` download them. Quotes, OHLC, and first-order greeks use the job interval (60s for calendar DTE 0-5, 900s otherwise) inside a default window of 125 listed strikes on each side of ATM. ATM is the listed strike nearest the median put-call forward at the first bar of that response; the chain center is used when the open has no two-sided strike. `underlying_price` is not an input. `--strike-range all` keeps the full chain. Open interest and EOD always keep the full chain. Output is counts and `pg_total_relation_size` bytes, plus a projection from 2022-05-16 that scales those measurements by NYSE session count. Schema migrations are a separate Alembic chain from the repository-root history (head `34551fa734e8`):
 
 ```bash
 uv run curator theta db upgrade

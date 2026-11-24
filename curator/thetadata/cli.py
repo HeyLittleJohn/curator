@@ -1,11 +1,12 @@
 """ThetaData subcommands for the curator CLI.
 
-Backfill commands stay stubs until later tickets fill in the client and loaders.
-``plan`` builds the SPXW job queue and prints counts only. ``db`` runs the theta
-schema Alembic chain.
+``plan`` builds the SPXW job queue. ``backfill`` and ``load-day`` download the
+queued jobs and print counts only. ``db`` runs the theta schema Alembic chain.
 """
 
+import os
 from datetime import date
+from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
@@ -220,6 +221,154 @@ def plan(
         typer.echo(sanitize_text(str(exc)), err=True)
         raise typer.Exit(code=1) from None
     typer.echo(format_plan_counts(result), nl=False)
+
+
+def _strike_range_option(value: str) -> int | None:
+    """Parse ``--strike-range``.
+
+    Args:
+        value: Width, or ``all`` for the full chain.
+
+    Returns:
+        Strikes on each side of ATM, or ``None`` for the full chain.
+
+    Raises:
+        typer.Exit: The value is not a width or ``all``.
+    """
+    from curator.thetadata.window import StrikeWindowError, parse_strike_range
+
+    try:
+        return parse_strike_range(value)
+    except StrikeWindowError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=1) from None
+
+
+def _run_load(
+    *,
+    start: str,
+    end: str,
+    dataset: list[str] | None,
+    max_dte: int | None,
+    strike_range: str,
+    api_url: str,
+    database_url: str | None,
+    workers: int | None,
+) -> None:
+    """Run a backfill or a single day and print counts.
+
+    Args:
+        start: First ``YYYY-MM-DD``.
+        end: Last ``YYYY-MM-DD``.
+        dataset: Dataset filters. ``None`` loads every SPXW dataset.
+        max_dte: Optional calendar DTE cap.
+        strike_range: Window width or ``all``.
+        api_url: Theta Terminal base URL.
+        database_url: Postgres URL. Not printed.
+        workers: Worker processes. ``None`` uses the default.
+
+    Returns:
+        None.
+
+    Raises:
+        typer.Exit: The load fails, or any job is marked failed.
+    """
+    import asyncio
+
+    from curator.thetadata.backfill import run_backfill
+    from curator.thetadata.exceptions import sanitize_text
+    from curator.thetadata.report import format_load_report
+
+    start_day, end_day = _plan_dates(start, end)
+    width = _strike_range_option(strike_range)
+    try:
+        lock_env = os.environ.get("THETADATA_LOCK_PATH", "").strip()
+        report = asyncio.run(
+            run_backfill(
+                start=start_day,
+                end=end_day,
+                api_base_url=api_url,
+                database_url=_blank(database_url),
+                datasets=dataset,
+                max_dte=max_dte,
+                strike_range=width,
+                worker_count=workers,
+                lock_path=Path(lock_env) if lock_env else None,
+            )
+        )
+    except Exception as exc:
+        typer.echo(sanitize_text(str(exc)), err=True)
+        raise typer.Exit(code=1) from None
+    typer.echo(format_load_report(report), nl=False)
+    if report.jobs_failed:
+        raise typer.Exit(code=1)
+
+
+DatasetOption = Annotated[
+    Optional[list[str]],
+    typer.Option(
+        "--dataset",
+        help="Dataset to load. Repeat the option or comma-separate names. Default: all SPXW datasets.",
+    ),
+]
+MaxDteOption = Annotated[
+    Optional[int],
+    typer.Option("--max-dte", help="Optional calendar DTE cap. Default: every listed expiration."),
+]
+StrikeRangeOption = Annotated[
+    str,
+    typer.Option(
+        "--strike-range",
+        help="Strikes on each side of ATM for quotes, OHLC, and greeks. Default 125. 'all' is the full chain.",
+    ),
+]
+
+
+@theta_app.command("backfill")
+def backfill(
+    start: Annotated[str, typer.Option("--start", help="First date (YYYY-MM-DD)")],
+    end: Annotated[str, typer.Option("--end", help="Last date (YYYY-MM-DD)")],
+    dataset: DatasetOption = None,
+    max_dte: MaxDteOption = None,
+    strike_range: StrikeRangeOption = "125",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
+    database_url: DatabaseUrlOption = None,
+    workers: WorkerCountOption = None,
+) -> None:
+    """Download SPXW jobs for a date range and print counts only."""
+    _run_load(
+        start=start,
+        end=end,
+        dataset=dataset,
+        max_dte=max_dte,
+        strike_range=strike_range,
+        api_url=api_url,
+        database_url=database_url,
+        workers=workers,
+    )
+
+
+@theta_app.command("load-day")
+def load_day(
+    day: Annotated[str, typer.Option("--date", help="Session date (YYYY-MM-DD)")],
+    dataset: DatasetOption = None,
+    max_dte: MaxDteOption = None,
+    strike_range: StrikeRangeOption = "125",
+    api_url: ApiUrlOption = _DEFAULT_API_URL,
+    database_url: DatabaseUrlOption = None,
+    workers: WorkerCountOption = None,
+) -> None:
+    """Download one SPXW session and print row counts, bytes, and the projected backfill."""
+    _run_load(
+        start=day,
+        end=day,
+        dataset=dataset,
+        max_dte=max_dte,
+        strike_range=strike_range,
+        api_url=api_url,
+        database_url=database_url,
+        workers=workers,
+    )
 
 
 @theta_app.command("migrate")

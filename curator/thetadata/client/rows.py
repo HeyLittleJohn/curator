@@ -226,8 +226,14 @@ class EodRow(ThetaRow):
     count: IntField | None = None
     created: DateTimeField | None = None
     last_trade: DateTimeField | None = None
+    bid_size: IntField | None = None
+    bid_exchange: IntField | None = None
     bid: DecimalField | None = None
+    bid_condition: IntField | None = None
+    ask_size: IntField | None = None
+    ask_exchange: IntField | None = None
     ask: DecimalField | None = None
+    ask_condition: IntField | None = None
 
 
 class GreeksRow(ThetaRow):

@@ -78,6 +78,25 @@ class ProgressSnapshot:
 
 
 @dataclass(frozen=True)
+class RangeCensus:
+    """How many progress rows in one session range sit in each status.
+
+    Args:
+        pending: Rows waiting to be claimed.
+        running: Rows a worker currently holds.
+        done: Rows that stored at least one fact.
+        failed: Rows the last attempt could not finish.
+        empty: Rows the terminal had no rows for, or whose strike window was empty.
+    """
+
+    pending: int = 0
+    running: int = 0
+    done: int = 0
+    failed: int = 0
+    empty: int = 0
+
+
+@dataclass(frozen=True)
 class SyncStats:
     """What one ``sync`` call did.
 
@@ -146,14 +165,37 @@ class ProgressQueue(Protocol):
         """
         ...
 
-    def claim(self, limit: int = 1) -> list[PlanJob]:
+    def claim(
+        self,
+        limit: int = 1,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        datasets: Sequence[str] | None = None,
+    ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
         Args:
             limit: Maximum jobs to take.
+            start: First session date, inclusive. ``None`` does not filter.
+            end: Last session date, inclusive. ``None`` does not filter.
+            datasets: Datasets to claim. ``None`` claims every dataset.
 
         Returns:
-            The claimed jobs. Empty when nothing is pending.
+            The claimed jobs. Empty when nothing pending matches.
+        """
+        ...
+
+    def census(self, *, start: date, end: date, datasets: Sequence[str]) -> RangeCensus:
+        """Count rows in a session range by status.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to count.
+
+        Returns:
+            One count per status. Missing statuses are zero.
         """
         ...
 
@@ -317,18 +359,36 @@ def _job_from_row(
     )
 
 
-def claim_sql() -> str:
+def claim_sql(
+    *,
+    start: date | None = None,
+    end: date | None = None,
+    datasets: Sequence[str] | None = None,
+) -> str:
     """Return the atomic pending-to-running statement.
+
+    Args:
+        start: When set, the statement binds ``:start``.
+        end: When set, the statement binds ``:end``.
+        datasets: When set, already-validated dataset names are inlined.
 
     Returns:
         SQL that locks pending rows with ``FOR UPDATE SKIP LOCKED`` and marks
-        the locked rows ``running``. ``:limit`` is the only bind parameter.
+        the locked rows ``running``. ``:limit`` is always bound.
     """
+    filters = [f"status = '{PENDING}'"]
+    if start is not None:
+        filters.append('"date" >= :start')
+    if end is not None:
+        filters.append('"date" <= :end')
+    if datasets is not None:
+        filters.append(_dataset_in(datasets))
+    where = " AND ".join(filters)
     return f"""
 WITH picked AS (
     SELECT dataset, "date", expiration
     FROM {_SCHEMA}.progress
-    WHERE status = '{PENDING}'
+    WHERE {where}
     ORDER BY "date", expiration, dataset
     FOR UPDATE SKIP LOCKED
     LIMIT :limit
@@ -380,6 +440,53 @@ class _MemoryRow:
             A ``PlanJob`` with calendar DTE filled in.
         """
         return _job_from_row(self.dataset, self.trade_date, self.expiration, self.interval_s)
+
+
+def _memory_pending(
+    row: _MemoryRow,
+    *,
+    start: date | None,
+    end: date | None,
+    datasets: frozenset[str] | None,
+) -> bool:
+    """Return whether a memory row is pending and inside the claim filter.
+
+    Args:
+        row: Stored progress row.
+        start: First session date, inclusive. ``None`` does not filter.
+        end: Last session date, inclusive. ``None`` does not filter.
+        datasets: Dataset names. ``None`` allows every dataset.
+
+    Returns:
+        True when the row can be claimed.
+    """
+    if row.status != PENDING:
+        return False
+    if start is not None and row.trade_date < start:
+        return False
+    if end is not None and row.trade_date > end:
+        return False
+    if datasets is not None and row.dataset not in datasets:
+        return False
+    return True
+
+
+def _census_from(counts: dict[str, int]) -> RangeCensus:
+    """Build a census from a status-to-count map.
+
+    Args:
+        counts: Counts keyed by status name. Missing keys are zero.
+
+    Returns:
+        The census.
+    """
+    return RangeCensus(
+        pending=counts.get(PENDING, 0),
+        running=counts.get(RUNNING, 0),
+        done=counts.get(DONE, 0),
+        failed=counts.get(FAILED, 0),
+        empty=counts.get(EMPTY, 0),
+    )
 
 
 class MemoryProgressStore:
@@ -447,29 +554,65 @@ class MemoryProgressStore:
             self.writes += stats["writes"]
         return _stats_from(stats)
 
-    def claim(self, limit: int = 1) -> list[PlanJob]:
+    def claim(
+        self,
+        limit: int = 1,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        datasets: Sequence[str] | None = None,
+    ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
         Args:
             limit: Maximum jobs to take.
+            start: First session date, inclusive. ``None`` does not filter.
+            end: Last session date, inclusive. ``None`` does not filter.
+            datasets: Datasets to claim. ``None`` claims every dataset.
 
         Returns:
             The claimed jobs, oldest session first.
 
         Raises:
-            ProgressError: ``limit`` is below 1.
+            ProgressError: ``limit`` is below 1, or a dataset name is unknown.
         """
         if limit < 1:
             raise ProgressError("claim limit must be >= 1")
+        allowed = frozenset(_check_datasets(datasets)) if datasets is not None else None
         now = datetime.now(timezone.utc)
         with self._lock:
-            pending = [row for row in self._rows.values() if row.status == PENDING]
+            pending = [
+                row for row in self._rows.values() if _memory_pending(row, start=start, end=end, datasets=allowed)
+            ]
             pending.sort(key=lambda row: (row.trade_date, row.expiration, row.dataset))
             taken = pending[:limit]
             for row in taken:
                 row.status = RUNNING
                 row.updated_at = now
             return [row.to_job() for row in taken]
+
+    def census(self, *, start: date, end: date, datasets: Sequence[str]) -> RangeCensus:
+        """Count rows in a session range by status.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to count.
+
+        Returns:
+            One count per status. Missing statuses are zero.
+
+        Raises:
+            ProgressError: A dataset name is unknown.
+        """
+        allowed = frozenset(_check_datasets(datasets))
+        counts = {status: 0 for status in STATUSES}
+        with self._lock:
+            for row in self._rows.values():
+                if row.dataset not in allowed or row.trade_date < start or row.trade_date > end:
+                    continue
+                counts[row.status] = counts.get(row.status, 0) + 1
+        return _census_from(counts)
 
     def mark(self, job: PlanJob, status: str, row_count: int) -> None:
         """Set the status and row count of an existing job.
@@ -738,22 +881,70 @@ class PostgresProgressStore:
         stats["writes"] = stats["inserted"] + stats["requeued_failed"] + stats["touched"]
         return _stats_from(stats)
 
-    def claim(self, limit: int = 1) -> list[PlanJob]:
+    def claim(
+        self,
+        limit: int = 1,
+        *,
+        start: date | None = None,
+        end: date | None = None,
+        datasets: Sequence[str] | None = None,
+    ) -> list[PlanJob]:
         """Move up to ``limit`` pending jobs to running.
 
         Args:
             limit: Maximum jobs to take.
+            start: First session date, inclusive. ``None`` does not filter.
+            end: Last session date, inclusive. ``None`` does not filter.
+            datasets: Datasets to claim. ``None`` claims every dataset.
 
         Returns:
             The claimed jobs.
 
         Raises:
-            ProgressError: ``limit`` is below 1.
+            ProgressError: ``limit`` is below 1, or a dataset name is unknown.
         """
         if limit < 1:
             raise ProgressError("claim limit must be >= 1")
-        rows = self._connection.execute(text(claim_sql()), {"limit": limit}).mappings().all()
+        names = _check_datasets(datasets) if datasets is not None else None
+        params: dict[str, object] = {"limit": limit}
+        if start is not None:
+            params["start"] = start
+        if end is not None:
+            params["end"] = end
+        rows = self._connection.execute(text(claim_sql(start=start, end=end, datasets=names)), params).mappings().all()
         return [_job_from_row(row["dataset"], row["trade_date"], row["expiration"], row["interval_s"]) for row in rows]
+
+    def census(self, *, start: date, end: date, datasets: Sequence[str]) -> RangeCensus:
+        """Count rows in a session range by status.
+
+        Args:
+            start: First session date, inclusive.
+            end: Last session date, inclusive.
+            datasets: Datasets to count.
+
+        Returns:
+            One count per status. Missing statuses are zero.
+
+        Raises:
+            ProgressError: A dataset name is unknown.
+        """
+        names = _check_datasets(datasets)
+        rows = self._connection.execute(
+            text(
+                f"""
+                SELECT status, count(*) AS n
+                FROM {_SCHEMA}.progress
+                WHERE "date" BETWEEN :start AND :end
+                  AND {_dataset_in(names)}
+                GROUP BY status
+                """
+            ),
+            {"start": start, "end": end},
+        ).mappings()
+        counts = {status: 0 for status in STATUSES}
+        for row in rows:
+            counts[str(row["status"])] = int(row["n"])
+        return _census_from(counts)
 
     def mark(self, job: PlanJob, status: str, row_count: int) -> None:
         """Set the status and row count of an existing job.
