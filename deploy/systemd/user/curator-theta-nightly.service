@@ -1,0 +1,18 @@
+# User service. Enable the timer, not this service.
+# THETADATA_DATABASE_URL belongs in the EnvironmentFile, never in this unit.
+# Edit WorkingDirectory, EnvironmentFile, and ExecStart when the checkout is not ~/curator.
+# Theta Terminal v3 is the user unit theta-terminal.service on 127.0.0.1:25503.
+# See docs/theta-nightly.md.
+
+[Unit]
+Description=Curator ThetaData nightly SPXW incremental load
+After=theta-terminal.service
+Wants=theta-terminal.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/curator
+EnvironmentFile=%h/curator/.env
+ExecStart=%h/curator/.venv/bin/curator theta nightly
+TimeoutStartSec=infinity
+Nice=10

@@ -1,10 +1,12 @@
 """Run planned SPXW jobs through the worker pool.
 
 A finished range is a no-op: no expiration list, no history requests, no new
-rows. Otherwise the parent lists SPXW expirations, syncs the TD-4 queue, and
-claims pending jobs with ``FOR UPDATE SKIP LOCKED``. Workers stream and upsert.
-The parent holds the machine lock for the whole run so a second backfill cannot
-open its own request semaphore.
+rows. Every NYSE session in the range must already have a row for each
+requested dataset. A later session that was never planned is still loaded when
+an earlier session is done. Otherwise the parent lists SPXW expirations, syncs
+the TD-4 queue, and claims pending jobs with ``FOR UPDATE SKIP LOCKED``.
+Workers stream and upsert. The parent holds the machine lock for the whole run
+so a second backfill cannot open its own request semaphore.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from pathlib import Path
 
 from aiomultiprocess import Pool
 
+from curator.thetadata.calendar import trading_sessions
 from curator.thetadata.client.http import ThetaDataClient
 from curator.thetadata.config import Settings
 from curator.thetadata.jobs import PlanJob
@@ -30,7 +33,6 @@ from curator.thetadata.progress import (
     STALE_RUNNING_AFTER,
     MemoryProgressStore,
     ProgressQueue,
-    RangeCensus,
     open_progress_store,
 )
 from curator.thetadata.report import (
@@ -76,16 +78,35 @@ def _validate(
         raise LoadError("a custom writer cannot run inside the process pool")
 
 
-def _is_finished(census: RangeCensus) -> bool:
-    """Return whether every row in the range is done or empty.
+def _range_finished(store: ProgressQueue, start: date, end: date, datasets: Sequence[str]) -> bool:
+    """Return whether every session in the range is already done or empty.
+
+    A range is not finished when any requested dataset is missing on an NYSE
+    session inside it. An earlier finished session does not hide a later
+    session that was never planned.
 
     Args:
-        census: Status counts for the requested datasets.
+        store: Progress queue.
+        start: First session date, inclusive.
+        end: Last session date, inclusive.
+        datasets: Datasets that must each have a finished row on every session.
 
     Returns:
-        True when the range has finished rows and nothing pending, running, or failed.
+        True when every session has a row for every dataset and none of those
+        rows are pending, running, or failed.
     """
-    return census.pending == 0 and census.running == 0 and census.failed == 0 and census.done + census.empty > 0
+    census = store.census(start=start, end=end, datasets=datasets)
+    if census.pending or census.running or census.failed:
+        return False
+    sessions = trading_sessions(start, end)
+    if not sessions:
+        return False
+    covered = store.covered_dates(start=start, end=end, datasets=datasets)
+    for session in sessions:
+        for dataset in datasets:
+            if session.trade_date not in covered[dataset]:
+                return False
+    return True
 
 
 @contextmanager
@@ -365,8 +386,8 @@ async def run_backfill(
             ``use_pool`` false.
 
     Returns:
-        Counts and byte sizes. A second call after every job is done or empty
-        reports zero requests and zero new rows.
+        Counts and byte sizes. A second call after every session in the range
+        is done or empty reports zero requests and zero new rows.
 
     Raises:
         LoadError: The request cannot be run.
@@ -461,7 +482,7 @@ async def _load(
     stale_before = datetime.now(timezone.utc) - STALE_RUNNING_AFTER
     with _open_queue(database_url, queue) as store:
         store.reset_stale(stale_before, start=effective_start, end=effective_end, datasets=datasets)
-        finished = _is_finished(store.census(start=effective_start, end=effective_end, datasets=datasets))
+        finished = _range_finished(store, effective_start, effective_end, datasets)
     if finished:
         return [], 0
     async with ThetaDataClient(_client_settings(api_base_url)) as client:
