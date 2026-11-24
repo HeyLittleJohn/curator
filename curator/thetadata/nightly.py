@@ -25,12 +25,18 @@ from pathlib import Path
 
 from curator.thetadata.backfill import run_backfill
 from curator.thetadata.calendar import trading_sessions
-from curator.thetadata.config import BACKFILL_START
+from curator.thetadata.config import (
+    BACKFILL_START,
+    NEAR_EXPIRATION_DTE,
+    ROLL_IN_EXPIRATION_DTE,
+    STANDARD_EXPIRATION_DTE,
+    WEEKLY_EXPIRATION_DTE,
+)
 from curator.thetadata.jobs import PlanJob
 from curator.thetadata.limits import backfill_lock
 from curator.thetadata.mapping import PendingFact
 from curator.thetadata.planner import parse_datasets
-from curator.thetadata.progress import MemoryProgressStore, ProgressQueue, open_progress_store
+from curator.thetadata.progress import ORDER_OLDEST, MemoryProgressStore, ProgressQueue, open_progress_store
 from curator.thetadata.report import LoadReport
 from curator.thetadata.time import EASTERN
 from curator.thetadata.window import DEFAULT_STRIKE_RANGE
@@ -375,6 +381,10 @@ async def run_nightly(
     wait: bool = False,
     now: Clock | None = None,
     sleep: Sleeper | None = None,
+    near_dte: int = NEAR_EXPIRATION_DTE,
+    weekly_dte: int = WEEKLY_EXPIRATION_DTE,
+    standard_dte: int = STANDARD_EXPIRATION_DTE,
+    roll_in_dte: int = ROLL_IN_EXPIRATION_DTE,
 ) -> NightlyReport:
     """Plan and load today's SPXW session and unfinished sessions in the lookback.
 
@@ -382,9 +392,9 @@ async def run_nightly(
         api_base_url: Theta Terminal v3 base URL.
         database_url: Postgres URL. Required when ``use_pool`` is true. Not logged.
         datasets: Datasets to load. ``None`` loads every SPXW dataset.
-        max_dte: Optional calendar DTE cap. ``None`` keeps every listed expiration.
+        max_dte: Optional extra calendar DTE cap after VS3D selection.
         strike_range: Strikes on each side of ATM. ``None`` is the full chain.
-        worker_count: Worker processes. ``None`` uses the machine default.
+        worker_count: Worker processes. ``None`` uses 4.
         lock_path: Machine lock file. ``None`` uses ``/tmp/curator-theta.lock``.
         batch_size: Insert batch size.
         queue: Progress queue. ``None`` opens postgres, or a fresh memory queue
@@ -397,6 +407,11 @@ async def run_nightly(
         wait: Sleep until 17:15 America/New_York on a trading day. The default
             returns ``before_ready`` and makes no requests.
         now: Clock. ``None`` uses the current time.
+        near_dte: Inclusive DTE that keeps every listed expiration.
+        weekly_dte: Inclusive DTE for non-third-Friday weeklies.
+        standard_dte: Inclusive DTE for monthlies, quarterlies, and end-of-month.
+        roll_in_dte: Inclusive DTE for the next standard expiration past
+            ``standard_dte``. The nightly walk stays oldest-first.
         sleep: Sleeper used with ``wait``. ``None`` uses ``asyncio.sleep``.
 
     Returns:
@@ -443,5 +458,10 @@ async def run_nightly(
             queue=queue,
             use_pool=use_pool,
             writer=writer,
+            order=ORDER_OLDEST,
+            near_dte=near_dte,
+            weekly_dte=weekly_dte,
+            standard_dte=standard_dte,
+            roll_in_dte=roll_in_dte,
         )
     return _from_load(loaded, len(due))

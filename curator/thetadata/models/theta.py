@@ -25,6 +25,7 @@ from sqlalchemy import (
     Numeric,
     SmallInteger,
     String,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -298,8 +299,10 @@ class Progress(ThetaBase):
 
     Status is ``pending``, ``running``, ``done``, ``failed``, or ``empty``.
     ``interval_s`` is the intraday bar length for quotes, OHLC, and first-order
-    greeks. Daily open interest and EOD leave it null. The partial index on
-    pending rows is what workers use for ``FOR UPDATE SKIP LOCKED`` claims.
+    greeks. Daily open interest and EOD leave it null. ``error`` is the
+    sanitized failure text for a failed job, and null otherwise. The partial
+    index on pending rows is what workers use for ``FOR UPDATE SKIP LOCKED``
+    claims.
     """
 
     __tablename__ = "progress"
@@ -333,6 +336,7 @@ class Progress(ThetaBase):
         nullable=True,
         comment=PROGRESS_INTERVAL_COMMENT,
     )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
