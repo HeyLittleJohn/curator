@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import Iterator, Sequence
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -41,6 +42,20 @@ NEAR = date(2024, 1, 5)
 FAR = date(2024, 1, 19)
 QUOTES = ("quotes",)
 Key = tuple[date, date, str]
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    """Drop ANSI color codes from captured CLI text.
+
+    Args:
+        text: Stdout or stderr from ``CliRunner``.
+
+    Returns:
+        The same text without escape sequences. A color terminal can split an
+        option name such as ``--order`` across highlight spans.
+    """
+    return _ANSI.sub("", text)
 
 
 @pytest.fixture(autouse=True)
@@ -408,8 +423,10 @@ def test_backfill_cli_order_defaults_to_newest_and_oldest_is_explicit(
     assert "sideways" not in (refused.stderr or "")
     assert captured == [ORDER_NEWEST, ORDER_OLDEST]
     help_result = CliRunner().invoke(app, ["theta", "backfill", "--help"])
-    assert "--order" in help_result.stdout
-    assert "newest" in help_result.stdout
+    assert help_result.exit_code == 0
+    help_text = _plain(help_result.stdout)
+    assert "--order" in help_text
+    assert "newest" in help_text
 
 
 def test_nightly_keeps_the_oldest_walk(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
