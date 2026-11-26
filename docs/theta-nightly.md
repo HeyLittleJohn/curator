@@ -27,6 +27,7 @@ new_rows=0
 jobs_done=0
 jobs_empty=0
 jobs_failed=0
+failure_reasons=
 ```
 
 ## systemd user timer
@@ -60,7 +61,7 @@ systemctl --user enable --now curator-theta-nightly.timer
 systemctl --user list-timers curator-theta-nightly.timer
 ```
 
-The service reads `EnvironmentFile=%h/curator/.env`. systemd refuses to start when that file is missing. Put `THETADATA_DATABASE_URL` in the file. Do not write the URL in the unit. The repository gitignores `.env`. Optional keys are `THETADATA_API_BASE_URL`, `THETADATA_LOCK_PATH`, `THETADATA_WORKER_COUNT`, and `THETADATA_NIGHTLY_LOOKBACK`. The API base defaults to the local terminal.
+The service reads `EnvironmentFile=%h/curator/.env`. systemd refuses to start when that file is missing. Put `THETADATA_DATABASE_URL` in the file. Do not write the URL in the unit. The repository gitignores `.env`. Optional keys are `THETADATA_API_BASE_URL`, `THETADATA_API_CONNECT_TIMEOUT` (default 10 seconds), `THETADATA_API_READ_TIMEOUT` (default 120 seconds), `THETADATA_API_TIMEOUT` (legacy read timeout, used when the read timeout is not set), `THETADATA_LOCK_PATH`, `THETADATA_WORKER_COUNT`, and `THETADATA_NIGHTLY_LOOKBACK`. The API base defaults to the local terminal. A failed job is logged with its root, date, endpoint, and reason. The counts include `failure_reasons` next to `jobs_failed`.
 
 ```bash
 install -m 600 /dev/null ~/curator/.env

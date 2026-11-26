@@ -44,3 +44,22 @@ uv run curator theta nightly [--lookback 10] [--wait]
 ```
 
 The command plans today and any unfinished NYSE sessions in the lookback, then loads them. The default lookback is 10 sessions and never starts before 2022-05-16. Before 17:15 America/New_York it exits 0. `--wait` sleeps until then. Weekends and NYSE holidays exit 0. A finished window makes no requests and writes nothing. Job failures exit non-zero. The run holds the same lock file and uses the same worker pool and 4-request cap as `backfill`. Counts only. The systemd user timer and the enable steps are in `docs/theta-nightly.md`.
+
+## Request timeouts
+
+Full-chain history (`option/history/ohlc` with every strike) can sit silent for 40-50 seconds before the first byte. A single contract is about a second. The client uses two socket timeouts and no total deadline, so a body that keeps arriving is not cut off:
+
+| Setting | Environment variable | Default | Meaning |
+| --- | --- | --- | --- |
+| `api_connect_timeout` | `THETADATA_API_CONNECT_TIMEOUT` | 10 seconds | Time to open the TCP connection |
+| `api_read_timeout` | `THETADATA_API_READ_TIMEOUT` | 120 seconds | Time to wait for the next bytes |
+| `api_timeout` | `THETADATA_API_TIMEOUT` | unset | Legacy read timeout. Used only when `THETADATA_API_READ_TIMEOUT` is not set |
+
+`api_max_retries` (`THETADATA_API_MAX_RETRIES`, default 3) is how many times a read timeout, disconnect, or transient HTTP status is tried again after the first attempt. The delay ceiling starts at `api_backoff_base` (`THETADATA_API_BACKOFF_BASE`, default 0.25 seconds) and doubles until `api_backoff_cap` (`THETADATA_API_BACKOFF_CAP`, default 8 seconds). Each wait is chosen at random between 0 and that ceiling.
+
+`theta.progress` has no error column. A failed job is logged at error level with `root`, `date`, `endpoint`, `reason`, and a short message. `reason` is `timeout`, `http_<status>` (such as `http_500`), or the exception class name. `load-day`, `backfill`, and `nightly` print that breakdown next to the failure count:
+
+```text
+jobs_failed=3
+failure_reasons=http_500:1,timeout:2
+```

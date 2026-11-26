@@ -55,9 +55,28 @@ class Settings(BaseSettings):
         default="http://127.0.0.1:25503/v3",
         description="ThetaData API base URL",
     )
-    api_timeout: int = Field(
-        default=30,
-        description="Socket connect and read timeout in seconds. Streamed bodies are not under a total deadline.",
+    api_connect_timeout: float = Field(
+        default=10.0,
+        description=(
+            "Seconds to open a TCP connection to Theta Terminal. "
+            "Env: THETADATA_API_CONNECT_TIMEOUT. Independent of the read timeout."
+        ),
+    )
+    api_read_timeout: float = Field(
+        default=120.0,
+        description=(
+            "Seconds to wait for the next bytes from Theta Terminal. "
+            "Full-chain history can sit silent for longer than one contract. "
+            "A body that keeps arriving is not under a total deadline. "
+            "Env: THETADATA_API_READ_TIMEOUT."
+        ),
+    )
+    api_timeout: float | None = Field(
+        default=None,
+        description=(
+            "Legacy read timeout in seconds. Env: THETADATA_API_TIMEOUT. "
+            "When set, and api_read_timeout is left at its default, this is the read timeout."
+        ),
     )
     api_max_retries: int = Field(
         default=3,
@@ -142,6 +161,42 @@ class Settings(BaseSettings):
             )
         return value
 
+    @field_validator("api_connect_timeout", "api_read_timeout")
+    @classmethod
+    def timeout_is_positive(cls, value: float) -> float:
+        """Reject a zero or negative socket timeout.
+
+        Args:
+            value: Connect or read timeout in seconds.
+
+        Returns:
+            The same value when it is greater than zero.
+
+        Raises:
+            ValueError: The timeout is not positive.
+        """
+        if value <= 0:
+            raise ValueError("timeout must be > 0")
+        return value
+
+    @field_validator("api_timeout")
+    @classmethod
+    def legacy_timeout_is_positive(cls, value: float | None) -> float | None:
+        """Reject a zero or negative legacy read timeout.
+
+        Args:
+            value: ``api_timeout`` when the caller set it, otherwise ``None``.
+
+        Returns:
+            The same value.
+
+        Raises:
+            ValueError: The timeout is set and is not positive.
+        """
+        if value is not None and value <= 0:
+            raise ValueError("api_timeout must be > 0")
+        return value
+
     @field_validator("api_max_retries")
     @classmethod
     def retries_are_bounded(cls, value: int) -> int:
@@ -174,6 +229,25 @@ class Settings(BaseSettings):
             raise ValueError("backoff timings must be >= 0")
         if self.api_backoff_cap < self.api_backoff_base:
             raise ValueError("api_backoff_cap must be >= api_backoff_base")
+        return self
+
+    @model_validator(mode="after")
+    def apply_legacy_read_timeout(self) -> "Settings":
+        """Treat ``api_timeout`` as the read timeout when the new setting is omitted.
+
+        ``THETADATA_API_READ_TIMEOUT`` wins when both are set. After this runs,
+        ``api_timeout`` equals the effective read timeout so older readers of
+        that field still see it.
+
+        Returns:
+            This settings object. ``api_timeout`` matches the effective read timeout.
+        """
+        legacy = self.api_timeout
+        legacy_set = "api_timeout" in self.model_fields_set and legacy is not None
+        read_set = "api_read_timeout" in self.model_fields_set
+        if legacy_set and not read_set and legacy is not None:
+            self.api_read_timeout = float(legacy)
+        self.api_timeout = self.api_read_timeout
         return self
 
     @property

@@ -12,7 +12,7 @@ import asyncio
 import csv
 import json
 import logging
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from datetime import date
 from decimal import Decimal
 from typing import Any, Literal, TypeVar
@@ -30,6 +30,7 @@ from curator.thetadata.client.errors import (
     ThetaDataTerminalUnreachableError,
     sanitize_text,
 )
+from curator.thetadata.client.failure import tag_failure
 from curator.thetadata.client.retry import backoff_delay
 from curator.thetadata.client.rows import (
     ContractRow,
@@ -77,15 +78,28 @@ class ThetaDataClient:
     return 476 WRONG_IP.
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        sleep: Callable[[float], Awaitable[None]] | None = None,
+        uniform: Callable[[float, float], float] | None = None,
+    ) -> None:
         """Store settings. The session starts in ``start`` or ``async with``.
 
         Args:
             settings: Application settings. ``api_rate_limit`` is the account cap.
+                ``api_connect_timeout`` and ``api_read_timeout`` are the socket timeouts.
+            sleep: Awaitable delay used between retries. Tests pass a recorder.
+                Production waits with ``asyncio.sleep``.
+            uniform: Jitter source for ``backoff_delay``. Tests pass a stub.
+                Production uses ``random.uniform``.
         """
         self.settings = settings
         self.base_url = settings.api_base_url.rstrip("/")
         self._session: aiohttp.ClientSession | None = None
+        self._sleep = sleep or asyncio.sleep
+        self._uniform = uniform
 
     async def __aenter__(self) -> ThetaDataClient:
         """Open the HTTP session.
@@ -104,14 +118,16 @@ class ThetaDataClient:
         """Open the aiohttp session.
 
         The connector limit matches the account cap for this process. The
-        cross-process cap is the shared semaphore, not the connector.
+        cross-process cap is the shared semaphore, not the connector. Connect
+        and read use separate timeouts, and a streamed body has no total deadline.
         """
         if self._session is not None:
             return
         timeout = aiohttp.ClientTimeout(
             total=None,
-            sock_connect=self.settings.api_timeout,
-            sock_read=self.settings.api_timeout,
+            connect=self.settings.api_connect_timeout,
+            sock_connect=self.settings.api_connect_timeout,
+            sock_read=self.settings.api_read_timeout,
         )
         connector = aiohttp.TCPConnector(limit=self.settings.api_rate_limit)
         self._session = aiohttp.ClientSession(
@@ -519,7 +535,7 @@ class ThetaDataClient:
                 async with account_request_slot(self.settings.api_rate_limit):
                     async with self.session.get(self._url(path), params=query) as response:
                         if response.status != 200:
-                            error = await _error_from_response(response, query)
+                            error = await _error_from_response(response, query, path)
                             give_up = yielded or not _is_transient(response.status) or attempt == attempts - 1
                             if give_up:
                                 raise error
@@ -532,10 +548,10 @@ class ThetaDataClient:
                             return
             except ThetaDataClientError:
                 raise
-            except aiohttp.ClientError, asyncio.TimeoutError:
+            except (TimeoutError, aiohttp.ClientError) as exc:
                 if yielded or attempt == attempts - 1:
-                    raise _terminal_error(path) from None
-                logger.warning("ThetaData %s could not be reached; retrying", path)
+                    raise _transport_failure(path, exc) from None
+                _warn_retry(path, exc)
             await self._pause(attempt, retry_after)
         raise ThetaDataTerminalUnreachableError(_terminal_message(path))
 
@@ -586,7 +602,7 @@ class ThetaDataClient:
                 async with account_request_slot(self.settings.api_rate_limit):
                     async with self.session.get(self._url(endpoint), params=params) as response:
                         if response.status != 200:
-                            error = await _error_from_response(response, params)
+                            error = await _error_from_response(response, params, endpoint)
                             if not _is_transient(response.status) or attempt == attempts - 1:
                                 raise error
                             retry_after = _retry_after(response)
@@ -596,10 +612,10 @@ class ThetaDataClient:
                             return raw.decode("utf-8")
             except ThetaDataClientError:
                 raise
-            except aiohttp.ClientError, asyncio.TimeoutError:
+            except (TimeoutError, aiohttp.ClientError) as exc:
                 if attempt == attempts - 1:
-                    raise _terminal_error(endpoint) from None
-                logger.warning("ThetaData %s could not be reached; retrying", endpoint)
+                    raise _transport_failure(endpoint, exc) from None
+                _warn_retry(endpoint, exc)
             await self._pause(attempt, retry_after)
         raise ThetaDataTerminalUnreachableError(_terminal_message(endpoint))
 
@@ -610,10 +626,18 @@ class ThetaDataClient:
             attempt: Zero-based retry index.
             retry_after: Terminal ``Retry-After`` seconds, when the header is numeric.
         """
-        delay = backoff_delay(attempt, self.settings.api_backoff_base, self.settings.api_backoff_cap)
+        if self._uniform is None:
+            delay = backoff_delay(attempt, self.settings.api_backoff_base, self.settings.api_backoff_cap)
+        else:
+            delay = backoff_delay(
+                attempt,
+                self.settings.api_backoff_base,
+                self.settings.api_backoff_cap,
+                uniform=self._uniform,
+            )
         if retry_after is not None:
             delay = min(self.settings.api_backoff_cap, max(delay, retry_after))
-        await asyncio.sleep(delay)
+        await self._sleep(delay)
 
     def _url(self, endpoint: str) -> str:
         """Join the base URL and a normalized path.
@@ -865,9 +889,42 @@ def _detail_suffix(detail: str) -> str:
     return f" {detail}"
 
 
+def _warn_retry(endpoint: str, exc: BaseException) -> None:
+    """Log one transient transport failure before the backoff sleep.
+
+    Args:
+        endpoint: Normalized path.
+        exc: Timeout or client error that will be retried.
+    """
+    if isinstance(exc, TimeoutError):
+        logger.warning("ThetaData %s timed out; retrying", endpoint)
+        return
+    logger.warning("ThetaData %s could not be reached; retrying", endpoint)
+
+
+def _transport_failure(endpoint: str, exc: BaseException) -> ThetaDataClientError:
+    """Build the final error for a timeout or a connection failure.
+
+    Args:
+        endpoint: Normalized path that was requested.
+        exc: Timeout or aiohttp client error. Retries are already exhausted,
+            or the body had already started.
+
+    Returns:
+        A client error tagged with ``timeout`` or the exception class name.
+    """
+    if isinstance(exc, TimeoutError):
+        kind = "connect" if isinstance(exc, aiohttp.ConnectionTimeoutError) else "read"
+        error = ThetaDataTerminalUnreachableError(f"ThetaData {kind} timeout while requesting {endpoint}.")
+        return tag_failure(error, reason="timeout", endpoint=endpoint)
+    error = ThetaDataTerminalUnreachableError(_terminal_message(endpoint))
+    return tag_failure(error, reason=type(exc).__name__, endpoint=endpoint)
+
+
 async def _error_from_response(
     response: aiohttp.ClientResponse,
     params: Mapping[str, str],
+    endpoint: str,
 ) -> ThetaDataClientError:
     """Map a non-200 terminal response to a client error.
 
@@ -876,10 +933,11 @@ async def _error_from_response(
     Args:
         response: Failed response.
         params: Query that was sent, used to name the symbol and session.
+        endpoint: Normalized path, stored on the error for the job log.
 
     Returns:
-        The typed error. Transient statuses are still returned so the caller
-        can decide to retry.
+        The typed error, tagged ``http_<status>``. Transient statuses are still
+        returned so the caller can decide to retry.
     """
     raw = await response.content.read(2048)
     detail = sanitize_text(raw.decode("utf-8", errors="replace"))
@@ -888,27 +946,29 @@ async def _error_from_response(
     symbol = params.get("symbol", "the requested symbol")
     when = params.get("date") or params.get("start_date") or params.get("expiration") or "the requested session"
     if status == 429:
-        return ThetaDataRateLimitError(
+        error: ThetaDataClientError = ThetaDataRateLimitError(
             f"ThetaData rate limit ({label}). Too many requests are in flight for this account.{_detail_suffix(detail)}"
         )
-    if status == 471:
-        return ThetaDataSubscriptionError(
+    elif status == 471:
+        error = ThetaDataSubscriptionError(
             f"ThetaData subscription does not permit this request ({label}). Options Standard only."
             f"{_detail_suffix(detail)}"
         )
-    if status == 472:
-        return ThetaDataNoDataError(f"No ThetaData rows for {symbol} on {when} ({label}).{_detail_suffix(detail)}")
-    if status in {474, 571}:
-        return ThetaDataTerminalUnreachableError(
+    elif status == 472:
+        error = ThetaDataNoDataError(f"No ThetaData rows for {symbol} on {when} ({label}).{_detail_suffix(detail)}")
+    elif status in {474, 571}:
+        error = ThetaDataTerminalUnreachableError(
             f"Theta Terminal is not reachable ({label}). Start Theta Terminal v3 and retry.{_detail_suffix(detail)}"
         )
-    if status == 476:
-        return ThetaDataRequestError(
+    elif status == 476:
+        error = ThetaDataRequestError(
             f"Theta Terminal rejected the host ({label}). Use one of 127.0.0.1 or localhost for the whole run."
         )
-    if status == 473:
-        return ThetaDataRequestError(f"ThetaData rejected the request parameters ({label}).{_detail_suffix(detail)}")
-    return ThetaDataRequestError(f"ThetaData request failed ({label}).{_detail_suffix(detail)}")
+    elif status == 473:
+        error = ThetaDataRequestError(f"ThetaData rejected the request parameters ({label}).{_detail_suffix(detail)}")
+    else:
+        error = ThetaDataRequestError(f"ThetaData request failed ({label}).{_detail_suffix(detail)}")
+    return tag_failure(error, reason=f"http_{status}", endpoint=endpoint)
 
 
 def _terminal_message(endpoint: str) -> str:
@@ -924,18 +984,6 @@ def _terminal_message(endpoint: str) -> str:
         f"Theta Terminal is not running or not reachable while requesting {endpoint}. "
         "Start Theta Terminal v3 and retry."
     )
-
-
-def _terminal_error(endpoint: str) -> ThetaDataTerminalUnreachableError:
-    """Build the error for a connection failure or timeout.
-
-    Args:
-        endpoint: Normalized path that was requested.
-
-    Returns:
-        The unreachable error.
-    """
-    return ThetaDataTerminalUnreachableError(_terminal_message(endpoint))
 
 
 async def _response_chunks(response: aiohttp.ClientResponse) -> AsyncIterator[bytes]:

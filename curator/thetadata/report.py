@@ -15,7 +15,7 @@ partitions is scaled too. The report prints counts and byte sizes only.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -190,7 +190,29 @@ def format_load_report(report: LoadReport) -> str:
     lines.append(f"jobs_done={report.jobs_done}")
     lines.append(f"jobs_empty={report.jobs_empty}")
     lines.append(f"jobs_failed={report.jobs_failed}")
+    lines.append(f"failure_reasons={format_failure_reasons(report.errors)}")
     return "\n".join(lines) + "\n"
+
+
+def format_failure_reasons(errors: Sequence[str]) -> str:
+    """Count failure reason codes from outcome texts.
+
+    Args:
+        errors: Scrubbed texts. The reason is the token before the first colon,
+            for example ``timeout: read timeout`` or ``http_500: ...``.
+
+    Returns:
+        ``timeout:2,http_500:1`` sorted by reason, or an empty string when
+        nothing failed.
+    """
+    counts: dict[str, int] = {}
+    for error in errors:
+        reason, separator, _message = error.partition(":")
+        code = reason.strip() if separator else "unknown"
+        if not code:
+            code = "unknown"
+        counts[code] = counts.get(code, 0) + 1
+    return ",".join(f"{name}:{counts[name]}" for name in sorted(counts))
 
 
 def _tier_slots(rows: Mapping[tuple[str, str], int]) -> list[tuple[str, str]]:
