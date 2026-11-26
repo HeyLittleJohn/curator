@@ -31,7 +31,7 @@ from curator.thetadata.limits import backfill_lock
 from curator.thetadata.mapping import PendingFact
 from curator.thetadata.planner import parse_datasets
 from curator.thetadata.progress import MemoryProgressStore, ProgressQueue, open_progress_store
-from curator.thetadata.report import LoadReport
+from curator.thetadata.report import LoadReport, format_failure_reasons
 from curator.thetadata.time import EASTERN
 from curator.thetadata.window import DEFAULT_STRIKE_RANGE
 
@@ -227,6 +227,7 @@ def format_nightly_report(report: NightlyReport) -> str:
         f"jobs_done={report.jobs_done}",
         f"jobs_empty={report.jobs_empty}",
         f"jobs_failed={report.jobs_failed}",
+        f"failure_reasons={format_failure_reasons(report.errors)}",
     ]
     return "\n".join(lines) + "\n"
 

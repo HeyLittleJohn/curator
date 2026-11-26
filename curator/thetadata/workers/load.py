@@ -8,10 +8,12 @@ Any other failure is ``failed`` and the message is scrubbed of URLs.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date
 
+from curator.thetadata.client.failure import classify_failure, failure_endpoint, outcome_error
 from curator.thetadata.client.http import ThetaDataClient
 from curator.thetadata.config import Settings
 from curator.thetadata.exceptions import ThetaDataNoDataError, sanitize_text
@@ -22,6 +24,8 @@ from curator.thetadata.progress import EMPTY, FAILED
 from curator.thetadata.secrets import scrub_secrets
 from curator.thetadata.stream_job import RequestMeter, stream_fact_batches
 from curator.thetadata.upsert import open_engine, write_batch
+
+logger = logging.getLogger(__name__)
 
 Persist = Callable[[PlanJob, Sequence[PendingFact]], int]
 
@@ -38,7 +42,10 @@ class JobOutcome:
         status: ``done``, ``empty``, or ``failed``.
         row_count: Rows written. Empty and a failed job that wrote nothing are 0.
         requests: Logical terminal requests for this job.
-        error: Scrubbed failure text. Not printed by the CLI.
+        error: Scrubbed failure text, prefixed with the reason code. Not printed
+            by the CLI except as a counted reason.
+        reason: ``timeout``, ``http_<status>``, or an exception class name.
+            ``None`` when the job did not fail.
     """
 
     dataset: str
@@ -49,6 +56,7 @@ class JobOutcome:
     row_count: int
     requests: int
     error: str | None = None
+    reason: str | None = None
 
     def as_job(self) -> PlanJob:
         """Rebuild the plan job this outcome belongs to.
@@ -78,7 +86,14 @@ def safe_error(exc: BaseException) -> str:
     return sanitize_text(scrub_secrets(f"{type(exc).__name__}: {exc}"))
 
 
-def _outcome(job: PlanJob, status: str, row_count: int, requests: int, error: str | None) -> JobOutcome:
+def _outcome(
+    job: PlanJob,
+    status: str,
+    row_count: int,
+    requests: int,
+    error: str | None,
+    reason: str | None = None,
+) -> JobOutcome:
     """Build an outcome from the job identity.
 
     Args:
@@ -87,6 +102,7 @@ def _outcome(job: PlanJob, status: str, row_count: int, requests: int, error: st
         row_count: Rows written.
         requests: Logical terminal requests.
         error: Scrubbed failure text, or ``None``.
+        reason: Failure reason code, or ``None``.
 
     Returns:
         The outcome.
@@ -100,7 +116,37 @@ def _outcome(job: PlanJob, status: str, row_count: int, requests: int, error: st
         row_count=row_count,
         requests=requests,
         error=error,
+        reason=reason,
     )
+
+
+def _fail(job: PlanJob, row_count: int, requests: int, exc: BaseException) -> JobOutcome:
+    """Log a failed job and return its outcome.
+
+    ``theta.progress`` has no error column, so the reason is logged with the
+    job identity and stored only on the outcome.
+
+    Args:
+        job: Job that failed.
+        row_count: Rows written before the failure.
+        requests: Logical terminal requests.
+        exc: Exception from the attempt.
+
+    Returns:
+        A failed outcome whose ``reason`` is ``timeout``, ``http_<status>``,
+        or an exception class name.
+    """
+    reason, message = classify_failure(exc)
+    endpoint = failure_endpoint(exc, job.dataset)
+    logger.error(
+        "ThetaData job failed root=%s date=%s endpoint=%s reason=%s message=%s",
+        job.symbol,
+        job.trade_date.isoformat(),
+        endpoint,
+        reason,
+        message,
+    )
+    return _outcome(job, FAILED, row_count, requests, outcome_error(reason, message), reason)
 
 
 async def load_one(
@@ -131,7 +177,7 @@ async def load_one(
     except ThetaDataNoDataError:
         return _outcome(job, EMPTY, 0, meter.count, None)
     except Exception as exc:
-        return _outcome(job, FAILED, total, meter.count, safe_error(exc))
+        return _fail(job, total, meter.count, exc)
     status = EMPTY if total == 0 else "done"
     return _outcome(job, status, total, meter.count, None)
 
@@ -163,7 +209,7 @@ async def load_plan_job(
     try:
         engine = open_engine(database_url)
     except Exception as exc:
-        return _outcome(job, FAILED, 0, 0, safe_error(exc))
+        return _fail(job, 0, 0, exc)
 
     def persist(one_job: PlanJob, facts: Sequence[PendingFact]) -> int:
         """Upsert one batch on this worker's engine.
